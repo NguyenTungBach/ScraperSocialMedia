@@ -1,0 +1,29 @@
+# Schemas dùng chung cho Auth / User
+schemas:
+  UserStatus:
+    title: UserStatus
+    description: |
+      Status:
+      - `1`: on
+      - `2`: off
+    type: integer
+    enum: [1, 2]
+  UserType:
+    title: UserType
+    description: |
+      Role:
+      - `admin`
+      - `driver`
+    type: string
+    enum: [admin, driver]
+  User:
+    type: object
+    properties:
+      id: { type: integer }
+      user_code: { type: string }
+      user_name: { type: string }
+      role: { $ref: '#/components/schemas/UserType' }
+      status: { $ref: '#/components/schemas/UserStatus' }
+      created_at: { type: string, format: date-time, nullable: true }
+      updated_at: { type: string, format: date-time, nullable: true }
+      deleted_at: { type: string, format: date-time, nullable: true }

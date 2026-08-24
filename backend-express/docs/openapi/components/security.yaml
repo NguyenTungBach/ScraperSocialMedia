@@ -1,0 +1,7 @@
+# Khớp Laravel security={{"auth": {}}} — dùng HTTP Bearer (JWT).
+securitySchemes:
+  auth:
+    type: http
+    scheme: bearer
+    bearerFormat: JWT
+    description: Token trả về từ POST /auth/login (field access_token, có thể đã gồm tiền tố "Bearer ").

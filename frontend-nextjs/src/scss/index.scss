@@ -1,0 +1,13 @@
+@import '@/scss/variables';
+@import '@/scss/responsive';
+@import '@/scss/config/config';
+
+// Optional CSS custom properties for TSX/style usage.
+:root {
+  --awa-main-header: #{$main-header};
+  --awa-main: #{$main};
+  --awa-sub-main: #{$sub-main};
+  --awa-silver-chalice: #{$silver-chalice};
+  --awa-manatee: #{$manatee};
+  --awa-mischka: #{$mischka};
+}

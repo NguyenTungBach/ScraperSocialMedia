@@ -1,0 +1,41 @@
+@import '@/scss/variables.scss';
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  background-color: $white;
+  width: 100vw;
+  height: calc(100vh - 60px);
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 999;
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    border-bottom: 1px solid $alto;
+  }
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 16px 30px;
+  border: none;
+  background: transparent;
+  color: $black;
+  font-size: 16px;
+  text-decoration: none;
+  cursor: pointer;
+
+  svg {
+    color: #aaa;
+  }
+}

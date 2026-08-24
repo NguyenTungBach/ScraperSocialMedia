@@ -1,0 +1,5248 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Drivee Link API (Express)",
+    "version": "1.0.0",
+    "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`). Map từ Laravel: bỏ `/api` ở đầu path.\n",
+    "contact": {
+      "name": "ATMC Development Team"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3400/api",
+      "description": "production"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth"
+    },
+    {
+      "name": "User"
+    },
+    {
+      "name": "Company"
+    },
+    {
+      "name": "Hr-organization"
+    },
+    {
+      "name": "HR"
+    },
+    {
+      "name": "Support Organization"
+    },
+    {
+      "name": "Classification"
+    },
+    {
+      "name": "Country"
+    },
+    {
+      "name": "Job"
+    },
+    {
+      "name": "Master"
+    },
+    {
+      "name": "Upload File"
+    },
+    {
+      "name": "Notification"
+    },
+    {
+      "name": "Contact"
+    },
+    {
+      "name": "Document definition"
+    },
+    {
+      "name": "Residence application"
+    },
+    {
+      "name": "Work"
+    },
+    {
+      "name": "Work draft"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "UserStatus": {
+        "title": "UserStatus",
+        "description": "StatusUser:\n- `1`: Pending\n- `2`: Approve\n- `3`: Reject\n- `4`: Stop\n- `5`: Delete\n",
+        "type": "integer",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "UserType": {
+        "title": "UserType",
+        "description": "Role User:\n- `1`: supper admin\n- `2`: company manager\n- `3`: hr manager\n- `4`: company\n- `5`: hr\n- `6`: support\n",
+        "type": "integer",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "WorkDestroyRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Danh sách ID tin tuyển dụng cần xóa (force delete)."
+          }
+        }
+      },
+      "WorkUpdatePublicBody": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer",
+            "description": "Laravel `WorkController@updateStatusWork` gán vào cột `works.public` (tên param là `status`).\nThường dùng 0 = 非公開 (private), 1 = 公開 (public).\n"
+          }
+        }
+      },
+      "WorkStoreRequest": {
+        "type": "object",
+        "description": "Khớp validation store/update trong Express (`WorkRepository`) — gần với Laravel `WorkRequest::storeRules`.\nUser type **company** không bắt buộc gửi `company_id` (lấy từ company của user).\n",
+        "required": [
+          "title",
+          "major_classification_id",
+          "residency_qualification",
+          "cities",
+          "job_description",
+          "country_id",
+          "form_of_employment",
+          "working_time_from"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "company_id": {
+            "type": "integer",
+            "description": "Bắt buộc khi user không phải company (vd. super_admin port sau)."
+          },
+          "major_classification_id": {
+            "type": "integer",
+            "description": "FK `job_type.id` (職種)."
+          },
+          "middle_classification_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "FK `job_info.id` (chuỗi trong DB)."
+          },
+          "residency_qualification": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Danh sách `residency_status.id`."
+          },
+          "cities": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Danh sách `city.id` (pivot `city_works`)."
+          },
+          "job_description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "country_id": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Quốc tịch yêu cầu — pivot `work_countries`."
+          },
+          "age": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferred_skill": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "form_of_employment": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "1 full-time, 2 contract, 3 temporary, 4 other"
+          },
+          "insurance_enrollments": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "nullable": true
+          },
+          "contract_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "probation_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "residence": {
+            "type": "string",
+            "nullable": true
+          },
+          "working_time_from": {
+            "type": "string"
+          },
+          "working_time_to": {
+            "type": "string",
+            "nullable": true
+          },
+          "vacation": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income_gross": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income_net": {
+            "type": "string",
+            "nullable": true
+          },
+          "test_form": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualification_acquisition": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "treatment_welfare": {
+            "type": "string",
+            "maxLength": 2000,
+            "nullable": true
+          },
+          "transfer": {
+            "type": "string",
+            "nullable": true
+          },
+          "temporary_return_home": {
+            "type": "string",
+            "nullable": true
+          },
+          "public": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "nullable": true
+          },
+          "driver_license": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Classification IDs type driver license (type=8)."
+          },
+          "moving_cost_burden": {
+            "type": "integer",
+            "nullable": true
+          },
+          "overseas_application": {
+            "type": "integer",
+            "nullable": true
+          },
+          "images": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID file upload (`files.id`) — ảnh tin."
+          },
+          "language_requirements": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "passions": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "remark": {
+            "type": "string",
+            "nullable": true
+          },
+          "application_period_from": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "application_period_to": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "application_condition": {
+            "type": "string",
+            "nullable": true
+          },
+          "application_requirement": {
+            "type": "string",
+            "nullable": true
+          },
+          "other_skill": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "WorkListPagination": {
+        "type": "object",
+        "description": "Body JSON khi HTTP 200 — giống Laravel `BaseResource::collection` + pagination + summaryWork.",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "pagination": {
+                "type": "object",
+                "properties": {
+                  "display": {
+                    "type": "integer"
+                  },
+                  "total_records": {
+                    "type": "integer"
+                  },
+                  "per_page": {
+                    "type": "integer"
+                  },
+                  "current_page": {
+                    "type": "integer"
+                  },
+                  "total_pages": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "summaryWork": {
+                "type": "object",
+                "description": "Thống kê số lượng job theo trạng thái công khai (`works.public` — 0 private / 1 public).",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "private_status": {
+                    "type": "integer"
+                  },
+                  "public_status": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "WorkDraftUpsertRequest": {
+        "type": "object",
+        "description": "Draft tin tuyển — **không** bắt buộc đủ field như `WorkStoreRequest`; khớp Laravel `WorkDraftRequest` / repository Express.\nGửi một phần field để lưu nháp; các mảng quan hệ khi có trong body sẽ được đồng bộ pivot (xóa cũ + ghi mới tùy nhánh code).\n",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "description": "Bắt buộc khi **super_admin** tạo draft thay company (repo kiểm tra)."
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "major_classification_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "middle_classification_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "application_period_from": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "application_period_to": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "job_description": {
+            "type": "string",
+            "nullable": true
+          },
+          "application_condition": {
+            "type": "string",
+            "nullable": true
+          },
+          "application_requirement": {
+            "type": "string",
+            "nullable": true
+          },
+          "other_skill": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferred_skill": {
+            "type": "string",
+            "nullable": true
+          },
+          "form_of_employment": {
+            "type": "integer",
+            "nullable": true
+          },
+          "working_time_from": {
+            "type": "string",
+            "nullable": true
+          },
+          "working_time_to": {
+            "type": "string",
+            "nullable": true
+          },
+          "vacation": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income": {
+            "type": "string",
+            "nullable": true
+          },
+          "assumed_annual_income": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income_gross": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_income_net": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "working_palace_detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "country_id": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Danh sách `countries.id` — pivot `work_draft_countries` (Express repo; đồng bộ khi gửi mảng)."
+          },
+          "country_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "treatment_welfare": {
+            "type": "string",
+            "nullable": true
+          },
+          "company_pr_appeal": {
+            "type": "string",
+            "nullable": true
+          },
+          "bonus_pay_rise": {
+            "type": "integer",
+            "nullable": true
+          },
+          "over_time": {
+            "type": "integer",
+            "nullable": true
+          },
+          "transfer": {
+            "type": "string",
+            "nullable": true
+          },
+          "passive_smoking": {
+            "type": "integer",
+            "nullable": true
+          },
+          "residency_qualification": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Danh sách `residency_status.id` — pivot `work_draft_residency_status`."
+          },
+          "age": {
+            "type": "string",
+            "nullable": true
+          },
+          "contract_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "probation_period": {
+            "type": "string",
+            "nullable": true
+          },
+          "residence": {
+            "type": "string",
+            "nullable": true
+          },
+          "test_form": {
+            "type": "string",
+            "nullable": true
+          },
+          "qualification_acquisition": {
+            "type": "string",
+            "nullable": true
+          },
+          "temporary_return_home": {
+            "type": "string",
+            "nullable": true
+          },
+          "driver_license": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Classification IDs (type driver license) — pivot `work_draft_driver_licenses`."
+          },
+          "moving_cost_burden": {
+            "type": "integer",
+            "nullable": true
+          },
+          "overseas_application": {
+            "type": "integer",
+            "nullable": true
+          },
+          "interview_follow": {
+            "type": "integer",
+            "nullable": true
+          },
+          "public": {
+            "type": "integer",
+            "nullable": true
+          },
+          "remark": {
+            "type": "string",
+            "nullable": true
+          },
+          "work_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Nếu có giá trị khi **PUT**: nhánh rút gọn chỉ cập nhật `work_id` (draft đã publish / liên kết job).\n"
+          },
+          "passions": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "insurance_enrollments": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "cities": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "images": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID file trong bảng files — ảnh đại diện draft."
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "auth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Token trả về từ POST /auth/login (field access_token, có thể đã gồm tiền tố \"Bearer \")."
+      }
+    }
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "User Login",
+        "operationId": "user_login",
+        "description": "Laravel `@OA`: `mail_address`, `password` (query). Express đọc **JSON body** cùng tên field.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mail_address",
+                  "password"
+                ],
+                "properties": {
+                  "mail_address": {
+                    "type": "string",
+                    "example": "1okuridashi_hanoi@gmail.vn"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "123456789CCk"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {
+                    "access_token": "Bearer ...",
+                    "profile": {
+                      "id": 1,
+                      "login_id": 111111,
+                      "type": 4,
+                      "status": 2,
+                      "name_company_or_hro": "…",
+                      "company": {
+                        "jobType": {},
+                        "job": {}
+                      },
+                      "hr_organization": {
+                        "file": {},
+                        "country": {}
+                      },
+                      "support_organization": {}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Đăng nhập thất bại",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "message": "Login_id or password not correct"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forget-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Forget password",
+        "operationId": "forget_password",
+        "description": "Laravel `@OA` dùng query `mail_address`; Express dùng JSON body.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mail_address"
+                ],
+                "properties": {
+                  "mail_address": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": "Password reset URL has been sent to your email address"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profile": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get Profile",
+        "operationId": "user_profile",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User + `name_company_or_hro` + `company` (jobType, job) / `hr_organization` (file presigned, country) / `support_organization`\n— đồng bộ cấu trúc với `AuthRepository.fillNameCompanyOrHro` sau khi cập nhật org.\n",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {
+                    "id": 1,
+                    "login_id": "111111",
+                    "type": 4,
+                    "status": 2,
+                    "mail_address": "user@example.com",
+                    "parent_id": null,
+                    "name_company_or_hro": "担当者1",
+                    "company": {
+                      "id": 1,
+                      "company_name": "…",
+                      "jobType": {},
+                      "job": {}
+                    },
+                    "hr_organization": null,
+                    "support_organization": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Đăng nhập thất bại",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "message": "Sai tài khoản hoặc mật khẩu"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/confirm-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Confirm password",
+        "operationId": "confirm_password",
+        "description": "Laravel `@OA` dùng query; Express dùng JSON body `current_password`, `current_password_confirm`.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "current_password",
+                  "current_password_confirm"
+                ],
+                "properties": {
+                  "current_password": {
+                    "type": "string"
+                  },
+                  "current_password_confirm": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": ""
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "password not correct",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "data": "Password not correct."
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "access denied permissions",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 403,
+                  "message": "Từ chối quyền truy cập"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Change password",
+        "operationId": "change_password",
+        "description": "Laravel `@OA` dùng query; Express dùng JSON body.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "new_password",
+                  "new_password_confirm"
+                ],
+                "properties": {
+                  "new_password": {
+                    "type": "string"
+                  },
+                  "new_password_confirm": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": "New password reset completed"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "access denied permissions",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 403,
+                  "message": "Từ chối quyền truy cập"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/city": {
+      "get": {
+        "tags": [
+          "City"
+        ],
+        "summary": "List City",
+        "operationId": "city_index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": [
+                    {
+                      "id": 1,
+                      "name_en": "Tokyo",
+                      "name_ja": "Tokyo"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/classifications": {
+      "get": {
+        "tags": [
+          "Classification"
+        ],
+        "summary": "List classification",
+        "operationId": "classification_idx",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": false,
+            "description": "Company ID",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": [
+                    {
+                      "id": 1,
+                      "type": 1,
+                      "name_en": "Tokyo",
+                      "name_ja": "Tokyo"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company": {
+      "get": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "List all company",
+        "operationId": "company_index_all",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "1",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "major_classification",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number_of_staffs",
+            "in": "query",
+            "description": "1-50",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company_name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "description": "id, company_name, field, updated_at, status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "asc,desc",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {
+                    "company_name": "City Computer Co., Ltd.",
+                    "id": 1
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login false",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "message": "Username or password invalid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Create Company",
+        "operationId": "create_company",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "company_name",
+                  "company_name_jp",
+                  "major_classification",
+                  "number_of_staffs",
+                  "telephone_number",
+                  "user_name1",
+                  "mail_address",
+                  "url",
+                  "job_title",
+                  "full_name",
+                  "full_name_furigana",
+                  "assignee_contact",
+                  "is_create"
+                ],
+                "properties": {
+                  "company_name": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "company_name_jp": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "major_classification": {
+                    "type": "integer",
+                    "description": "job_types.id (exists)"
+                  },
+                  "post_code": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "nullable": true
+                  },
+                  "address_1": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "nullable": true
+                  },
+                  "address_2": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "nullable": true
+                  },
+                  "other": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "nullable": true
+                  },
+                  "number_of_staffs": {
+                    "type": "number"
+                  },
+                  "telephone_number": {
+                    "type": "string"
+                  },
+                  "user_name1": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "mail_address": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "user_name2": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "mail_address2": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "user_name3": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "mail_address3": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "job_title": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "full_name": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "full_name_furigana": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "representative_contact": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "assignee_contact": {
+                    "type": "string"
+                  },
+                  "middle_classification": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "prefectures": {
+                    "type": "string"
+                  },
+                  "municipality": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "string"
+                  },
+                  "is_create": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "description": "0:validate,1:create"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Từ chối quyền truy cập"
+          }
+        }
+      }
+    },
+    "/company-option": {
+      "get": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Select option company",
+        "operationId": "company_list_all",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {
+                    "company_name": "City Computer Co., Ltd.",
+                    "company_name_jp": "シティコンピュータ株式会社",
+                    "id": 1
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login false",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "message": "Username or password invalid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/company/{id}": {
+      "get": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Detail Company",
+        "operationId": "company_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 401,
+                  "message": "Username or password invalid"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Update Company",
+        "operationId": "update_company",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "company_name",
+                  "company_name_jp",
+                  "major_classification",
+                  "middle_classification",
+                  "post_code",
+                  "prefectures",
+                  "municipality",
+                  "number",
+                  "other",
+                  "telephone_number",
+                  "mail_address",
+                  "url",
+                  "job_title",
+                  "full_name",
+                  "full_name_furigana",
+                  "representative_contact",
+                  "assignee_contact"
+                ],
+                "properties": {
+                  "company_name": {
+                    "type": "string"
+                  },
+                  "company_name_jp": {
+                    "type": "string"
+                  },
+                  "major_classification": {
+                    "type": "integer"
+                  },
+                  "middle_classification": {
+                    "type": "integer"
+                  },
+                  "post_code": {
+                    "type": "string"
+                  },
+                  "prefectures": {
+                    "type": "string"
+                  },
+                  "municipality": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "string"
+                  },
+                  "other": {
+                    "type": "string"
+                  },
+                  "telephone_number": {
+                    "type": "string"
+                  },
+                  "mail_address": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "job_title": {
+                    "type": "string"
+                  },
+                  "full_name": {
+                    "type": "string"
+                  },
+                  "full_name_furigana": {
+                    "type": "string"
+                  },
+                  "representative_contact": {
+                    "type": "string"
+                  },
+                  "assignee_contact": {
+                    "type": "string"
+                  },
+                  "establishment_year": {
+                    "type": "string"
+                  },
+                  "startup_year": {
+                    "type": "string"
+                  },
+                  "capital": {
+                    "type": "string"
+                  },
+                  "proceeds": {
+                    "type": "string"
+                  },
+                  "number_of_staffs": {
+                    "type": "string"
+                  },
+                  "number_of_operations": {
+                    "type": "string"
+                  },
+                  "number_of_shops": {
+                    "type": "string"
+                  },
+                  "number_of_factory": {
+                    "type": "string"
+                  },
+                  "fiscal": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công"
+          },
+          "403": {
+            "description": "Access Deny permission"
+          }
+        }
+      }
+    },
+    "/auth/company/{id}": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Detail Company (route mount /auth)",
+        "operationId": "auth_company_show",
+        "description": "Cùng handler `CompanyController.show` — Express mount tại `routes/api/auth.js`.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false"
+          }
+        }
+      }
+    },
+    "/company-user-master": {
+      "get": {
+        "tags": [
+          "CompanyUserMaster"
+        ],
+        "summary": "List CompanyUserMaster",
+        "operationId": "company_user_master_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Envelope code/status/message/data (Laravel responseData)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "CompanyUserMaster"
+        ],
+        "summary": "Create Company User Master",
+        "operationId": "CompanyUserMasterCreate",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      }
+    },
+    "/company-user-master/{id}": {
+      "put": {
+        "tags": [
+          "CompanyUserMaster"
+        ],
+        "summary": "Update Company User Master",
+        "operationId": "company_user_master_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "CompanyUserMaster"
+        ],
+        "summary": "Delete CompanyUserMaster",
+        "operationId": "company_user_master_delete",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      }
+    },
+    "/contact": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "Add new Contact (authenticated)",
+        "operationId": "contact_create",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "organization_name",
+                  "full_name",
+                  "mail_address",
+                  "content_of_inquiry",
+                  "is_create"
+                ],
+                "properties": {
+                  "organization_name": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "full_name": {
+                    "type": "string",
+                    "maxLength": 50
+                  },
+                  "mail_address": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 50
+                  },
+                  "phone_number": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "content_of_inquiry": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "is_create": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contact-customer": {
+      "post": {
+        "tags": [
+          "Contact"
+        ],
+        "summary": "Create contact (Landing page, public)",
+        "operationId": "contact_create_landing",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "name",
+                  "email",
+                  "company",
+                  "phone",
+                  "message"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "description": "1 document, 2 inquiry"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "company": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "service_type": {
+                    "type": "integer",
+                    "description": "required when type=2"
+                  },
+                  "people_recruited": {
+                    "type": "integer",
+                    "description": "required when type=1"
+                  },
+                  "type_parcel": {
+                    "type": "integer",
+                    "description": "required when type=1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/country": {
+      "get": {
+        "tags": [
+          "Country"
+        ],
+        "summary": "List country",
+        "operationId": "country_index",
+        "security": [],
+        "parameters": [
+          {
+            "name": "search_for",
+            "in": "query",
+            "required": true,
+            "description": "hrs: search for hr, jobs: search for job",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hrs",
+                "jobs"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": [
+                    {
+                      "id": 1,
+                      "name_en": "Vietnam",
+                      "name_ja": "ベトナム"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/document-definitions": {
+      "get": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "List document definitions by application type",
+        "operationId": "document_definition_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "certificate_of_eligibility",
+                "change_of_status"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` array definitions + sample_files (presigned)"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "Create document definition (super_admin)",
+        "operationId": "document_definition_store",
+        "description": "Route `authorizeUserTypes(super_admin)`.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "application_type",
+                  "code",
+                  "name_ja",
+                  "category"
+                ],
+                "properties": {
+                  "application_type": {
+                    "type": "string",
+                    "enum": [
+                      "certificate_of_eligibility",
+                      "change_of_status"
+                    ]
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "name_ja": {
+                    "type": "string"
+                  },
+                  "name_en": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "form_number": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "applicant",
+                      "organization",
+                      "industry_specific"
+                    ]
+                  },
+                  "is_required": {
+                    "type": "boolean"
+                  },
+                  "is_conditional": {
+                    "type": "boolean"
+                  },
+                  "sort_order": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "inactive"
+                    ]
+                  },
+                  "sample_file_path": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "sample_file_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "e_signature_target": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "company",
+                      "applicant",
+                      "both"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/document-definitions/{id}": {
+      "put": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "Update document definition (super_admin)",
+        "operationId": "document_definition_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Partial fields; `sample_file_ids` replaces attachment set when sent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "Delete document definition (super_admin)",
+        "operationId": "document_definition_destroy",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` null"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/document-definitions/reorder": {
+      "post": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "Reorder definitions (super_admin)",
+        "operationId": "document_definition_reorder",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "application_type",
+                  "ordered_ids"
+                ],
+                "properties": {
+                  "application_type": {
+                    "type": "string",
+                    "enum": [
+                      "certificate_of_eligibility",
+                      "change_of_status"
+                    ]
+                  },
+                  "ordered_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/document-definitions/reset": {
+      "post": {
+        "tags": [
+          "Document definition"
+        ],
+        "summary": "Reset to default checklist (super_admin)",
+        "operationId": "document_definition_reset",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "application_type"
+                ],
+                "properties": {
+                  "application_type": {
+                    "type": "string",
+                    "enum": [
+                      "certificate_of_eligibility",
+                      "change_of_status"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/hr/list": {
+      "post": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "List HR (POST — filter/pagination theo body/query)",
+        "operationId": "hr_list",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Filter/pagination giống Laravel `HrController@list`"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/hr": {
+      "get": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "List HR (GET — query string, cùng payload POST /hr/list)",
+        "operationId": "hr_index",
+        "description": "JWT — company (4) hoặc company_manager (2).",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` gồm paginator + expiredList + summaryHr"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Create HR",
+        "operationId": "hr_store",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Payload khớp `HrRepository.createHr` / Laravel store"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created resource"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/hr/{id}": {
+      "get": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "HR detail",
+        "operationId": "hr_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "403": {
+            "description": "Forbidden / không thuộc company"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Update HR",
+        "operationId": "hr_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Update HR (alias PUT)",
+        "operationId": "hr_update_patch",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Delete HR",
+        "operationId": "hr_destroy",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` null"
+          }
+        }
+      }
+    },
+    "/hr/pdf-detail": {
+      "post": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Export HR PDF detail",
+        "operationId": "hr_pdf_detail",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "description": "HR id"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PDF stream",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hr/excel": {
+      "post": {
+        "tags": [
+          "HR"
+        ],
+        "summary": "Export HR list Excel",
+        "operationId": "hr_export_excel",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Filter giống list HR"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Excel file stream",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hr-organization": {
+      "get": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "List all hr-organization",
+        "operationId": "hr_organization_index_all",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "account_classification",
+            "in": "query",
+            "description": "1:Own platform, 2:Sending agency, 3:Dispatch agency, 4:School",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "corporate_name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Create Hr",
+        "operationId": "create_hr_organization",
+        "description": "Laravel `@OA`: multipart/form-data. Express: **application/json** cùng field.\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "corporate_name_en",
+                  "corporate_name_ja",
+                  "license_no",
+                  "account_classification",
+                  "country_id",
+                  "representative_full_name",
+                  "representative_full_name_furigana",
+                  "assignee_contact",
+                  "post_code",
+                  "prefectures",
+                  "municipality",
+                  "number",
+                  "mail_address",
+                  "url",
+                  "certificate_file_id",
+                  "is_create"
+                ],
+                "properties": {
+                  "corporate_name_en": {
+                    "type": "string"
+                  },
+                  "corporate_name_ja": {
+                    "type": "string"
+                  },
+                  "license_no": {
+                    "type": "string"
+                  },
+                  "account_classification": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2,
+                      3,
+                      4,
+                      5
+                    ],
+                    "description": "1:自社プラットフォーム, 2:送り出し機関, 3:派遣会社, 4:学校, 5:企業"
+                  },
+                  "country_id": {
+                    "type": "integer",
+                    "description": "required -1 with country_name"
+                  },
+                  "country_name": {
+                    "type": "string"
+                  },
+                  "representative_full_name": {
+                    "type": "string"
+                  },
+                  "representative_full_name_furigana": {
+                    "type": "string"
+                  },
+                  "representative_contact": {
+                    "type": "string"
+                  },
+                  "assignee_contact": {
+                    "type": "string"
+                  },
+                  "post_code": {
+                    "type": "string"
+                  },
+                  "prefectures": {
+                    "type": "string"
+                  },
+                  "municipality": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "string"
+                  },
+                  "other": {
+                    "type": "string"
+                  },
+                  "mail_address": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "certificate_file_id": {
+                    "type": "integer"
+                  },
+                  "is_create": {
+                    "type": "integer",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "description": "0:validate,1:create"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Từ chối quyền truy cập"
+          }
+        }
+      }
+    },
+    "/hr-org": {
+      "get": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Select option hr-org",
+        "operationId": "hr_organization_list_all",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false"
+          }
+        }
+      }
+    },
+    "/hr-organization/{id}": {
+      "get": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Detail Hr-organization",
+        "operationId": "hr-organization_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Update Hr-organization",
+        "operationId": "update_hr_organization",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "corporate_name_en",
+                  "corporate_name_ja",
+                  "license_no",
+                  "account_classification",
+                  "country_id",
+                  "representative_full_name",
+                  "representative_full_name_furigana",
+                  "assignee_contact",
+                  "post_code",
+                  "prefectures",
+                  "municipality",
+                  "number",
+                  "mail_address",
+                  "url",
+                  "certificate_file_id"
+                ],
+                "properties": {
+                  "corporate_name_en": {
+                    "type": "string"
+                  },
+                  "corporate_name_ja": {
+                    "type": "string"
+                  },
+                  "license_no": {
+                    "type": "string"
+                  },
+                  "account_classification": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2,
+                      3,
+                      4,
+                      5
+                    ]
+                  },
+                  "country_id": {
+                    "type": "integer"
+                  },
+                  "country_name": {
+                    "type": "string"
+                  },
+                  "representative_full_name": {
+                    "type": "string"
+                  },
+                  "representative_full_name_furigana": {
+                    "type": "string"
+                  },
+                  "representative_contact": {
+                    "type": "string"
+                  },
+                  "assignee_contact": {
+                    "type": "string"
+                  },
+                  "post_code": {
+                    "type": "string"
+                  },
+                  "prefectures": {
+                    "type": "string"
+                  },
+                  "municipality": {
+                    "type": "string"
+                  },
+                  "number": {
+                    "type": "string"
+                  },
+                  "other": {
+                    "type": "string"
+                  },
+                  "mail_address": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "certificate_file_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công"
+          },
+          "403": {
+            "description": "Access Deny permission"
+          }
+        }
+      }
+    },
+    "/hr-organization-profile": {
+      "post": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Create HRO profile (Express)",
+        "operationId": "hr_organization_profile_create",
+        "description": "Chưa có `@OA` tương ứng trong Laravel `HrOrganizationController`; schema theo validation Express.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "established_year",
+                  "num_employees",
+                  "headquarters_address",
+                  "contact_address",
+                  "contact_phone",
+                  "contact_email",
+                  "specialized_fields"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "established_year": {
+                    "type": "string"
+                  },
+                  "num_employees": {
+                    "type": "string"
+                  },
+                  "headquarters_address": {
+                    "type": "string"
+                  },
+                  "contact_address": {
+                    "type": "string"
+                  },
+                  "contact_phone": {
+                    "type": "string"
+                  },
+                  "contact_email": {
+                    "type": "string"
+                  },
+                  "specialized_fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "website_url": {
+                    "type": "string"
+                  },
+                  "skills_pass_rate": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/hr-organization-profile/{hro_id}": {
+      "put": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Update HRO profile (Express)",
+        "operationId": "hr_organization_profile_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "hro_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "established_year",
+                  "num_employees",
+                  "headquarters_address",
+                  "contact_address",
+                  "contact_phone",
+                  "contact_email",
+                  "specialized_fields"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "established_year": {
+                    "type": "string"
+                  },
+                  "num_employees": {
+                    "type": "string"
+                  },
+                  "headquarters_address": {
+                    "type": "string"
+                  },
+                  "contact_address": {
+                    "type": "string"
+                  },
+                  "contact_phone": {
+                    "type": "string"
+                  },
+                  "contact_email": {
+                    "type": "string"
+                  },
+                  "specialized_fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "website_url": {
+                    "type": "string"
+                  },
+                  "skills_pass_rate": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Hr-organization"
+        ],
+        "summary": "Detail HRO profile",
+        "operationId": "hr_organization_profile_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "hro_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/insurance-enrollment": {
+      "get": {
+        "tags": [
+          "Master"
+        ],
+        "summary": "List insurance enrollment options",
+        "operationId": "insurance_enrollment_index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/job-type": {
+      "get": {
+        "tags": [
+          "Job"
+        ],
+        "summary": "List required for search for job & HR",
+        "operationId": "job_index",
+        "security": [],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "description": "Laravel enum [1,2]; Express cho phép thêm 3",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": [
+                    {
+                      "id": 1,
+                      "name_en": "Tokyo",
+                      "name_ja": "Tokyo"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/job-types": {
+      "get": {
+        "tags": [
+          "Job"
+        ],
+        "summary": "List job types by multiple type ids (Express)",
+        "operationId": "job_types_multiple",
+        "security": [],
+        "parameters": [
+          {
+            "name": "types",
+            "in": "query",
+            "description": "Comma-separated, e.g. 1,2",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/notification": {
+      "get": {
+        "tags": [
+          "Notification"
+        ],
+        "summary": "List Notification (distribution only, current user)",
+        "operationId": "notification_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Notification"
+        ],
+        "summary": "Create distribution notification (super_admin)",
+        "operationId": "notification_create",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      }
+    },
+    "/notification/distribution/other": {
+      "get": {
+        "tags": [
+          "Notification"
+        ],
+        "summary": "Distribution notifications + unread (no conversation counts)",
+        "operationId": "Notification_other",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      }
+    },
+    "/notification/{id}": {
+      "put": {
+        "tags": [
+          "Notification"
+        ],
+        "summary": "Update notification (mark read)",
+        "operationId": "notification_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ]
+      }
+    },
+    "/residence-applications": {
+      "get": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "List residence applications + stats",
+        "operationId": "residence_application_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "review_requested",
+                "under_review",
+                "approved",
+                "revision_required"
+              ]
+            }
+          },
+          {
+            "name": "application_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "certificate_of_eligibility",
+                "change_of_status"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company_id",
+            "in": "query",
+            "description": "Chỉ super_admin filter theo company",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 15
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data.list` (result + pagination), `data.stats`"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Create draft application + init application documents",
+        "operationId": "residence_application_store",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "hr_id",
+                  "application_type"
+                ],
+                "properties": {
+                  "hr_id": {
+                    "type": "integer"
+                  },
+                  "application_type": {
+                    "type": "string",
+                    "enum": [
+                      "certificate_of_eligibility",
+                      "change_of_status"
+                    ]
+                  },
+                  "support_organization_id": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — body `code` 201 (Laravel-style business code)"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}": {
+      "get": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Residence application detail (+ previous_documents_for_apply per doc)",
+        "operationId": "residence_application_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "403": {
+            "description": "No access / not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Update draft application (metadata only)",
+        "operationId": "residence_application_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "support_organization_id": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "planned_submission_to_immigration_at": {
+                    "type": "string",
+                    "format": "date",
+                    "nullable": true
+                  },
+                  "created_by_name": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "contact_info": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "reviewed_by_name": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not draft / not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Delete application (draft or review_requested only)",
+        "operationId": "residence_application_destroy",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Status not allowed for delete"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/submit": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Submit for review (draft or revision_required)",
+        "operationId": "residence_application_submit",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Missing required uploads / invalid status"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/start-review": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Start review (support | super_admin)",
+        "operationId": "residence_application_start_review",
+        "description": "Route `authorizeUserTypes(support, super_admin)`.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "422": {
+            "description": "Status must be review_requested"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents": {
+      "get": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "List application documents (per checklist row)",
+        "operationId": "residence_application_documents_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "residence_application id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` array of application documents"
+          },
+          "403": {
+            "description": "No access"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/{documentId}/upload": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Upload file to one application document",
+        "operationId": "residence_application_document_upload",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "application_documents.id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "PDF / JPEG / PNG, max 10MB"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — body `code` 201"
+          },
+          "422": {
+            "description": "Invalid file"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/{documentId}/apply-previous": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Copy files from previous application document (過去データから適用)",
+        "operationId": "residence_application_document_apply_previous",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "previous_document_id"
+                ],
+                "properties": {
+                  "previous_document_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — body `code` 201, full application payload"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/files/{fileId}": {
+      "delete": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Remove uploaded file from this application",
+        "operationId": "residence_application_document_remove_file",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "residence_uploaded_files.id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "File not found for this application"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/{documentId}/approve": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Approve one document (support | super_admin)",
+        "operationId": "residence_application_document_approve",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — `data` array of all documents"
+          },
+          "422": {
+            "description": "Invalid application status"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/{documentId}/request-revision": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Request revision for one document (support | super_admin)",
+        "operationId": "residence_application_document_request_revision",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — `data` array of all documents"
+          }
+        }
+      }
+    },
+    "/residence-applications/{id}/documents/{documentId}/review-comments": {
+      "post": {
+        "tags": [
+          "Residence application"
+        ],
+        "summary": "Add review comment on a document (support | super_admin)",
+        "operationId": "residence_application_document_review_comment",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "body"
+                ],
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — body `code` 201"
+          }
+        }
+      }
+    },
+    "/residency-status": {
+      "get": {
+        "tags": [
+          "Master"
+        ],
+        "summary": "List residency status",
+        "operationId": "residency_status_index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/s3/signed-url/{path}": {
+      "get": {
+        "tags": [
+          "S3"
+        ],
+        "summary": "Pre-signed GET URL for an S3 object (by key)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "description": "Object key (may include slashes), e.g. Hr/20260508/file.jpg",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 200
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing key"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Could not generate URL (no bucket / invalid key / deny)"
+          }
+        }
+      }
+    },
+    "/support-organization": {
+      "get": {
+        "tags": [
+          "Support Organization"
+        ],
+        "summary": "List Support Organization",
+        "operationId": "support_organization_index",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_search",
+            "in": "query",
+            "description": "Search by full_name, mail_address, mail_address2, mail_address3",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "CONFIRM=2, STOP_USING=4",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Send request success"
+          },
+          "401": {
+            "description": "Login false"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Support Organization"
+        ],
+        "summary": "Create Support Organization",
+        "operationId": "Support_Organization_create",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organization_name": {
+                    "type": "string",
+                    "example": "zxc"
+                  },
+                  "organization_name_furigana": {
+                    "type": "string"
+                  },
+                  "address1": {
+                    "type": "string"
+                  },
+                  "address2": {
+                    "type": "string"
+                  },
+                  "tel": {
+                    "type": "string"
+                  },
+                  "user_name1": {
+                    "type": "string"
+                  },
+                  "mail_address": {
+                    "type": "string"
+                  },
+                  "user_name2": {
+                    "type": "string"
+                  },
+                  "mail_address2": {
+                    "type": "string"
+                  },
+                  "user_name3": {
+                    "type": "string"
+                  },
+                  "mail_address3": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "representative": {
+                    "type": "string"
+                  },
+                  "full_name": {
+                    "type": "string"
+                  },
+                  "full_name_furigana": {
+                    "type": "string"
+                  },
+                  "representative_tel": {
+                    "type": "string"
+                  },
+                  "contact_person": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Create success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/support-organization/{id}": {
+      "get": {
+        "tags": [
+          "Support Organization"
+        ],
+        "summary": "Detail Support Organization",
+        "operationId": "support_organization_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Support Organization"
+        ],
+        "summary": "Update Support Organization",
+        "operationId": "Support_Organization_update",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "organization_name": {
+                    "type": "string"
+                  },
+                  "organization_name_furigana": {
+                    "type": "string"
+                  },
+                  "address1": {
+                    "type": "string"
+                  },
+                  "address2": {
+                    "type": "string"
+                  },
+                  "tel": {
+                    "type": "string"
+                  },
+                  "user_name1": {
+                    "type": "string"
+                  },
+                  "mail_address": {
+                    "type": "string"
+                  },
+                  "user_name2": {
+                    "type": "string"
+                  },
+                  "mail_address2": {
+                    "type": "string"
+                  },
+                  "user_name3": {
+                    "type": "string"
+                  },
+                  "mail_address3": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "representative": {
+                    "type": "string"
+                  },
+                  "full_name": {
+                    "type": "string"
+                  },
+                  "full_name_furigana": {
+                    "type": "string"
+                  },
+                  "representative_tel": {
+                    "type": "string"
+                  },
+                  "contact_person": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Support Organization"
+        ],
+        "summary": "Delete Support Organization (Express)",
+        "operationId": "Support_Organization_delete",
+        "description": "Chưa có trong Laravel OA; JWT + super_admin trên Express.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delete success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "tags": [
+          "Upload File"
+        ],
+        "summary": "Add new file",
+        "operationId": "upload_file_create",
+        "description": "Laravel `@OA` yêu cầu auth; Express JWT tùy chọn.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "model_file": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2,
+                      3
+                    ]
+                  },
+                  "skill_file": {
+                    "type": "boolean"
+                  },
+                  "position": {
+                    "type": "string",
+                    "enum": [
+                      "front",
+                      "back"
+                    ]
+                  },
+                  "ai_type": {
+                    "type": "string",
+                    "enum": [
+                      "ai",
+                      "normal"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Send request success",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {
+                    "id": 1,
+                    "file_name": "......"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/upload-many": {
+      "post": {
+        "tags": [
+          "Upload File"
+        ],
+        "summary": "Upload multiple files (Express)",
+        "operationId": "upload_file_many",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "files"
+                ],
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  },
+                  "model_file": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/ai-generate": {
+      "post": {
+        "tags": [
+          "Upload File"
+        ],
+        "summary": "AI generate from upload (Express)",
+        "operationId": "upload_ai_generate",
+        "description": "Multipart; field `type` bắt buộc (xem `UploadFileConstants`). JWT tùy chọn.",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "model_file": {
+                    "type": "string"
+                  },
+                  "file_id_other": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": [
+          "User"
+        ],
+        "summary": "Admin list users (Express)",
+        "operationId": "users_index_admin",
+        "description": "JWT + super_admin. Query theo `UserRequest.validateIndexUser`.",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/update-status-company": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "Company register",
+        "operationId": "company_register",
+        "description": "Laravel `@OA` dùng query params; Express nhận JSON body (`company_id`, `status`).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "Status:\n- `1`: EXAMINATION_PENDING\n- `2`: CONFIRM\n- `3`: REJECT\n- `4`: STOP_USING\n",
+            "schema": {
+              "$ref": "#/components/schemas/UserStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-status-hr": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "Hr organization register",
+        "operationId": "hr_register",
+        "description": "Laravel `@OA` dùng query params; Express nhận JSON body (`hr_id`, `status`).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "hr_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "Status:\n- `1`: EXAMINATION_PENDING\n- `2`: CONFIRM\n- `3`: REJECT\n- `4`: STOP_USING\n",
+            "schema": {
+              "$ref": "#/components/schemas/UserStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/update-status-support": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "Support organization register",
+        "operationId": "support_register",
+        "description": "Laravel `@OA` dùng query params; Express nhận JSON body (`support_id`, `status` ∈ 2,4,5).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "support_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "Status:\n- `2`: CONFIRM\n- `4`: STOP_USING\n- `5`: DELETE_USING\n",
+            "schema": {
+              "$ref": "#/components/schemas/UserStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gửi yêu cầu thành công",
+            "content": {
+              "application/json": {
+                "example": {
+                  "code": 200,
+                  "data": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/report/dashboard": {
+      "get": {
+        "tags": [
+          "User"
+        ],
+        "summary": "List user dashboard",
+        "operationId": "user_dashboard",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "response success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Từ chối quyền truy cập"
+          }
+        }
+      }
+    },
+    "/user/info/dashboard": {
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "summary": "List info dashboard",
+        "operationId": "infoDashboard",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "company_id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "example": 2
+                  },
+                  "sort_order": {
+                    "type": "array",
+                    "nullable": true,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "dashboard_name": {
+                          "type": "string",
+                          "enum": [
+                            "hrTeam",
+                            "hrNationality",
+                            "hrResidenceStatus",
+                            "hrReferral",
+                            "hrCustomer",
+                            "entryStatus"
+                          ]
+                        },
+                        "field": {
+                          "type": "string",
+                          "enum": [
+                            "percentage",
+                            "total",
+                            "name"
+                          ]
+                        },
+                        "sort_by": {
+                          "type": "string",
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Response success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/work": {
+      "get": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Danh sách tin tuyển dụng",
+        "operationId": "work_index",
+        "description": "JWT — mọi user đăng nhập. Scope repository:\n- **company**: chỉ job của `works.user_id` = user hiện tại.\n- **hr / hr_manager**: chỉ job `status` = đang tuyển và không phải private (`public` ≠ 0).\n- **company_manager**: không lọc `user_id` (thấy rộng như Laravel repository).\nHỗ trợ `search` hoặc `key_search` (alias).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Lọc theo `works.public` (0 private / 1 public).",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ]
+            }
+          },
+          {
+            "name": "company_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "major_classification_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "form_of_employment",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key_search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "field[]",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "description": "Lặp query — nhiều cột sort (thứ tự giữ nguyên). Giá trị khớp Laravel:\nid, title, company_name, public, status, job_type, cities, countries, residency_status, age, entry_count, updated_at, created_at\n(cities/countries/residency_status: sort theo tên từ pivot id nhỏ nhất, khớp Laravel).\n",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Một hướng asc|desc cho toàn bộ orderBy (nullable → asc).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` có `result` + `pagination` + `summaryWork` (đếm theo `works.public`, khớp Laravel).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkListPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Tạo tin tuyển dụng",
+        "operationId": "work_store",
+        "description": "JWT — **company** hoặc **company_manager** (`AuthorizeUserTypes`).",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — `data` là work đã tạo + relations."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Xóa một hoặc nhiều tin tuyển dụng",
+        "operationId": "work_delete",
+        "description": "JWT — company | company_manager. Body JSON `{ \"ids\": [1,2] }` hoặc query `ids` / `ids[]`.\nCó entry liên quan → HTTP 422.\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "description": "Có thể truyền lặp `ids` hoặc `ids[]` tùy client.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "style": "form",
+            "explode": true
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkDestroyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delete success — `data` thường null, `message` trong body."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Không xóa được (đang có entry / hiring)."
+          }
+        }
+      }
+    },
+    "/work/{id}": {
+      "get": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Chi tiết tin tuyển dụng",
+        "operationId": "work_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — object work + quan hệ (presigned URL ảnh nếu có)."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Không có quyền (private job, company ngừng, HR và job không recruiting, …)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Cập nhật tin tuyển dụng",
+        "operationId": "work_update",
+        "description": "Laravel dùng **POST** (không phải PUT). JWT — company | company_manager.\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/work/update-status-work/{id}": {
+      "post": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Cập nhật trạng thái public (ẩn/hiện) của tin",
+        "operationId": "work_update_status_work",
+        "description": "Laravel gán `request.status` vào cột **`works.public`**.\nChỉ **super_admin** hoặc **company** là đúng `user_id` tạo job (company_manager trên route có thể 403 — khớp PHP repository).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkUpdatePublicBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Không đủ quyền hoặc sai user tạo job"
+          }
+        }
+      }
+    },
+    "/work-download/{id}": {
+      "get": {
+        "tags": [
+          "Work"
+        ],
+        "summary": "Tải PDF mô tả tin tuyển dụng",
+        "operationId": "work_download_job_info",
+        "description": "Render HTML (EJS) + Puppeteer — tương đương DomPDF Laravel `pdf.work-detail`.\nThành công trả **application/pdf** (không phải JSON).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File PDF",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Không xem được job (private / HR …) — trả JSON lỗi như các API khác"
+          }
+        }
+      }
+    },
+    "/work-drafts": {
+      "get": {
+        "tags": [
+          "Work draft"
+        ],
+        "summary": "Danh sách nháp tin tuyển dụng",
+        "operationId": "work_draft_index",
+        "description": "JWT — **company** hoặc **company_manager**. Chỉ draft đang hoạt động (`work_id` null).\nScope: company → `user_id` match; company_manager → `company_id` match công ty; HR → không có dữ liệu.\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "description": "last_saved_at | created_at | updated_at | title | id",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "last_saved_at",
+                "created_at",
+                "updated_at",
+                "title",
+                "id"
+              ]
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success — `data` có `result` + `pagination`, mỗi item có `is_draft`, `day_created`, `day_last_saved`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkListPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Work draft"
+        ],
+        "summary": "Tạo nháp",
+        "operationId": "work_draft_store",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkDraftUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success — `data` là draft + relations (repo `showDetail`)."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "422": {
+            "description": "Validation / super_admin thiếu `company_id`"
+          }
+        }
+      }
+    },
+    "/work-drafts/{id}": {
+      "get": {
+        "tags": [
+          "Work draft"
+        ],
+        "summary": "Chi tiết nháp",
+        "operationId": "work_draft_show",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Company chỉ xem draft của đúng `user_id` (policy Laravel)."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Work draft"
+        ],
+        "summary": "Cập nhật nháp",
+        "operationId": "work_draft_update",
+        "description": "Nếu body có `work_id` (truthy): chỉ cập nhật cột đó rồi trả detail (nhánh Laravel publish/link job).\nField `images` có trong body → đồng bộ file pivot (thêm/gỡ ảnh).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkDraftUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Work draft"
+        ],
+        "summary": "Xóa nháp",
+        "operationId": "work_draft_destroy",
+        "description": "Draft đã gán `work_id` (đã publish) chỉ **super_admin** được xóa (422 nếu không đủ quyền — Laravel tương đương).\n",
+        "security": [
+          {
+            "auth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delete success — `data` thường null."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Không xóa được draft đã publish (non-admin)"
+          }
+        }
+      }
+    }
+  }
+}

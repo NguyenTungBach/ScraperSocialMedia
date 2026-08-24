@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+# Storage
+public/storage/
+storage/logs/*
+!storage/logs/.gitkeep
+storage/app/*
+!storage/app/.gitkeep
+# Environment variables
+.env
+.env.test
+.env.local
+.env.*.local
+
+# nyc test coverage
+.nyc_output
+
+# Build
+dist/
+build/

@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info:
+  title: ScraperSocialMedia API (Express)
+  version: 1.0.0
+  description: |
+    OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.
+
+    Khai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).
+
+tags:
+  - name: Auth
+  - name: Scraper

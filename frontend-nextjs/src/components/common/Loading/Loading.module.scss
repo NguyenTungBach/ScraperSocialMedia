@@ -1,0 +1,27 @@
+/* Vue2 App.vue: b-icon clock + animation="cylon", .icon-loading ($main #FF765E, ~50px) */
+.clock {
+  width: 50px;
+  height: 50px;
+  color: #ff765e;
+  animation: cylon 1.1s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes cylon {
+  0%,
+  100% {
+    transform: rotate(-28deg);
+  }
+
+  50% {
+    transform: rotate(28deg);
+  }
+}
+
+.text {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #3f3f3f;
+}
+
