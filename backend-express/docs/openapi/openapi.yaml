@@ -9,4 +9,7 @@ info:
 
 tags:
   - name: Auth
+  - name: Subjects
   - name: Scraper
+  - name: SocialPosts
+  - name: Alerts

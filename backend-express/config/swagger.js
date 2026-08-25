@@ -64,7 +64,7 @@ const defaultDefinition = {
     info: {
         title: 'ScraperSocialMedia API',
         version: '1.0.0',
-        description: 'ScraperSocialMedia Backend API — Auth + Apify Facebook Scraper',
+        description: 'ScraperSocialMedia Backend API — Gemini subjects, Apify scraper, social_posts aggregate, Gmail alerts',
         contact: {
             name: 'ScraperSocialMedia'
         },

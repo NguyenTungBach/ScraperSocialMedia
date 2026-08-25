@@ -49,14 +49,59 @@ class ApifyService {
         return { run, items, input };
     }
 
-    async getRun(runId) {
+    /**
+     * Danh sách lịch sử Actor runs trên Apify (tương đương console.apify.com/actors/runs).
+     */
+    async listActorRuns({ limit = 20, offset = 0, status = null, desc = true } = {}) {
         const client = this.getClient();
-        return client.run(runId).get();
+        const options = {
+            limit: Math.min(Math.max(Number(limit) || 20, 1), 100),
+            offset: Math.max(Number(offset) || 0, 0),
+            desc: desc !== false,
+        };
+        if (status) {
+            options.status = status;
+        }
+
+        const result = await client.actor(this.actorId).runs().list(options);
+        const items = (result.items || []).map((run) => ({
+            ...run,
+            console_url: `https://console.apify.com/actors/${run.actId || this.actorId}/runs/${run.id}`,
+            dataset_url: run.defaultDatasetId
+                ? `https://console.apify.com/storage/datasets/${run.defaultDatasetId}`
+                : null,
+        }));
+
+        return {
+            items,
+            total: result.total ?? items.length,
+            count: result.count ?? items.length,
+            offset: result.offset ?? options.offset,
+            limit: result.limit ?? options.limit,
+            actor_id: this.actorId,
+        };
     }
 
-    async getRunItems(runId) {
+    async getRun(runId) {
         const client = this.getClient();
         const run = await client.run(runId).get();
+        if (!run) {
+            throw createError(404, `Apify run not found: ${runId}`);
+        }
+        return run;
+    }
+
+    /**
+     * Lấy dataset items của một Apify run đã có (không chạy Actor mới → không tốn credit scrape).
+     */
+    async getRunItems(runId) {
+        const client = this.getClient();
+        const run = await this.getRun(runId);
+
+        if (!run.defaultDatasetId) {
+            throw createError(400, `Apify run ${runId} has no dataset yet (status: ${run.status})`);
+        }
+
         const { items } = await client.dataset(run.defaultDatasetId).listItems();
         return { run, items };
     }

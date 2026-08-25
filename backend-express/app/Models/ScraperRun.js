@@ -5,13 +5,15 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
     class ScraperRun extends Model {
         static associate(models) {
-            ScraperRun.belongsTo(models.Subject, {
-                foreignKey: 'subject_id',
-                as: 'subject',
-            });
-            ScraperRun.hasMany(models.SocialPost, {
+            ScraperRun.belongsToMany(models.Subject, {
+                through: models.SubjectScraperRun,
                 foreignKey: 'scraper_run_id',
-                as: 'posts',
+                otherKey: 'subject_id',
+                as: 'subjects',
+            });
+            ScraperRun.hasMany(models.SubjectScraperRun, {
+                foreignKey: 'scraper_run_id',
+                as: 'subjectScraperRuns',
             });
         }
     }
@@ -19,17 +21,21 @@ module.exports = (sequelize, DataTypes) => {
     ScraperRun.init(
         {
             id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
-            source: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'apify' },
-            external_run_id: { type: DataTypes.STRING(255), allowNull: false },
-            scraper_id: { type: DataTypes.STRING(255), allowNull: true },
             platform: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'facebook' },
-            subject_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
-            status: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'RUNNING' },
-            input: { type: DataTypes.JSON, allowNull: true },
-            items_count: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
-            started_at: { type: DataTypes.DATE, allowNull: true },
-            finished_at: { type: DataTypes.DATE, allowNull: true },
-            error_message: { type: DataTypes.TEXT, allowNull: true },
+            platform_post_id: { type: DataTypes.STRING(255), allowNull: false },
+            post_url: { type: DataTypes.STRING(255), allowNull: true },
+            title: { type: DataTypes.STRING(255), allowNull: true },
+            text: { type: DataTypes.TEXT, allowNull: true },
+            likes: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            comments: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            shares: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            angry_count: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            posted_at: { type: DataTypes.DATE, allowNull: true },
+            scraped_at: { type: DataTypes.DATE, allowNull: true },
+            source: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'apify' },
+            external_run_id: { type: DataTypes.STRING(255), allowNull: true },
+            scraper_id: { type: DataTypes.STRING(255), allowNull: true },
+            raw_data: { type: DataTypes.JSON, allowNull: false },
         },
         {
             sequelize,
@@ -40,7 +46,7 @@ module.exports = (sequelize, DataTypes) => {
             createdAt: 'created_at',
             updatedAt: 'updated_at',
             indexes: [
-                { unique: true, fields: ['source', 'external_run_id'] },
+                { unique: true, fields: ['platform', 'platform_post_id'] },
             ],
         }
     );

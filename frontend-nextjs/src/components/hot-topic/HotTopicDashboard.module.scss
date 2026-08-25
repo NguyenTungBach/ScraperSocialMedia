@@ -507,17 +507,20 @@ $st-red: #dc2626;
 
 .barsContainer {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  align-items: stretch;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 12px;
   height: 280px;
-  padding-bottom: 0;
+  padding: 0 8px;
   position: relative;
   z-index: 1;
+  overflow-x: auto;
 }
 
 .barColumn {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 72px;
+  width: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -526,17 +529,44 @@ $st-red: #dc2626;
   position: relative;
 }
 
+.barTrack {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+}
+
+.barGrow {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+}
+
 .barValue {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
   font-size: 0.7rem;
   font-weight: 700;
   color: $st-blue;
-  margin-bottom: 4px;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .bar {
   width: 100%;
-  max-width: 48px;
+  max-width: 40px;
   background: $st-blue;
   border-radius: 4px 4px 0 0;
   transition: background 0.15s, opacity 0.15s;
@@ -558,7 +588,8 @@ $st-red: #dc2626;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  max-width: 64px;
+  width: 100%;
+  max-width: 72px;
 }
 
 .thumbnail {
@@ -909,6 +940,20 @@ $st-red: #dc2626;
   text-align: center;
   color: $st-muted;
   font-size: 0.9375rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.spin {
+  animation: hotTopicSpin 0.8s linear infinite;
+}
+
+@keyframes hotTopicSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loadMoreBtn {
@@ -1063,11 +1108,13 @@ $st-red: #dc2626;
 
   .barsContainer {
     overflow-x: auto;
-    gap: 6px;
+    gap: 8px;
+    padding: 0 4px;
   }
 
   .barColumn {
-    min-width: 56px;
+    flex: 0 0 56px;
+    width: 56px;
   }
 
   .supportWidget {

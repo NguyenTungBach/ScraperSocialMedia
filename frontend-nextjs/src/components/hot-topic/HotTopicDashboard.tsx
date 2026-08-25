@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   Calendar,
@@ -11,6 +11,7 @@ import {
   Film,
   Globe,
   Grid3X3,
+  Loader2,
   MessageCircle,
   Music,
   Newspaper,
@@ -23,16 +24,27 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
+import { getApiErrorMessage } from '@/lib/api/client';
 import {
-  CHART_TOPICS,
-  HOT_TOPICS,
+  socialPostsApi,
+  type SocialPostItem,
+  type SocialPostSortBy,
+  type SocialPostStats,
+} from '@/lib/api/socialPosts';
+import {
   TOPIC_CATEGORIES,
+  colorForId,
+  formatDateRangeLabel,
   formatMetric,
+  formatScore,
+  formatShortDate,
+  type ChartTopic,
   type HotTopic,
   type RankedBy,
   type TopicCategory,
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
+import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -50,6 +62,91 @@ const RANKED_BY_LABELS: Record<RankedBy, string> = {
   sentiment: 'Cảm Xúc',
 };
 
+const RANKED_BY_TO_SORT: Record<RankedBy, SocialPostSortBy> = {
+  discussion: 'discussion',
+  interaction: 'interaction',
+  sentiment: 'sentiment',
+};
+
+const PAGE_SIZE = 20;
+
+function mapToHotTopic(item: SocialPostItem): HotTopic {
+  const title = item.subject?.name?.trim() || `Subject #${item.subject_id}`;
+  const nickName = item.subject?.normalized_name?.trim() || '';
+  return {
+    id: String(item.id),
+    subjectId: item.subject_id || item.subject?.id || 0,
+    rank: item.rank,
+    title,
+    nickName,
+    category: 'social-news',
+    categoryLabel: nickName ? `Biệt danh: ${nickName}` : 'Đối tượng theo dõi',
+    isNew: item.is_new,
+    thumbnailColor: colorForId(item.id),
+    discussion: item.discussion,
+    discussionTrend: item.trend_direction,
+    interaction: item.interaction,
+    sentiment: item.sentiment,
+    hotScore: item.hot_score,
+    trendScore: item.trend_score,
+    likes: item.likes,
+    comments: item.comments,
+    shares: item.shares,
+    angryCount: item.angry_count,
+    postsCount: item.posts_count,
+    startDate: formatShortDate(item.created_at || item.computed_at),
+  };
+}
+
+function mapToChartTopic(item: SocialPostItem): ChartTopic {
+  const topic = mapToHotTopic(item);
+  return {
+    id: topic.id,
+    title: topic.title,
+    discussion: topic.discussion,
+    interaction: topic.interaction,
+    sentiment: topic.sentiment,
+    hotScore: topic.hotScore,
+    trendScore: topic.trendScore,
+    thumbnailColor: topic.thumbnailColor,
+    rank: topic.rank,
+    categoryLabel: topic.categoryLabel,
+    startDate: topic.startDate,
+    discussionTrend: topic.discussionTrend,
+  };
+}
+
+function chartTopicToHotTopic(item: ChartTopic): HotTopic {
+  return {
+    id: item.id,
+    subjectId: 0,
+    rank: item.rank,
+    title: item.title,
+    nickName: '',
+    category: 'social-news',
+    categoryLabel: item.categoryLabel,
+    thumbnailColor: item.thumbnailColor,
+    discussion: item.discussion,
+    discussionTrend: item.discussionTrend,
+    interaction: item.interaction,
+    sentiment: item.sentiment,
+    hotScore: item.hotScore,
+    trendScore: item.trendScore,
+    likes: 0,
+    comments: 0,
+    shares: 0,
+    angryCount: 0,
+    postsCount: 0,
+    startDate: item.startDate,
+  };
+}
+
+function chartValue(topic: ChartTopic, rankedBy: RankedBy): number {
+  if (rankedBy === 'interaction') return topic.interaction;
+  if (rankedBy === 'sentiment') return Math.max(topic.sentiment, 0) * 100;
+  return topic.discussion;
+}
+
 function SentimentFace({ value }: { value: number }) {
   const tone =
     value >= 0.3 ? styles.sentimentPositive : value <= -0.1 ? styles.sentimentNegative : styles.sentimentNeutral;
@@ -63,19 +160,20 @@ function SentimentFace({ value }: { value: number }) {
 
 function TopicThumbnail({ color, title }: { color: string; title: string }) {
   const initials = title
-    .split(' ')
+    .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
     .map((w) => w[0])
     .join('')
     .toUpperCase();
   return (
     <div className={styles.thumbnail} style={{ backgroundColor: color }} aria-hidden>
-      {initials}
+      {initials || '?'}
     </div>
   );
 }
 
-function ChartTooltip({ topic }: { topic: HotTopic }) {
+function ChartTooltip({ topic, rankedBy }: { topic: HotTopic; rankedBy: RankedBy }) {
   return (
     <div className={styles.chartTooltip}>
       <div className={styles.chartTooltipHeader}>
@@ -87,32 +185,45 @@ function ChartTooltip({ topic }: { topic: HotTopic }) {
         </div>
       </div>
       <div className={styles.chartTooltipMeta}>
-        {topic.startDate} - Hiện tại
+        {topic.startDate} - Hiện tại · theo {RANKED_BY_LABELS[rankedBy]}
       </div>
       <div className={styles.chartTooltipStats}>
         <div>
-          <span>Thảo Luận</span>
+          <span>Thảo luận</span>
           <strong>{formatMetric(topic.discussion)}</strong>
         </div>
         <div>
-          <span>Tương Tác</span>
+          <span>Tương tác</span>
           <strong>{formatMetric(topic.interaction)}</strong>
         </div>
         <div>
-          <span>Chỉ số cảm xúc</span>
+          <span>Cảm xúc</span>
           <strong className={topic.sentiment >= 0 ? styles.positive : styles.negative}>
             {topic.sentiment.toFixed(2).replace('.', ',')}
           </strong>
         </div>
       </div>
-      <button type="button" className={styles.viewAnalysisBtn}>
-        Xem phân tích
-      </button>
+      <div className={styles.chartTooltipStats}>
+        <div>
+          <span>Hot score</span>
+          <strong>{formatScore(topic.hotScore)}</strong>
+        </div>
+        <div>
+          <span>Trend score</span>
+          <strong>{formatScore(topic.trendScore)}</strong>
+        </div>
+      </div>
     </div>
   );
 }
 
-function RankingRow({ topic }: { topic: HotTopic }) {
+function RankingRow({
+  topic,
+  onOpenDetail,
+}: {
+  topic: HotTopic;
+  onOpenDetail: (topic: HotTopic) => void;
+}) {
   return (
     <article className={styles.rankingRow}>
       <div className={styles.rankNumber}>{topic.rank}</div>
@@ -134,10 +245,10 @@ function RankingRow({ topic }: { topic: HotTopic }) {
           <span className={styles.metricValue}>
             {formatMetric(topic.discussion)}
             {topic.discussionTrend === 'up' && (
-              <TrendingUp size={14} className={styles.trendUp} aria-label="Tăng" />
+              <TrendingUp size={14} className={styles.trendUp} aria-label="Uptrend" />
             )}
             {topic.discussionTrend === 'down' && (
-              <TrendingDown size={14} className={styles.trendDown} aria-label="Giảm" />
+              <TrendingDown size={14} className={styles.trendDown} aria-label="Downtrend" />
             )}
           </span>
         </div>
@@ -153,22 +264,34 @@ function RankingRow({ topic }: { topic: HotTopic }) {
           </span>
         </div>
         <div className={styles.metricItem}>
-          <span className={styles.metricLabel}>Thương hiệu đang sát trend</span>
+          <span className={styles.metricLabel}>Hot / Trend score</span>
           <div className={styles.brandList}>
-            {topic.brands.map((brand) => (
-              <span key={brand} className={styles.brandChip} title={brand}>
-                {brand.slice(0, 2).toUpperCase()}
-              </span>
-            ))}
+            <span className={styles.brandChip} title={`Hot score: ${formatScore(topic.hotScore)}`}>
+              H {formatScore(topic.hotScore)}
+            </span>
+            <span className={styles.brandChip} title={`Trend score: ${formatScore(topic.trendScore)}`}>
+              T {formatScore(topic.trendScore)}
+            </span>
           </div>
         </div>
       </div>
 
-      <button type="button" className={styles.rowActionBtn}>
-        Xem phân tích
+      <button
+        type="button"
+        className={styles.rowActionBtn}
+        onClick={() => onOpenDetail(topic)}
+        disabled={!topic.subjectId}
+      >
+        Chi tiết
       </button>
     </article>
   );
+}
+
+function buildYAxisLabels(maxValue: number): string[] {
+  if (maxValue <= 0) return ['0', '0', '0', '0', '0', '0'];
+  const step = maxValue / 5;
+  return [5, 4, 3, 2, 1, 0].map((i) => formatMetric(Math.round(step * i)));
 }
 
 export function HotTopicDashboard() {
@@ -178,23 +301,111 @@ export function HotTopicDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [supportOpen, setSupportOpen] = useState(true);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  const maxDiscussion = useMemo(
-    () => Math.max(...CHART_TOPICS.map((t) => t.discussion)),
-    []
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<SocialPostStats | null>(null);
+  const [chartTopics, setChartTopics] = useState<ChartTopic[]>([]);
+  const [topics, setTopics] = useState<HotTopic[]>([]);
+  const [totalPages, setTotalPages] = useState(1);
+  const [periodLabel, setPeriodLabel] = useState(formatDateRangeLabel());
+  const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const openDetail = useCallback((topic: HotTopic) => {
+    if (!topic.subjectId) return;
+    setDetailSubjectId(topic.subjectId);
+    setDetailOpen(true);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
+    setDetailSubjectId(null);
+  }, []);
+
+  const loadDashboard = useCallback(
+    async (options?: { page?: number; append?: boolean }) => {
+      const nextPage = options?.page ?? 1;
+      const append = Boolean(options?.append);
+
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+
+      try {
+        const res = await socialPostsApi.getDashboard({
+          page: nextPage,
+          per_page: PAGE_SIZE,
+          sort_by: RANKED_BY_TO_SORT[rankedBy],
+          new_only: showNewOnly,
+          chart_limit: 10,
+        });
+
+        const data = res.data;
+        if (!data) {
+          throw new Error('Empty dashboard response');
+        }
+
+        setStats(data.stats);
+        if (!append) {
+          setChartTopics((data.chart || []).map(mapToChartTopic));
+        }
+
+        const mapped = (data.ranking || []).map(mapToHotTopic);
+        setTopics((prev) => (append ? [...prev, ...mapped] : mapped));
+        setPage(data.pagination?.current_page ?? nextPage);
+        setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
+
+        const latestComputed =
+          data.chart?.[0]?.computed_at ||
+          data.ranking?.[0]?.computed_at ||
+          data.ranking?.[0]?.updated_at ||
+          null;
+        setPeriodLabel(formatDateRangeLabel(latestComputed));
+      } catch (err) {
+        setError(getApiErrorMessage(err));
+        if (!append) {
+          setStats(null);
+          setChartTopics([]);
+          setTopics([]);
+        }
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [rankedBy, showNewOnly]
   );
 
+  useEffect(() => {
+    setPage(1);
+    void loadDashboard({ page: 1, append: false });
+  }, [loadDashboard]);
+
+  const maxChartValue = useMemo(() => {
+    if (chartTopics.length === 0) return 1;
+    return Math.max(...chartTopics.map((t) => chartValue(t, rankedBy)), 1);
+  }, [chartTopics, rankedBy]);
+
+  const yAxisLabels = useMemo(() => buildYAxisLabels(maxChartValue), [maxChartValue]);
+
   const filteredTopics = useMemo(() => {
-    return HOT_TOPICS.filter((topic) => {
-      if (selectedCategory !== 'all' && topic.category !== selectedCategory) return false;
-      if (showNewOnly && !topic.isNew) return false;
-      return true;
-    });
-  }, [selectedCategory, showNewOnly]);
+    if (selectedCategory === 'all') return topics;
+    // API chưa có category thật — giữ UI nhóm chủ đề, lọc chỉ áp dụng khi chọn "Tất cả"
+    return topics;
+  }, [topics, selectedCategory]);
 
-  const hoveredTopic = HOT_TOPICS.find((t) => t.id === hoveredChartId) ?? HOT_TOPICS[0];
+  const hoveredTopic = useMemo(() => {
+    const fromRanking = topics.find((t) => t.id === hoveredChartId);
+    if (fromRanking) return fromRanking;
+    const chartMatch =
+      chartTopics.find((t) => t.id === hoveredChartId) || chartTopics[0] || null;
+    return chartMatch ? chartTopicToHotTopic(chartMatch) : null;
+  }, [topics, chartTopics, hoveredChartId]);
 
-  const yAxisLabels = ['100k', '80k', '60k', '40k', '20k', '0'];
+  const canLoadMore = page < totalPages;
 
   return (
     <div className={styles.dashboard}>
@@ -266,7 +477,7 @@ export function HotTopicDashboard() {
             </label>
             <button type="button" className={styles.datePicker}>
               <Calendar size={15} aria-hidden />
-              24 giờ trước
+              Snapshot gần nhất
             </button>
           </div>
         </div>
@@ -313,7 +524,9 @@ export function HotTopicDashboard() {
             </div>
             <div className={cn(styles.promoCard, styles.promoGuide)}>
               <div className={styles.videoThumb}>
-                <span className={styles.playBtn} aria-hidden>▶</span>
+                <span className={styles.playBtn} aria-hidden>
+                  ▶
+                </span>
                 <span className={styles.videoDuration}>20:35</span>
               </div>
               <div>
@@ -325,75 +538,110 @@ export function HotTopicDashboard() {
               <Sparkles size={28} className={styles.promoIcon} aria-hidden />
               <div>
                 <h3>Tóm tắt phương pháp luận</h3>
-                <p>Cách SocialTrend thu thập và phân tích dữ liệu MXH.</p>
+                <p>
+                  Hot = shares×3 + comments×2 + angry×4 + likes · Trend = likes + comments×2 +
+                  shares×3.
+                </p>
               </div>
             </div>
           </section>
+
+          {error && (
+            <div className={styles.emptyState} role="alert">
+              {error}
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className={styles.loadMoreBtn} onClick={() => loadDashboard()}>
+                  Thử lại
+                </button>
+              </div>
+            </div>
+          )}
 
           <section className={styles.chartSection}>
             <div className={styles.chartHeader}>
               <h2>Biểu đồ so sánh các chủ đề hot nhất trên mạng xã hội</h2>
-              <p>23/08/2026 - 24/08/2026 · Xếp hạng theo {RANKED_BY_LABELS[rankedBy]}</p>
+              <p>
+                {periodLabel} · Xếp hạng theo {RANKED_BY_LABELS[rankedBy]}
+              </p>
             </div>
 
-            <div className={styles.chartWrapper}>
-              <div className={styles.yAxis}>
-                {yAxisLabels.map((label) => (
-                  <span key={label}>{label}</span>
-                ))}
+            {loading && chartTopics.length === 0 ? (
+              <div className={styles.emptyState}>
+                <Loader2 size={20} className={styles.spin} aria-hidden /> Đang tải biểu đồ…
               </div>
-
-              <div className={styles.chartArea}>
-                <div className={styles.chartGrid}>
-                  {yAxisLabels.map((label) => (
-                    <div key={label} className={styles.gridLine} />
+            ) : chartTopics.length === 0 ? (
+              <div className={styles.emptyState}>Chưa có dữ liệu social posts để vẽ biểu đồ.</div>
+            ) : (
+              <div className={styles.chartWrapper}>
+                <div className={styles.yAxis}>
+                  {yAxisLabels.map((label, idx) => (
+                    <span key={`y-${idx}`}>{label}</span>
                   ))}
                 </div>
 
-                <div className={styles.barsContainer}>
-                  {CHART_TOPICS.map((item) => {
-                    const heightPct = (item.discussion / maxDiscussion) * 100;
-                    const isHovered = hoveredChartId === item.id;
-                    return (
-                      <div
-                        key={item.id}
-                        className={styles.barColumn}
-                        onMouseEnter={() => setHoveredChartId(item.id)}
-                        onMouseLeave={() => setHoveredChartId(null)}
-                      >
-                        <span className={styles.barValue}>{formatMetric(item.discussion)}</span>
-                        <div
-                          className={cn(styles.bar, isHovered && styles.barHovered)}
-                          style={{ height: `${heightPct}%` }}
-                        />
-                        <TopicThumbnail color={item.thumbnailColor} title={item.title} />
-                        <span className={styles.barLabel}>{item.title}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {hoveredChartId && (
-                  <div className={styles.tooltipAnchor}>
-                    <ChartTooltip topic={hoveredTopic} />
+                <div className={styles.chartArea}>
+                  <div className={styles.chartGrid}>
+                    {yAxisLabels.map((_, idx) => (
+                      <div key={`g-${idx}`} className={styles.gridLine} />
+                    ))}
                   </div>
-                )}
+
+                  <div className={styles.barsContainer}>
+                    {chartTopics.map((item) => {
+                      const value = chartValue(item, rankedBy);
+                      const heightPct = (value / maxChartValue) * 100;
+                      const isHovered = hoveredChartId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          className={styles.barColumn}
+                          onMouseEnter={() => setHoveredChartId(item.id)}
+                          onMouseLeave={() => setHoveredChartId(null)}
+                        >
+                          <div className={styles.barTrack}>
+                            <div className={styles.barGrow}>
+                              <span className={styles.barValue}>{formatMetric(value)}</span>
+                              <div
+                                className={cn(styles.bar, isHovered && styles.barHovered)}
+                                style={{ height: `${Math.max(heightPct, 2)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <TopicThumbnail color={item.thumbnailColor} title={item.title} />
+                          <span className={styles.barLabel}>{item.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {hoveredChartId && hoveredTopic && (
+                    <div className={styles.tooltipAnchor}>
+                      <ChartTooltip topic={hoveredTopic} rankedBy={rankedBy} />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </section>
 
           <section className={styles.statsBar}>
-            <div className={styles.statCard}>
+            <div className={styles.statCard} title="Tổng số subject đã có social_posts">
               <span>Tổng số chủ đề</span>
-              <strong>120</strong>
+              <strong>{stats?.total ?? (loading ? '…' : 0)}</strong>
             </div>
-            <div className={cn(styles.statCard, styles.statUptrend)}>
+            <div
+              className={cn(styles.statCard, styles.statUptrend)}
+              title={stats?.definitions?.uptrend}
+            >
               <span>Uptrend</span>
-              <strong>30</strong>
+              <strong>{stats?.uptrend ?? (loading ? '…' : 0)}</strong>
             </div>
-            <div className={cn(styles.statCard, styles.statDowntrend)}>
+            <div
+              className={cn(styles.statCard, styles.statDowntrend)}
+              title={stats?.definitions?.downtrend}
+            >
               <span>Downtrend</span>
-              <strong>89</strong>
+              <strong>{stats?.downtrend ?? (loading ? '…' : 0)}</strong>
             </div>
           </section>
 
@@ -406,16 +654,29 @@ export function HotTopicDashboard() {
             </div>
 
             <div className={styles.rankingList}>
-              {filteredTopics.length === 0 ? (
+              {loading && topics.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <Loader2 size={20} className={styles.spin} aria-hidden /> Đang tải bảng xếp hạng…
+                </div>
+              ) : filteredTopics.length === 0 ? (
                 <div className={styles.emptyState}>Không có chủ đề phù hợp bộ lọc.</div>
               ) : (
-                filteredTopics.map((topic) => <RankingRow key={topic.id} topic={topic} />)
+                filteredTopics.map((topic) => (
+                  <RankingRow key={topic.id} topic={topic} onOpenDetail={openDetail} />
+                ))
               )}
             </div>
 
-            <button type="button" className={styles.loadMoreBtn}>
-              Xem thêm
-            </button>
+            {canLoadMore && (
+              <button
+                type="button"
+                className={styles.loadMoreBtn}
+                disabled={loadingMore}
+                onClick={() => loadDashboard({ page: page + 1, append: true })}
+              >
+                {loadingMore ? 'Đang tải…' : 'Xem thêm'}
+              </button>
+            )}
           </section>
         </main>
       </div>
@@ -444,6 +705,12 @@ export function HotTopicDashboard() {
           </a>
         </div>
       )}
+
+      <SubjectDetailModal
+        open={detailOpen}
+        subjectId={detailSubjectId}
+        onClose={closeDetail}
+      />
     </div>
   );
 }

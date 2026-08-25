@@ -31,7 +31,7 @@ module.exports = {
             source: {
                 type: Sequelize.STRING(255),
                 allowNull: false,
-                defaultValue: 'manual',
+                defaultValue: 'gemini',
             },
             created_at: {
                 type: Sequelize.DATE,

@@ -1,7 +1,7 @@
 {
   "name": "scraper-social-media-backend",
   "version": "1.0.0",
-  "description": "ScraperSocialMedia Backend API — Auth + Apify Facebook Scraper",
+  "description": "ScraperSocialMedia Backend — Gemini subjects, Apify scraper, social_posts, Gmail alerts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

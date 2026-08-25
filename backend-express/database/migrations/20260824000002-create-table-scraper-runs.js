@@ -10,6 +10,55 @@ module.exports = {
                 autoIncrement: true,
                 primaryKey: true,
             },
+            platform: {
+                type: Sequelize.STRING(255),
+                allowNull: false,
+                defaultValue: 'facebook',
+            },
+            platform_post_id: {
+                type: Sequelize.STRING(255),
+                allowNull: false,
+            },
+            post_url: {
+                type: Sequelize.STRING(255),
+                allowNull: true,
+            },
+            title: {
+                type: Sequelize.STRING(255),
+                allowNull: true,
+            },
+            text: {
+                type: Sequelize.TEXT,
+                allowNull: true,
+            },
+            likes: {
+                type: Sequelize.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            comments: {
+                type: Sequelize.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            shares: {
+                type: Sequelize.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            angry_count: {
+                type: Sequelize.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            posted_at: {
+                type: Sequelize.DATE,
+                allowNull: true,
+            },
+            scraped_at: {
+                type: Sequelize.DATE,
+                allowNull: true,
+            },
             source: {
                 type: Sequelize.STRING(255),
                 allowNull: false,
@@ -17,49 +66,15 @@ module.exports = {
             },
             external_run_id: {
                 type: Sequelize.STRING(255),
-                allowNull: false,
+                allowNull: true,
             },
             scraper_id: {
                 type: Sequelize.STRING(255),
                 allowNull: true,
             },
-            platform: {
-                type: Sequelize.STRING(255),
-                allowNull: false,
-                defaultValue: 'facebook',
-            },
-            subject_id: {
-                type: Sequelize.BIGINT.UNSIGNED,
-                allowNull: true,
-                references: { model: 'subjects', key: 'id' },
-                onUpdate: 'CASCADE',
-                onDelete: 'SET NULL',
-            },
-            status: {
-                type: Sequelize.STRING(255),
-                allowNull: false,
-                defaultValue: 'RUNNING',
-            },
-            input: {
+            raw_data: {
                 type: Sequelize.JSON,
-                allowNull: true,
-            },
-            items_count: {
-                type: Sequelize.INTEGER.UNSIGNED,
                 allowNull: false,
-                defaultValue: 0,
-            },
-            started_at: {
-                type: Sequelize.DATE,
-                allowNull: true,
-            },
-            finished_at: {
-                type: Sequelize.DATE,
-                allowNull: true,
-            },
-            error_message: {
-                type: Sequelize.TEXT,
-                allowNull: true,
             },
             created_at: {
                 type: Sequelize.DATE,
@@ -71,11 +86,12 @@ module.exports = {
             },
         });
 
-        await queryInterface.addIndex('scraper_runs', ['subject_id']);
+        await queryInterface.addIndex('scraper_runs', ['posted_at']);
+        await queryInterface.addIndex('scraper_runs', ['external_run_id']);
         await queryInterface.addIndex(
             'scraper_runs',
-            ['source', 'external_run_id'],
-            { unique: true, name: 'scraper_runs_source_external_run_id_unique' }
+            ['platform', 'platform_post_id'],
+            { unique: true, name: 'scraper_runs_platform_post_id_unique' }
         );
     },
 

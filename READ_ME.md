@@ -1,112 +1,62 @@
 # ScraperSocialMedia
 
-Hệ thống **thu thập bài viết mạng xã hội** theo đối tượng (tên người / chủ đề), tính điểm xu hướng, và (sau này) cảnh báo qua AI + Gmail/Telegram.
+Hệ thống **theo dõi đối tượng MXH**: Gemini lấy tên → Apify scrape bài → match subject → tổng hợp score → cảnh báo Gmail.
 
-## Hướng đi dự án
-
-### Mục tiêu demo (hiện tại)
-
-1. Lưu **đối tượng theo dõi** (`subjects`) — nhập tay hoặc sau này lấy từ Gemini.
-2. Gắn **2–3 trang Facebook** cho mỗi đối tượng (`monitor_sources`).
-3. **Crawl** qua Apify (có thể đổi provider khác — DB dùng `external_run_id`, không khóa Apify).
-4. Lưu bài vào `social_posts`, **dedup** theo `(platform, platform_post_id)`.
-5. Tính score bằng code:
-   - `trend_score = likes×1 + comments×2 + shares×3`
-   - `hot_score = shares×3 + comments×2 + angry×4 + likes×1`
-
-### Roadmap (chưa implement)
-
-| Giai đoạn | Nội dung |
-|-----------|----------|
-| Gemini | Lấy danh sách tên VN (4 tháng gần đây) → insert `subjects` |
-| AI gom tin | Nhóm bài cùng sự kiện trên nhiều trang → quyết định alert |
-| Đa nền tảng | YouTube, X qua `monitor_sources.platform` |
-| Alert | So ngưỡng → gửi Gmail/Telegram (chưa lưu DB lịch sử gửi) |
-
-### Luồng nghiệp vụ
+## Luồng nghiệp vụ
 
 ```
-[Gemini / manual]  →  subjects
-                           ↓
-                    monitor_sources (FB / YouTube / X URL)
-                           ↓
-                    scraper_runs (log crawl)
-                           ↓
-                    social_posts (+ trend_score, hot_score)
-                           ↓
-              [Gemini: gom tin + vượt ngưỡng?]  (sau)
-                           ↓
-              Gmail / Telegram API  (sau)
+[Gemini]  →  subjects
+                    ↑ match %name% / %normalized_name%
+[Apify]   →  scraper_runs  →  subjects_scraper_runs
+                                      ↓ SUM + công thức
+                                social_posts (1 row / subject)
+                                      ↓ hot & trend >= ngưỡng
+                                Gmail alert
 ```
 
-## Kiến trúc
+### Công thức
 
-| Thành phần | Công nghệ | Vai trò |
-|------------|-----------|---------|
-| **Backend** | Express.js (`backend-express`) | API scrape, lưu DB, auth |
-| **Frontend** | Next.js (`frontend-nextjs`) | UI quản lý (đang phát triển) |
-| **Database** | MySQL | `scraper_social_media` |
-| **Scraper** | Apify (mặc định) | Facebook Posts Scraper |
+- `trend_score = likes×1 + comments×2 + shares×3`
+- `hot_score = shares×3 + comments×2 + angry×4 + likes×1`
 
-## Database
+(Tính trên **tổng** engagement của các bài gắn với subject.)
 
-**Tên database:** `scraper_social_media` (cấu hình trong `backend-express/.env`).
-
-**4 bảng demo:**
+## Database (`scraper_social_media`)
 
 | Bảng | Mô tả |
 |------|--------|
-| `subjects` | Đối tượng theo dõi (tên, loại `person`/`topic`/`event`, nguồn `manual`/`gemini`) |
-| `monitor_sources` | URL crawl gắn subject (Facebook page/group, sau mở rộng YouTube/X) |
-| `scraper_runs` | Log mỗi lần crawl: `source`, `external_run_id`, `subject_id`, … |
-| `social_posts` | Bài viết chuẩn hóa + engagement + `trend_score` / `hot_score` + `raw_data` |
-
-**Dedup:** bài trùng `(platform, platform_post_id)` không insert lại — chỉ cập nhật engagement và score.
-
-**Migration:**
+| `subjects` | Đối tượng từ Gemini (`name`, `normalized_name`, …) |
+| `scraper_runs` | Mỗi dòng = 1 bài scrape (Apify) |
+| `subjects_scraper_runs` | N–N: subject ↔ bài khớp |
+| `social_posts` | Tổng hợp 1 subject / 1 row (`hot_score`, `trend_score`, …) |
 
 ```bash
 cd backend-express
 npm run db:migrate
 ```
 
-Undo / fresh:
-
-```bash
-npm run db:migrate:undo
-npm run db:fresh          # drop + create + migrate (xóa toàn bộ data)
-```
-
-## Yêu cầu
-
-- Node.js `>= 20`
-- MySQL (XAMPP local hoặc instance riêng)
-- Copy env: `backend-express/.env.example` → `.env`
-
 ## Cấu hình `.env` (chính)
 
 ```env
 DB_DATABASE=scraper_social_media
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USERNAME=root
-DB_PASSWORD=
 
-APP_PORT=3400
-
-# Apify — bắt buộc để crawl Facebook
 APIFY_API_TOKEN=
 APIFY_FACEBOOK_ACTOR_ID=KoJrdxJCTtpon81KY
 APIFY_FACEBOOK_RESULTS_LIMIT=5
 
-# Gemini — điền sau khi demo crawl ổn
-GEMINI_ENABLED=false
+GEMINI_ENABLED=true
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.0-flash
 
-# Ngưỡng alert (dùng khi bật AI/code alert)
 ALERT_TREND_THRESHOLD=500
 ALERT_HOT_THRESHOLD=800
+
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_FROM_ADDRESS=
+MAIL_MAIN=
 ```
 
 ## Chạy Backend
@@ -118,81 +68,53 @@ npm run db:migrate
 npm run dev
 ```
 
-- API: `http://localhost:3400`
-- OpenAPI: xem `config/swagger.js` hoặc chạy `npm run openapi:generate`
+- API: theo `APP_URL` / `PORT` trong `.env`
+- Swagger UI: thường tại `/api-docs` (xem `app.js`)
 
-### Demo nhanh (SQL + API)
-
-**1. Tạo subject và nguồn Facebook:**
-
-```sql
-INSERT INTO subjects (name, normalized_name, item_type, status, source, created_at, updated_at)
-VALUES ('Demo Subject', 'demo subject', 'person', 'active', 'manual', NOW(), NOW());
-
-INSERT INTO monitor_sources (subject_id, platform, source_type, source_url, priority, is_active, created_at, updated_at)
-VALUES
-  (1, 'facebook', 'page', 'https://www.facebook.com/Theanh28', 1, 1, NOW(), NOW()),
-  (1, 'facebook', 'page', 'https://www.facebook.com/tintucvtv24', 2, 1, NOW(), NOW());
-```
-
-**2. Chạy crawl theo subject:**
-
-```http
-POST http://localhost:3400/api/scraper/facebook/run
-Content-Type: application/json
-
-{
-  "subject_id": 1,
-  "resultsLimit": 5
-}
-```
-
-**3. Xem bài hôm nay:**
-
-```http
-GET http://localhost:3400/api/scraper/facebook/posts?subject_id=1&today=true
-```
-
-### API scraper hiện có
+## API chính
 
 | Method | Path | Mô tả |
 |--------|------|--------|
-| POST | `/api/scraper/facebook/run` | Crawl Apify; `subject_id` hoặc `startUrls` tùy chọn |
-| GET | `/api/scraper/facebook/runs` | Danh sách lần chạy |
-| GET | `/api/scraper/facebook/runs/:runId` | Chi tiết run (`external_run_id` Apify) |
-| GET | `/api/scraper/facebook/posts` | Danh sách bài; filter `subject_id`, `today` |
+| POST | `/api/subjects/discover` | Gemini → insert `subjects` (`{data:[]}`) |
+| GET | `/api/subjects` | Danh sách subjects |
+| GET | `/api/subjects/:id` | Chi tiết + bài liên quan + aggregate |
+| POST | `/api/scraper/run` | Apify Actor mới → `scraper_runs` → match → `social_posts` |
+| GET | `/api/scraper/apify/runs` | Lịch sử Actor runs trên Apify ([console](https://console.apify.com/actors/runs)) |
+| POST | `/api/scraper/run-from-history` | Ingest lại từ `runId` Apify (không chạy Actor mới); body `{ "runId": "..." }` |
+| GET | `/api/scraper/runs` | Danh sách bài scrape trong DB local |
+| GET | `/api/scraper/runs/:id` | Chi tiết 1 bài trong DB |
+| GET | `/api/social-posts` | Tổng hợp, sort `hot_score` DESC |
+| POST | `/api/alerts/gmail` | Gửi mail nếu hot **và** trend vượt ngưỡng |
 
-## Chạy Frontend
+### Demo nhanh
 
-```bash
-cd frontend-nextjs
-npm install
-# .env: NEXT_PUBLIC_API_URL=http://localhost:3400
-npm run dev
+```http
+POST /api/subjects/discover
+
+POST /api/scraper/run
+Content-Type: application/json
+
+{
+  "resultsLimit": 5,
+  "startUrls": [
+    "https://www.facebook.com/Theanh28",
+    "https://www.facebook.com/tintucvtv24"
+  ]
+}
+
+GET /api/social-posts
+
+POST /api/alerts/gmail
 ```
 
-- FE mặc định: `http://localhost:3000`
-
-## Thư mục dự án
+## Thư mục
 
 ```
 ScraperSocialMedia/
 ├── READ_ME.md
-├── backend-express/       # Express API, migrations, scraper
-│   ├── app/
-│   │   ├── Models/        # Subject, MonitorSource, ScraperRun, SocialPost
-│   │   ├── Repositories/
-│   │   └── Http/Controllers/Api/
-│   ├── config/            # apify.js, gemini.js, database.js
+├── backend-express/
+│   ├── app/Models|Repositories|Services|Http/...
+│   ├── config/          # apify.js, gemini.js, mail.js, …
 │   └── database/migrations/
-└── frontend-nextjs/       # Next.js UI
+└── frontend-nextjs/
 ```
-
-## Production (tùy chọn)
-
-```bash
-cd backend-express
-npm run pm2:start
-```
-
-Queue / scheduler có sẵn từ template cũ; chưa dùng cho luồng scrape demo.

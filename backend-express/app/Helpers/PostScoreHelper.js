@@ -34,6 +34,10 @@ function pickText(item) {
     return item.text || item.message || item.caption || item.content || null;
 }
 
+function pickTitle(item) {
+    return item.title || item.headline || null;
+}
+
 function pickPostedAt(item) {
     const raw = item.time || item.timestamp || item.postTime || item.postedAt || item.date;
     if (!raw) return null;
@@ -89,6 +93,10 @@ function buildPlatformPostId(item) {
     return `fp:${crypto.createHash('sha256').update(fingerprint).digest('hex').slice(0, 32)}`;
 }
 
+/**
+ * trend = likes×1 + comments×2 + shares×3
+ * hot   = shares×3 + comments×2 + angry×4 + likes×1
+ */
 function calculateScores({ likes = 0, comments = 0, shares = 0, angry_count = 0 }) {
     const l = toCount(likes);
     const c = toCount(comments);
@@ -101,23 +109,80 @@ function calculateScores({ likes = 0, comments = 0, shares = 0, angry_count = 0 
     };
 }
 
+function toNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Thảo luận ≈ bình luận + số bài (proxy khi chưa có volume thảo luận thật).
+ * Tương tác = likes + comments + shares.
+ * Cảm xúc ∈ [-1, 1] từ likes vs angry.
+ */
+function deriveEngagementMetrics(row = {}) {
+    const likes = toCount(row.likes);
+    const comments = toCount(row.comments);
+    const shares = toCount(row.shares);
+    const angry = toCount(row.angry_count);
+    const postsCount = toCount(row.posts_count);
+    const hotScore = toNumber(row.hot_score);
+    const trendScore = toNumber(row.trend_score);
+
+    const discussion = comments + postsCount;
+    const interaction = likes + comments + shares;
+    const denom = likes + angry;
+    const sentiment = denom === 0 ? 0 : (likes - angry) / denom;
+
+    return {
+        discussion,
+        interaction,
+        sentiment: Math.round(sentiment * 100) / 100,
+        hot_score: hotScore,
+        trend_score: trendScore,
+    };
+}
+
+/**
+ * Uptrend: đạt ngưỡng hot hoặc trend (đang nóng / tương tác mạnh).
+ * Downtrend: cả hai điểm dưới 25% ngưỡng (engagement thấp / nguội).
+ * Neutral: còn lại.
+ */
+function classifyTrendDirection(row, { hotThreshold, trendThreshold } = {}) {
+    const hot = toNumber(row.hot_score);
+    const trend = toNumber(row.trend_score);
+    const hotTh = Number(hotThreshold) || 800;
+    const trendTh = Number(trendThreshold) || 500;
+
+    if (hot >= hotTh || trend >= trendTh) return 'up';
+    if (hot < hotTh * 0.25 && trend < trendTh * 0.25) return 'down';
+    return 'neutral';
+}
+
+function isNewSocialPost(row, withinHours = 48) {
+    const raw = row?.created_at || row?.createdAt;
+    if (!raw) return false;
+    const created = new Date(raw);
+    if (Number.isNaN(created.getTime())) return false;
+    return Date.now() - created.getTime() <= withinHours * 60 * 60 * 1000;
+}
+
 function normalizeApifyItem(item) {
     const likes = pickCount(item, ['likes', 'likeCount', 'reactions']) ?? 0;
     const comments = pickCount(item, ['comments', 'commentCount', 'commentsCount']) ?? 0;
     const shares = pickCount(item, ['shares', 'shareCount', 'sharesCount']) ?? 0;
     const angry_count = pickAngryCount(item);
-    const engagement = { likes, comments, shares, angry_count };
-    const scores = calculateScores(engagement);
 
     return {
         platform: 'facebook',
         platform_post_id: buildPlatformPostId(item),
         post_url: pickPostUrl(item),
+        title: pickTitle(item),
         text: pickText(item),
         posted_at: pickPostedAt(item),
-        input_url: pickInputUrl(item),
-        ...engagement,
-        ...scores,
+        likes: toCount(likes),
+        comments: toCount(comments),
+        shares: toCount(shares),
+        angry_count: toCount(angry_count),
         raw_data: item,
     };
 }
@@ -125,6 +190,11 @@ function normalizeApifyItem(item) {
 module.exports = {
     buildPlatformPostId,
     calculateScores,
+    classifyTrendDirection,
+    deriveEngagementMetrics,
+    isNewSocialPost,
     normalizeApifyItem,
     pickInputUrl,
+    toCount,
+    toNumber,
 };
