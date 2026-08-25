@@ -25,6 +25,7 @@ export const en = {
   },
   ROUTER: {
     HOME: 'Home',
+    SUBJECTS: 'Subjects',
   },
   LAYOUT: {
     LOGOUT: 'Logout',

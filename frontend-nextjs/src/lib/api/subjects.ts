@@ -28,6 +28,41 @@ export interface SubjectAggregate {
   computed_at?: string | null;
 }
 
+export interface SubjectListItem extends SubjectInfo {
+  scraper_runs_count: number;
+  has_scraper_runs: boolean;
+  can_delete: boolean;
+  socialPost?: SocialPostItem | null;
+  aggregate: SubjectAggregate;
+}
+
+export interface SubjectListParams {
+  page?: number;
+  per_page?: number;
+  status?: string;
+  q?: string;
+}
+
+export interface SubjectListData {
+  result: SubjectListItem[];
+  pagination: SocialPostsPagination;
+}
+
+export interface SubjectCreatePayload {
+  name: string;
+  normalized_name?: string | null;
+  item_type?: string;
+  status?: string;
+  source?: string;
+}
+
+export interface SubjectUpdatePayload {
+  name?: string;
+  normalized_name?: string | null;
+  item_type?: string;
+  status?: string;
+}
+
 export interface SubjectRelatedPost {
   id: number;
   platform: string;
@@ -77,6 +112,32 @@ export interface SubjectDetailParams {
 }
 
 export const subjectsApi = {
+  list: (params: SubjectListParams = {}) =>
+    apiClient.get<SubjectListData>('/subjects', {
+      skipAuth: true,
+      params: {
+        page: params.page ?? 1,
+        per_page: params.per_page ?? 20,
+        status: params.status,
+        q: params.q || undefined,
+      },
+    }) as Promise<ApiResponse<SubjectListData>>,
+
+  create: (payload: SubjectCreatePayload) =>
+    apiClient.post<SubjectListItem>('/subjects', payload, {
+      skipAuth: true,
+    }) as Promise<ApiResponse<SubjectListItem>>,
+
+  update: (id: number | string, payload: SubjectUpdatePayload) =>
+    apiClient.put<SubjectListItem>(`/subjects/${id}`, payload, {
+      skipAuth: true,
+    }) as Promise<ApiResponse<SubjectListItem>>,
+
+  remove: (id: number | string) =>
+    apiClient.delete<{ id: number; deleted: boolean }>(`/subjects/${id}`, {
+      skipAuth: true,
+    }) as Promise<ApiResponse<{ id: number; deleted: boolean }>>,
+
   getById: (id: number | string, params: SubjectDetailParams = {}) =>
     apiClient.get<SubjectDetail>(`/subjects/${id}`, {
       skipAuth: true,

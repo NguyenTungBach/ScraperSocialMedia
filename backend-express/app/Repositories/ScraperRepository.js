@@ -1,5 +1,6 @@
 'use strict';
 
+const createError = require('http-errors');
 const { Op } = require('sequelize');
 const db = require('../Models');
 const {
@@ -104,12 +105,22 @@ class ScraperRepository {
         return { inserted, existing, all: [...inserted, ...existing] };
     }
 
-    async listSubjects({ page = 1, per_page = 20, status = null } = {}) {
+    async listSubjects({ page = 1, per_page = 20, status = null, q = null } = {}) {
         const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
         const currentPage = Math.max(Number(page) || 1, 1);
         const offset = (currentPage - 1) * limit;
         const where = {};
         if (status) where.status = status;
+
+        const keyword = String(q || '').trim();
+        if (keyword) {
+            const likeOp = db.sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
+            const term = `%${keyword}%`;
+            where[Op.or] = [
+                { name: { [likeOp]: term } },
+                { normalized_name: { [likeOp]: term } },
+            ];
+        }
 
         const { rows, count } = await this.subjectModel.findAndCountAll({
             where,
@@ -119,7 +130,163 @@ class ScraperRepository {
             include: [{ model: this.socialPostModel, as: 'socialPost' }],
         });
 
-        return { rows, count, page: currentPage, per_page: limit };
+        const subjectIds = rows.map((row) => row.id);
+        const linkCountBySubjectId = new Map();
+        if (subjectIds.length > 0) {
+            const linkRows = await this.subjectScraperRunModel.findAll({
+                attributes: [
+                    'subject_id',
+                    [db.sequelize.literal('COUNT(*)'), 'scraper_runs_count'],
+                ],
+                where: { subject_id: { [Op.in]: subjectIds } },
+                group: ['subject_id'],
+                raw: true,
+            });
+            for (const linkRow of linkRows) {
+                linkCountBySubjectId.set(
+                    Number(linkRow.subject_id),
+                    Number(linkRow.scraper_runs_count) || 0
+                );
+            }
+        }
+
+        const serialized = rows.map((row) =>
+            this.serializeSubjectListItem(row, {
+                scraper_runs_count: linkCountBySubjectId.get(Number(row.id)) || 0,
+            })
+        );
+
+        return { rows: serialized, count, page: currentPage, per_page: limit };
+    }
+
+    serializeSubjectListItem(row, { scraper_runs_count = 0 } = {}) {
+        const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
+        const socialPost = plain.socialPost
+            ? this.serializeSocialPost(plain.socialPost)
+            : null;
+
+        return {
+            id: plain.id,
+            name: plain.name,
+            normalized_name: plain.normalized_name,
+            item_type: plain.item_type,
+            status: plain.status,
+            source: plain.source,
+            created_at: plain.created_at,
+            updated_at: plain.updated_at,
+            scraper_runs_count,
+            has_scraper_runs: scraper_runs_count > 0,
+            can_delete: scraper_runs_count === 0,
+            socialPost,
+            aggregate: socialPost
+                ? {
+                      likes: socialPost.likes,
+                      comments: socialPost.comments,
+                      shares: socialPost.shares,
+                      angry_count: socialPost.angry_count,
+                      posts_count: socialPost.posts_count,
+                      hot_score: socialPost.hot_score,
+                      trend_score: socialPost.trend_score,
+                      discussion: socialPost.discussion,
+                      interaction: socialPost.interaction,
+                      sentiment: socialPost.sentiment,
+                      trend_direction: socialPost.trend_direction,
+                      is_new: socialPost.is_new,
+                      computed_at: socialPost.computed_at,
+                  }
+                : {
+                      likes: 0,
+                      comments: 0,
+                      shares: 0,
+                      angry_count: 0,
+                      posts_count: 0,
+                      hot_score: 0,
+                      trend_score: 0,
+                      discussion: 0,
+                      interaction: 0,
+                      sentiment: 0,
+                      trend_direction: 'neutral',
+                      is_new: false,
+                      computed_at: null,
+                  },
+        };
+    }
+
+    async createSubject({
+        name,
+        normalized_name = null,
+        item_type = 'person',
+        status = 'active',
+        source = 'manual',
+    } = {}) {
+        const trimmedName = String(name || '').trim();
+        if (!trimmedName) {
+            throw createError(422, 'name is required');
+        }
+
+        const nick = normalized_name != null ? String(normalized_name).trim() : '';
+        const subject = await this.subjectModel.create({
+            name: trimmedName,
+            normalized_name: nick || null,
+            item_type: item_type || 'person',
+            status: status || 'active',
+            source: source || 'manual',
+        });
+
+        return this.serializeSubjectListItem(subject, { scraper_runs_count: 0 });
+    }
+
+    async updateSubject(id, payload = {}) {
+        const subject = await this.subjectModel.findByPk(id, {
+            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+        });
+        if (!subject) return null;
+
+        const updates = {};
+        if (payload.name !== undefined) {
+            const trimmedName = String(payload.name || '').trim();
+            if (!trimmedName) {
+                throw createError(422, 'name is required');
+            }
+            updates.name = trimmedName;
+        }
+        if (payload.normalized_name !== undefined) {
+            const nick = String(payload.normalized_name || '').trim();
+            updates.normalized_name = nick || null;
+        }
+        if (payload.item_type !== undefined) updates.item_type = payload.item_type;
+        if (payload.status !== undefined) updates.status = payload.status;
+
+        if (Object.keys(updates).length > 0) {
+            await subject.update(updates);
+        }
+
+        const scraper_runs_count = await this.subjectScraperRunModel.count({
+            where: { subject_id: subject.id },
+        });
+        await subject.reload({
+            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+        });
+
+        return this.serializeSubjectListItem(subject, { scraper_runs_count });
+    }
+
+    async deleteSubject(id) {
+        const subject = await this.subjectModel.findByPk(id);
+        if (!subject) return null;
+
+        const scraper_runs_count = await this.subjectScraperRunModel.count({
+            where: { subject_id: subject.id },
+        });
+        if (scraper_runs_count > 0) {
+            throw createError(
+                409,
+                `Không thể xóa đối tượng đang có ${scraper_runs_count} bài liên kết (subjects_scraper_runs)`
+            );
+        }
+
+        await subject.destroy();
+        return { id: Number(id), deleted: true };
     }
 
     async findSubjectById(id) {

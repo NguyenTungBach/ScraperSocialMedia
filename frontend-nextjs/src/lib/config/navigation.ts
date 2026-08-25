@@ -40,6 +40,18 @@ export const asyncNavModules: NavModule[] = [
       },
     ],
   },
+  {
+    path: '/subjects',
+    name: 'Subjects',
+    titleKey: 'ROUTER.SUBJECTS',
+    children: [
+      {
+        path: '',
+        name: 'SubjectsIndex',
+        titleKey: 'ROUTER.SUBJECTS',
+      },
+    ],
+  },
 ];
 
 export function getPermissionNavModules(
@@ -55,6 +67,9 @@ export function canAccessPathname(
   _permissions: string[] = []
 ): boolean {
   if (pathname === '/home' || pathname.startsWith('/home/')) {
+    return true;
+  }
+  if (pathname === '/subjects' || pathname.startsWith('/subjects/')) {
     return true;
   }
   return asyncNavModules.some((mod) => pathname === mod.path || pathname.startsWith(`${mod.path}/`));

@@ -25,6 +25,7 @@ export const ja = {
   },
   ROUTER: {
     HOME: 'ホーム',
+    SUBJECTS: '対象管理',
   },
   LAYOUT: {
     LOGOUT: 'ログアウト',

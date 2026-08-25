@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
@@ -22,6 +23,7 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
+  Users,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
@@ -418,10 +420,14 @@ export function HotTopicDashboard() {
           </div>
 
           <nav className={styles.mainNav} aria-label="Main navigation">
-            <a href="#" className={cn(styles.navLink, styles.navLinkActive)}>
+            <Link href="/home" className={cn(styles.navLink, styles.navLinkActive)}>
               <BarChart3 size={16} aria-hidden />
               Xếp hạng
-            </a>
+            </Link>
+            <Link href="/subjects" className={styles.navLink}>
+              <Users size={16} aria-hidden />
+              Đối tượng
+            </Link>
             <a href="#" className={styles.navLink}>
               <Compass size={16} aria-hidden />
               Khám phá

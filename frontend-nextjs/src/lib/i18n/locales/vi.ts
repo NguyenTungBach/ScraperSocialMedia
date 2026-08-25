@@ -27,6 +27,7 @@ export const vi = {
   },
   ROUTER: {
     HOME: 'Trang chủ',
+    SUBJECTS: 'Đối tượng',
   },
   LAYOUT: {
     LOGOUT: 'Đăng xuất',

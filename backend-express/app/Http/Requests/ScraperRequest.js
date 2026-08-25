@@ -19,10 +19,12 @@ const runScraperSchema = z
     })
     .optional();
 
-const listQuerySchema = z.object({
+const listQueryObjectSchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
     per_page: z.coerce.number().int().min(1).max(100).optional(),
     status: z.string().optional(),
+    q: z.string().optional(),
+    key_search: z.string().optional(),
     sort_by: z
         .enum(['hot_score', 'trend_score', 'discussion', 'interaction', 'sentiment'])
         .optional(),
@@ -36,9 +38,37 @@ const listQuerySchema = z.object({
         }),
 });
 
-const socialPostsDashboardQuerySchema = listQuerySchema.extend({
-    chart_limit: z.coerce.number().int().min(1).max(20).optional(),
+const withSearchAlias = (data) => ({
+    ...data,
+    q: (data.q ?? data.key_search ?? '').trim() || undefined,
 });
+
+const listQuerySchema = listQueryObjectSchema.transform(withSearchAlias);
+
+const socialPostsDashboardQuerySchema = listQueryObjectSchema
+    .extend({
+        chart_limit: z.coerce.number().int().min(1).max(20).optional(),
+    })
+    .transform(withSearchAlias);
+
+const subjectCreateSchema = z.object({
+    name: z.string().trim().min(1, 'name is required').max(255),
+    normalized_name: z.string().trim().max(255).optional().nullable(),
+    item_type: z.string().trim().max(255).optional(),
+    status: z.string().trim().max(255).optional(),
+    source: z.string().trim().max(255).optional(),
+});
+
+const subjectUpdateSchema = z
+    .object({
+        name: z.string().trim().min(1, 'name is required').max(255).optional(),
+        normalized_name: z.string().trim().max(255).optional().nullable(),
+        item_type: z.string().trim().max(255).optional(),
+        status: z.string().trim().max(255).optional(),
+    })
+    .refine((data) => Object.keys(data).length > 0, {
+        message: 'At least one field is required',
+    });
 
 const subjectDetailQuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
@@ -122,6 +152,30 @@ const validateSubjectDetailQuery = async (req, res, next) => {
     }
 };
 
+const validateSubjectCreate = async (req, res, next) => {
+    try {
+        req.validatedData = subjectCreateSchema.parse(req.body ?? {});
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
+const validateSubjectUpdate = async (req, res, next) => {
+    try {
+        req.validatedData = subjectUpdateSchema.parse(req.body ?? {});
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
 const validateApifyRunsQuery = async (req, res, next) => {
     try {
         req.validatedData = apifyRunsQuerySchema.parse(req.query ?? {});
@@ -164,6 +218,8 @@ module.exports = {
     validateListQuery,
     validateSocialPostsDashboardQuery,
     validateSubjectDetailQuery,
+    validateSubjectCreate,
+    validateSubjectUpdate,
     validateApifyRunsQuery,
     validateRunFromHistory,
     validateAlertGmail,

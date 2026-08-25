@@ -53,7 +53,7 @@ class SubjectController {
      * /subjects:
      *   get:
      *     tags: [Subjects]
-     *     summary: Danh sách subjects
+     *     summary: Danh sách subjects (search + paginate)
      *     security: []
      *     parameters:
      *       - in: query
@@ -65,6 +65,14 @@ class SubjectController {
      *       - in: query
      *         name: status
      *         schema: { type: string, example: active }
+     *       - in: query
+     *         name: q
+     *         schema: { type: string }
+     *         description: Tìm theo name hoặc biệt danh (normalized_name)
+     *       - in: query
+     *         name: key_search
+     *         schema: { type: string }
+     *         description: Alias của q
      *     responses:
      *       "200":
      *         description: OK
@@ -77,6 +85,101 @@ class SubjectController {
                 HTTP_STATUS.SUCCESS,
                 ResponseService.responseJsonPaginated(rows, page, per_page, count)
             );
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /subjects:
+     *   post:
+     *     tags: [Subjects]
+     *     summary: Tạo đối tượng mới
+     *     security: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [name]
+     *             properties:
+     *               name: { type: string }
+     *               normalized_name: { type: string, nullable: true }
+     *               item_type: { type: string }
+     *               status: { type: string }
+     *               source: { type: string }
+     *     responses:
+     *       "200":
+     *         description: Created
+     */
+    async store(req, res, next) {
+        try {
+            const subject = await this.repository.createSubject(req.validatedData);
+            return ResponseService.responseJsonCreated(res, subject, 'Subject created');
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /subjects/{id}:
+     *   put:
+     *     tags: [Subjects]
+     *     summary: Cập nhật đối tượng
+     *     security: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: integer }
+     *     responses:
+     *       "200":
+     *         description: OK
+     *       "404":
+     *         description: Không tìm thấy
+     */
+    async update(req, res, next) {
+        try {
+            const subject = await this.repository.updateSubject(req.params.id, req.validatedData);
+            if (!subject) {
+                throw createError(404, 'Subject not found');
+            }
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, subject, 'Subject updated');
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /subjects/{id}:
+     *   delete:
+     *     tags: [Subjects]
+     *     summary: Xóa cứng đối tượng (chặn nếu còn subjects_scraper_runs)
+     *     security: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: integer }
+     *     responses:
+     *       "200":
+     *         description: Deleted
+     *       "404":
+     *         description: Không tìm thấy
+     *       "409":
+     *         description: Đối tượng đang có bài liên kết
+     */
+    async destroy(req, res, next) {
+        try {
+            const result = await this.repository.deleteSubject(req.params.id);
+            if (!result) {
+                throw createError(404, 'Subject not found');
+            }
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result, 'Subject deleted');
         } catch (error) {
             return next(error);
         }
