@@ -34,7 +34,9 @@ import type { ChannelItem } from '@/lib/api/channels';
 import { PlatformBadge } from './PlatformBadge';
 import styles from './SubjectDetailModal.module.scss';
 
-const POSTS_PER_PAGE = 5;
+const PER_PAGE_OPTIONS = [5, 10, 20] as const;
+type PostsPerPage = (typeof PER_PAGE_OPTIONS)[number];
+const DEFAULT_PER_PAGE: PostsPerPage = 5;
 
 const SORT_OPTIONS: { value: SubjectPostsSortBy; label: string }[] = [
   { value: 'posted_at', label: 'Mới nhất' },
@@ -163,6 +165,7 @@ export function SubjectDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubjectDetail | null>(null);
   const [sortBy, setSortBy] = useState<SubjectPostsSortBy>('posted_at');
+  const [perPage, setPerPage] = useState<PostsPerPage>(DEFAULT_PER_PAGE);
   const [platformFilter, setPlatformFilter] = useState('');
   const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState(externalDateFrom || initialRange.date_from);
@@ -176,6 +179,7 @@ export function SubjectDetailModal({
     async (options?: {
       page?: number;
       sort?: SubjectPostsSortBy;
+      per_page?: PostsPerPage;
       platform?: string;
       date_from?: string;
       date_to?: string;
@@ -183,6 +187,7 @@ export function SubjectDetailModal({
       if (!subjectId) return;
       const nextPage = options?.page ?? page;
       const nextSort = options?.sort ?? sortBy;
+      const nextPerPage = options?.per_page ?? perPage;
       const nextPlatform = options?.platform ?? platformFilter;
       const nextFrom = options?.date_from ?? appliedDateFrom;
       const nextTo = options?.date_to ?? appliedDateTo;
@@ -193,7 +198,7 @@ export function SubjectDetailModal({
       try {
         const res = await subjectsApi.getById(subjectId, {
           page: nextPage,
-          per_page: POSTS_PER_PAGE,
+          per_page: nextPerPage,
           sort_by: nextSort,
           platform: nextPlatform || undefined,
           date_from: nextFrom,
@@ -205,6 +210,7 @@ export function SubjectDetailModal({
         setDetail(data);
         setPage(data.pagination?.current_page ?? nextPage);
         if (options?.sort !== undefined) setSortBy(nextSort);
+        if (options?.per_page !== undefined) setPerPage(nextPerPage);
         if (options?.platform !== undefined) setPlatformFilter(nextPlatform);
         if (options?.date_from !== undefined) setAppliedDateFrom(nextFrom);
         if (options?.date_to !== undefined) setAppliedDateTo(nextTo);
@@ -215,7 +221,7 @@ export function SubjectDetailModal({
         setLoading(false);
       }
     },
-    [subjectId, sortBy, platformFilter, page, appliedDateFrom, appliedDateTo]
+    [subjectId, sortBy, perPage, platformFilter, page, appliedDateFrom, appliedDateTo]
   );
 
   useEffect(() => {
@@ -225,6 +231,7 @@ export function SubjectDetailModal({
       setPage(1);
       setPlatformFilter('');
       setSortBy('posted_at');
+      setPerPage(DEFAULT_PER_PAGE);
       return;
     }
     const range = getCurrentMonthDateRange();
@@ -282,6 +289,11 @@ export function SubjectDetailModal({
   const handleSortChange = (nextSort: SubjectPostsSortBy) => {
     setSortBy(nextSort);
     void load({ page: 1, sort: nextSort, platform: platformFilter });
+  };
+
+  const handlePerPageChange = (nextPerPage: PostsPerPage) => {
+    setPerPage(nextPerPage);
+    void load({ page: 1, per_page: nextPerPage, platform: platformFilter });
   };
 
   const handleApplyDates = () => {
@@ -474,6 +486,22 @@ export function SubjectDetailModal({
                     Tháng này
                   </button>
                 </div>
+                <label>
+                  Hiển thị
+                  <select
+                    value={perPage}
+                    disabled={postsLoading}
+                    onChange={(e) =>
+                      handlePerPageChange(Number(e.target.value) as PostsPerPage)
+                    }
+                  >
+                    {PER_PAGE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n} / trang
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label>
                   Sắp xếp
                   <select
