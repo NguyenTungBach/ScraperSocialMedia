@@ -5,8 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BarChart3,
-  Compass,
-  Crown,
   Globe,
   Loader2,
   Pencil,
@@ -203,14 +201,6 @@ export function ChannelManagement() {
               <Users size={16} aria-hidden />
               Đối tượng
             </Link>
-            <a href="#" className={dash.navLink}>
-              <Compass size={16} aria-hidden />
-              Khám phá
-            </a>
-            <a href="#" className={dash.navLink}>
-              <Crown size={16} aria-hidden />
-              Bảng giá
-            </a>
           </nav>
 
           <div className={dash.headerActions}>

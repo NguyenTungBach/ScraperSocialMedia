@@ -7,7 +7,6 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  Compass,
   Crown,
   Film,
   Globe,
@@ -484,14 +483,6 @@ export function HotTopicDashboard() {
               <Users size={16} aria-hidden />
               Đối tượng
             </Link>
-            <a href="#" className={styles.navLink}>
-              <Compass size={16} aria-hidden />
-              Khám phá
-            </a>
-            <a href="#" className={styles.navLink}>
-              <Crown size={16} aria-hidden />
-              Bảng giá
-            </a>
           </nav>
 
           <div className={styles.headerActions}>
