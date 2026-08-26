@@ -52,6 +52,18 @@ export const asyncNavModules: NavModule[] = [
       },
     ],
   },
+  {
+    path: '/channels',
+    name: 'Channels',
+    titleKey: 'ROUTER.CHANNELS',
+    children: [
+      {
+        path: '',
+        name: 'ChannelsIndex',
+        titleKey: 'ROUTER.CHANNELS',
+      },
+    ],
+  },
 ];
 
 export function getPermissionNavModules(
@@ -70,6 +82,9 @@ export function canAccessPathname(
     return true;
   }
   if (pathname === '/subjects' || pathname.startsWith('/subjects/')) {
+    return true;
+  }
+  if (pathname === '/channels' || pathname.startsWith('/channels/')) {
     return true;
   }
   return asyncNavModules.some((mod) => pathname === mod.path || pathname.startsWith(`${mod.path}/`));

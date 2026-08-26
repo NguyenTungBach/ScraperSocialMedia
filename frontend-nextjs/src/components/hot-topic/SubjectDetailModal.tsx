@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Loader2,
   MessageCircle,
@@ -20,7 +22,18 @@ import {
   type SubjectRelatedPost,
 } from '@/lib/api/subjects';
 import { formatMetric, formatScore, formatShortDate } from '@/lib/mock/hotTopics';
+import {
+  buildPlatformTabs,
+  getPlatformMeta,
+  resolvePostPlatform,
+  sortPlatformKeys,
+} from '@/lib/utils/socialPlatforms';
+import { cn } from '@/lib/utils';
+import type { ChannelItem } from '@/lib/api/channels';
+import { PlatformBadge } from './PlatformBadge';
 import styles from './SubjectDetailModal.module.scss';
+
+const POSTS_PER_PAGE = 5;
 
 const SORT_OPTIONS: { value: SubjectPostsSortBy; label: string }[] = [
   { value: 'posted_at', label: 'Mới nhất' },
@@ -50,12 +63,32 @@ function formatDateTime(iso?: string | null): string {
   });
 }
 
-function PostCard({ post }: { post: SubjectRelatedPost }) {
+function PostCard({
+  post,
+  channelMap,
+}: {
+  post: SubjectRelatedPost;
+  channelMap: Map<number, ChannelItem>;
+}) {
   const preview = post.title?.trim() || post.text?.trim() || '(Không có nội dung)';
+  const channel = post.channel_id ? channelMap.get(post.channel_id) : null;
+  const platform = resolvePostPlatform(post, channelMap);
+  const platformMeta = getPlatformMeta(platform);
+
   return (
-    <article className={styles.postCard}>
+    <article
+      className={styles.postCard}
+      style={{ borderLeftColor: platformMeta.color }}
+    >
       <div className={styles.postHeader}>
-        <span className={styles.platform}>{post.platform || 'facebook'}</span>
+        <div className={styles.postOrigin}>
+          <PlatformBadge platform={platform} size="md" />
+          {channel ? (
+            <span className={styles.channelLabel} title={channel.url}>
+              {channel.name}
+            </span>
+          ) : null}
+        </div>
         <span className={styles.postDate}>{formatDateTime(post.posted_at)}</span>
       </div>
       <p className={styles.postText}>{truncate(preview)}</p>
@@ -91,6 +124,23 @@ function PostCard({ post }: { post: SubjectRelatedPost }) {
   );
 }
 
+function groupPostsByPlatform(
+  posts: SubjectRelatedPost[],
+  channelMap: Map<number, ChannelItem>
+): { platform: string; posts: SubjectRelatedPost[] }[] {
+  const grouped = new Map<string, SubjectRelatedPost[]>();
+  for (const post of posts) {
+    const platform = resolvePostPlatform(post, channelMap);
+    const bucket = grouped.get(platform) || [];
+    bucket.push(post);
+    grouped.set(platform, bucket);
+  }
+  return sortPlatformKeys([...grouped.keys()]).map((platform) => ({
+    platform,
+    posts: grouped.get(platform) || [],
+  }));
+}
+
 interface SubjectDetailModalProps {
   subjectId: number | null;
   open: boolean;
@@ -99,49 +149,48 @@ interface SubjectDetailModalProps {
 
 export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailModalProps) {
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubjectDetail | null>(null);
   const [sortBy, setSortBy] = useState<SubjectPostsSortBy>('posted_at');
+  const [platformFilter, setPlatformFilter] = useState('');
   const [page, setPage] = useState(1);
 
   const load = useCallback(
-    async (options?: { page?: number; append?: boolean; sort?: SubjectPostsSortBy }) => {
+    async (options?: {
+      page?: number;
+      sort?: SubjectPostsSortBy;
+      platform?: string;
+    }) => {
       if (!subjectId) return;
-      const nextPage = options?.page ?? 1;
-      const append = Boolean(options?.append);
+      const nextPage = options?.page ?? page;
       const nextSort = options?.sort ?? sortBy;
+      const nextPlatform = options?.platform ?? platformFilter;
 
-      if (append) setLoadingMore(true);
-      else setLoading(true);
+      setLoading(true);
       setError(null);
 
       try {
         const res = await subjectsApi.getById(subjectId, {
           page: nextPage,
-          per_page: 10,
+          per_page: POSTS_PER_PAGE,
           sort_by: nextSort,
+          platform: nextPlatform || undefined,
         });
         const data = res.data;
         if (!data) throw new Error('Empty subject detail');
 
-        setDetail((prev) => {
-          if (!append || !prev) return data;
-          return {
-            ...data,
-            posts: [...prev.posts, ...data.posts],
-          };
-        });
+        setDetail(data);
         setPage(data.pagination?.current_page ?? nextPage);
+        if (options?.sort !== undefined) setSortBy(nextSort);
+        if (options?.platform !== undefined) setPlatformFilter(nextPlatform);
       } catch (err) {
         setError(getApiErrorMessage(err));
-        if (!append) setDetail(null);
+        setDetail(null);
       } finally {
         setLoading(false);
-        setLoadingMore(false);
       }
     },
-    [subjectId, sortBy]
+    [subjectId, sortBy, platformFilter, page]
   );
 
   useEffect(() => {
@@ -149,10 +198,11 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
       setDetail(null);
       setError(null);
       setPage(1);
+      setPlatformFilter('');
+      setSortBy('posted_at');
       return;
     }
-    setSortBy('posted_at');
-    void load({ page: 1, append: false, sort: 'posted_at' });
+    void load({ page: 1, sort: 'posted_at', platform: '' });
   }, [open, subjectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -164,12 +214,88 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  const channelMap = useMemo(() => {
+    const map = new Map<number, ChannelItem>();
+    for (const ch of detail?.subject?.channels || []) {
+      map.set(ch.id, ch);
+    }
+    return map;
+  }, [detail?.subject?.channels]);
+
+  const platformTabs = useMemo(
+    () => buildPlatformTabs(detail?.posts_by_platform),
+    [detail?.posts_by_platform]
+  );
+
+  const groupedPosts = useMemo(() => {
+    if (!detail?.posts?.length) return [];
+    if (platformFilter) return [];
+    return groupPostsByPlatform(detail.posts, channelMap);
+  }, [detail?.posts, platformFilter, channelMap]);
+
   if (!open) return null;
 
   const aggregate = detail?.aggregate;
-  const canLoadMore = Boolean(
-    detail && detail.pagination.current_page < detail.pagination.total_pages
-  );
+  const pagination = detail?.pagination;
+  const totalPages = Math.max(1, pagination?.total_pages ?? 1);
+  const totalRecords = pagination?.total_records ?? 0;
+  const currentPage = pagination?.current_page ?? page;
+  const postsLoading = loading && Boolean(detail);
+
+  const handlePlatformChange = (nextPlatform: string) => {
+    setPlatformFilter(nextPlatform);
+    void load({ page: 1, platform: nextPlatform, sort: sortBy });
+  };
+
+  const handleSortChange = (nextSort: SubjectPostsSortBy) => {
+    setSortBy(nextSort);
+    void load({ page: 1, sort: nextSort, platform: platformFilter });
+  };
+
+  const goToPage = (nextPage: number) => {
+    if (nextPage < 1 || nextPage > totalPages || postsLoading) return;
+    void load({ page: nextPage, sort: sortBy, platform: platformFilter });
+  };
+
+  const renderPosts = () => {
+    if (!detail?.posts?.length) {
+      return (
+        <div className={styles.empty}>
+          {platformFilter
+            ? `Chưa có bài viết nào trên ${getPlatformMeta(platformFilter).label}.`
+            : 'Chưa có bài viết nào gắn với đối tượng này.'}
+        </div>
+      );
+    }
+
+    if (platformFilter) {
+      return detail.posts.map((post) => (
+        <PostCard key={post.id} post={post} channelMap={channelMap} />
+      ));
+    }
+
+    return groupedPosts.map(({ platform, posts }) => {
+      const meta = getPlatformMeta(platform);
+      const totalOnPlatform = detail.posts_by_platform?.[platform] ?? posts.length;
+      return (
+        <section key={platform} className={styles.platformGroup}>
+          <header
+            className={styles.platformGroupHeader}
+            style={{ borderColor: meta.border, backgroundColor: meta.bg }}
+          >
+            <PlatformBadge platform={platform} size="md" />
+            <span className={styles.platformGroupTitle}>{meta.label}</span>
+            <span className={styles.platformGroupCount}>{totalOnPlatform} bài</span>
+          </header>
+          <div className={styles.platformGroupList}>
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} channelMap={channelMap} />
+            ))}
+          </div>
+        </section>
+      );
+    });
+  };
 
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" onClick={onClose}>
@@ -178,11 +304,28 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
           <div>
             <p className={styles.eyebrow}>Chi tiết đối tượng</p>
             <h2 className={styles.title}>
-              {detail?.subject?.name || (loading ? 'Đang tải…' : '—')}
+              {detail?.subject?.name || (loading && !detail ? 'Đang tải…' : '—')}
             </h2>
             {detail?.subject?.normalized_name && (
               <p className={styles.subtitle}>Biệt danh: {detail.subject.normalized_name}</p>
             )}
+            {(detail?.subject?.channels?.length || 0) > 0 ? (
+              <div className={styles.channelSection}>
+                {(detail.subject.channels || []).map((ch) => (
+                  <a
+                    key={ch.id}
+                    className={styles.chipAssign}
+                    href={ch.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={ch.url}
+                  >
+                    <PlatformBadge platform={ch.type_channel} />
+                    {ch.name}
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Đóng">
             <X size={18} />
@@ -257,17 +400,14 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
             <div className={styles.postsToolbar}>
               <h3>
                 Bài viết liên quan{' '}
-                <em>({detail.pagination.total_records})</em>
+                <em>({totalRecords})</em>
               </h3>
               <label>
                 Sắp xếp
                 <select
                   value={sortBy}
-                  onChange={(e) => {
-                    const next = e.target.value as SubjectPostsSortBy;
-                    setSortBy(next);
-                    void load({ page: 1, append: false, sort: next });
-                  }}
+                  disabled={postsLoading}
+                  onChange={(e) => handleSortChange(e.target.value as SubjectPostsSortBy)}
                 >
                   {SORT_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -278,24 +418,74 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
               </label>
             </div>
 
-            <div className={styles.postsList}>
-              {detail.posts.length === 0 ? (
-                <div className={styles.empty}>Chưa có bài viết nào gắn với đối tượng này.</div>
-              ) : (
-                detail.posts.map((post) => <PostCard key={post.id} post={post} />)
+            {platformTabs.length > 1 && (
+              <div className={styles.platformTabs} role="tablist" aria-label="Lọc theo nền tảng">
+                {platformTabs.map((tab) => {
+                  const active = platformFilter === tab.id;
+                  const meta = tab.id ? getPlatformMeta(tab.id) : null;
+                  return (
+                    <button
+                      key={tab.id || 'all'}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={active ? styles.platformTabActive : styles.platformTab}
+                      style={
+                        active && meta
+                          ? {
+                              borderColor: meta.border,
+                              backgroundColor: meta.bg,
+                              color: meta.color,
+                            }
+                          : undefined
+                      }
+                      disabled={postsLoading}
+                      onClick={() => handlePlatformChange(tab.id)}
+                    >
+                      {tab.id ? <PlatformBadge platform={tab.id} /> : null}
+                      <span>{tab.label}</span>
+                      <em>{tab.count}</em>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className={cn(styles.postsList, postsLoading && styles.postsListLoading)}>
+              {postsLoading && (
+                <div className={styles.postsLoadingOverlay}>
+                  <Loader2 size={18} className={styles.spin} aria-hidden /> Đang tải bài viết…
+                </div>
               )}
+              {renderPosts()}
             </div>
 
-            {canLoadMore && (
-              <button
-                type="button"
-                className={styles.loadMore}
-                disabled={loadingMore}
-                onClick={() => load({ page: page + 1, append: true })}
-              >
-                {loadingMore ? 'Đang tải…' : 'Xem thêm bài viết'}
-              </button>
-            )}
+            <div className={styles.pagination}>
+              <span>
+                Trang {currentPage}/{totalPages} · {totalRecords} bài
+                {platformFilter
+                  ? ` · ${getPlatformMeta(platformFilter).label}`
+                  : ''}
+              </span>
+              <div className={styles.paginationBtns}>
+                <button
+                  type="button"
+                  className={styles.pageBtn}
+                  disabled={postsLoading || currentPage <= 1}
+                  onClick={() => goToPage(currentPage - 1)}
+                >
+                  <ChevronLeft size={16} aria-hidden /> Trang trước
+                </button>
+                <button
+                  type="button"
+                  className={styles.pageBtn}
+                  disabled={postsLoading || currentPage >= totalPages}
+                  onClick={() => goToPage(currentPage + 1)}
+                >
+                  Trang sau <ChevronRight size={16} aria-hidden />
+                </button>
+              </div>
+            </div>
           </>
         ) : null}
       </div>

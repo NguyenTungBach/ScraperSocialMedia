@@ -1,0 +1,139 @@
+# Cào video YouTube mỗi 2 giờ:
+# 1) GET /channels?type_channel=youtube → lấy id
+# 2) POST /scraper/youtube/run { channel_id: [...] }
+#
+# Secret cần cấu hình trên GitHub (Settings → Secrets and variables → Actions):
+#   API_BASE_URL — ví dụ https://your-api.example.com/api  (có đuôi /api, không slash cuối)
+
+name: YouTube Scraper Cron
+
+on:
+  schedule:
+    # Mỗi 2 giờ (UTC). GitHub có thể trễ vài phút so với đúng giờ.
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape-youtube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Fetch YouTube channel IDs and run scraper
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error::Missing secret API_BASE_URL (e.g. https://host/api)"
+            exit 1
+          fi
+
+          # Chuẩn hoá: bỏ slash cuối
+          API_BASE_URL="${API_BASE_URL%/}"
+
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          base = os.environ["API_BASE_URL"].rstrip("/")
+          timeout = 600  # scraper có thể mất thời gian khi nhiều kênh
+
+
+          def request(method, path, body=None):
+              url = f"{base}{path}"
+              data = None
+              headers = {"Accept": "application/json"}
+              if body is not None:
+                  data = json.dumps(body).encode("utf-8")
+                  headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(url, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      raw = resp.read().decode("utf-8")
+                      return resp.status, json.loads(raw) if raw else {}
+              except urllib.error.HTTPError as e:
+                  raw = e.read().decode("utf-8", errors="replace")
+                  try:
+                      payload = json.loads(raw) if raw else {}
+                  except json.JSONDecodeError:
+                      payload = {"raw": raw}
+                  print(f"::error::HTTP {e.code} {method} {url}: {payload}", file=sys.stderr)
+                  sys.exit(1)
+              except Exception as e:
+                  print(f"::error::{method} {url} failed: {e}", file=sys.stderr)
+                  sys.exit(1)
+
+
+          # --- 1) Lấy toàn bộ channel youtube (phân trang) ---
+          channel_ids = []
+          page = 1
+          per_page = 100
+
+          while True:
+              qs = urllib.parse.urlencode(
+                  {"type_channel": "youtube", "page": page, "per_page": per_page}
+              )
+              status, payload = request("GET", f"/channels?{qs}")
+              if status != 200 or payload.get("code") not in (None, 200):
+                  print(f"::error::Unexpected channels response: {payload}", file=sys.stderr)
+                  sys.exit(1)
+
+              data = payload.get("data") or {}
+              rows = data.get("result") or []
+              for row in rows:
+                  cid = row.get("id")
+                  if cid is not None:
+                      channel_ids.append(int(cid))
+
+              pagination = data.get("pagination") or {}
+              total_pages = int(pagination.get("total_pages") or 1)
+              print(f"Fetched page {page}/{total_pages}: {len(rows)} channel(s)")
+              if page >= total_pages or not rows:
+                  break
+              page += 1
+
+          # unique, giữ thứ tự
+          seen = set()
+          unique_ids = []
+          for cid in channel_ids:
+              if cid not in seen:
+                  seen.add(cid)
+                  unique_ids.append(cid)
+
+          print(f"YouTube channel IDs ({len(unique_ids)}): {unique_ids}")
+
+          if not unique_ids:
+              print("No YouTube channels found — skip scraper run.")
+              sys.exit(0)
+
+          # --- 2) Gọi scraper ---
+          status, payload = request(
+              "POST",
+              "/scraper/youtube/run",
+              {"channel_id": unique_ids},
+          )
+          if status != 200 or payload.get("code") not in (None, 200):
+              print(f"::error::Scraper failed: {payload}", file=sys.stderr)
+              sys.exit(1)
+
+          result = payload.get("data") or {}
+          print(
+              "Scraper OK:",
+              json.dumps(
+                  {
+                      "channels_scraped": result.get("channels_scraped"),
+                      "items_count": result.get("items_count"),
+                      "quota_used": result.get("quota_used"),
+                      "upsert_stats": result.get("upsert_stats"),
+                      "affected_subject_ids": result.get("affected_subject_ids"),
+                  },
+                  ensure_ascii=False,
+              ),
+          )
+          PY

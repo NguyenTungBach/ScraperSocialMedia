@@ -5,6 +5,7 @@ const ScraperRepository = require('../../../Repositories/ScraperRepository');
 const MailService = require('../../../Services/MailService');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
+const { formatScore, roundScore } = require('../../../Helpers/PostScoreHelper');
 const geminiConfig = require('../../../../config/gemini');
 const mailConfig = require('../../../../config/mail');
 
@@ -77,8 +78,8 @@ class AlertController {
                       <td>${row.comments}</td>
                       <td>${row.shares}</td>
                       <td>${row.angry_count}</td>
-                      <td>${row.trend_score}</td>
-                      <td>${row.hot_score}</td>
+                      <td>${formatScore(row.trend_score)}</td>
+                      <td>${formatScore(row.hot_score)}</td>
                     </tr>`;
                 })
                 .join('');
@@ -119,8 +120,8 @@ class AlertController {
                 subjects: candidates.map((row) => ({
                     subject_id: row.subject_id,
                     name: row.subject?.name,
-                    hot_score: row.hot_score,
-                    trend_score: row.trend_score,
+                    hot_score: roundScore(row.hot_score),
+                    trend_score: roundScore(row.trend_score),
                     posts_count: row.posts_count,
                 })),
             });

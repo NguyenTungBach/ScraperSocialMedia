@@ -10,6 +10,8 @@ export interface HotTopic {
   nickName: string;
   category: TopicCategory;
   categoryLabel: string;
+  channelLabel?: string;
+  channels?: { id: number; name: string; type_channel: string; url?: string }[];
   isNew?: boolean;
   thumbnailColor: string;
   discussion: number;

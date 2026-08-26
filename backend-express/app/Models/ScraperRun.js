@@ -15,6 +15,10 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'scraper_run_id',
                 as: 'subjectScraperRuns',
             });
+            ScraperRun.belongsTo(models.Channel, {
+                foreignKey: 'channel_id',
+                as: 'channel',
+            });
         }
     }
 
@@ -36,6 +40,7 @@ module.exports = (sequelize, DataTypes) => {
             external_run_id: { type: DataTypes.STRING(255), allowNull: true },
             scraper_id: { type: DataTypes.STRING(255), allowNull: true },
             raw_data: { type: DataTypes.JSON, allowNull: false },
+            channel_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
         },
         {
             sequelize,

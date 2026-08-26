@@ -3,6 +3,7 @@
 const createError = require('http-errors');
 const GeminiService = require('../../../Services/GeminiService');
 const ScraperRepository = require('../../../Repositories/ScraperRepository');
+const ChannelRepository = require('../../../Repositories/ChannelRepository');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
 
@@ -10,6 +11,7 @@ class SubjectController {
     constructor() {
         this.geminiService = new GeminiService();
         this.repository = new ScraperRepository();
+        this.channelRepository = new ChannelRepository();
     }
 
     /**
@@ -107,9 +109,14 @@ class SubjectController {
      *             properties:
      *               name: { type: string }
      *               normalized_name: { type: string, nullable: true }
-     *               item_type: { type: string }
-     *               status: { type: string }
-     *               source: { type: string }
+     *               item_type: { type: string, example: person }
+     *               status: { type: string, example: active }
+     *               source: { type: string, example: manual }
+     *               channel_ids:
+     *                 type: array
+     *                 items: { type: integer, minimum: 1 }
+     *                 description: Gắn kênh qua bảng `subject_channels`
+     *                 example: [1, 2, 3]
      *     responses:
      *       "200":
      *         description: Created
@@ -135,6 +142,21 @@ class SubjectController {
      *         name: id
      *         required: true
      *         schema: { type: integer }
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               name: { type: string }
+     *               normalized_name: { type: string, nullable: true }
+     *               item_type: { type: string }
+     *               status: { type: string }
+     *               channel_ids:
+     *                 type: array
+     *                 items: { type: integer, minimum: 1 }
+     *                 description: Thay thế toàn bộ kênh gắn với subject
      *     responses:
      *       "200":
      *         description: OK
@@ -221,6 +243,94 @@ class SubjectController {
                 throw createError(404, 'Subject not found');
             }
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, detail);
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /subjects/{id}/channels:
+     *   post:
+     *     tags: [Subjects]
+     *     summary: Gắn thêm một kênh vào subject
+     *     security: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: integer }
+     *         description: Subject ID
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [channel_id]
+     *             properties:
+     *               channel_id:
+     *                 type: integer
+     *                 minimum: 1
+     *                 description: ID kênh trong bảng `channels`
+     *     responses:
+     *       "200":
+     *         description: OK
+     *       "404":
+     *         description: Subject hoặc channel không tồn tại
+     */
+    async attachChannel(req, res, next) {
+        try {
+            const result = await this.channelRepository.attachSubjectChannel(
+                req.params.id,
+                req.validatedData.channel_id
+            );
+            return ResponseService.responseJson(
+                res,
+                HTTP_STATUS.SUCCESS,
+                {
+                    created: result.created,
+                    link: result.link,
+                    channel: result.channel,
+                },
+                result.created ? 'Channel attached' : 'Channel already attached'
+            );
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /subjects/{id}/channels/{channelId}:
+     *   delete:
+     *     tags: [Subjects]
+     *     summary: Gỡ kênh khỏi subject
+     *     security: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: integer }
+     *         description: Subject ID
+     *       - in: path
+     *         name: channelId
+     *         required: true
+     *         schema: { type: integer }
+     *         description: Channel ID
+     *     responses:
+     *       "200":
+     *         description: OK
+     *       "404":
+     *         description: Liên kết không tồn tại
+     */
+    async detachChannel(req, res, next) {
+        try {
+            const result = await this.channelRepository.detachSubjectChannel(
+                req.params.id,
+                req.params.channelId
+            );
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result, 'Channel detached');
         } catch (error) {
             return next(error);
         }

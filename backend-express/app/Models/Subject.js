@@ -19,6 +19,16 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'subject_id',
                 as: 'socialPost',
             });
+            Subject.belongsToMany(models.Channel, {
+                through: models.SubjectChannel,
+                foreignKey: 'subject_id',
+                otherKey: 'channel_id',
+                as: 'channels',
+            });
+            Subject.hasMany(models.SubjectChannel, {
+                foreignKey: 'subject_id',
+                as: 'subjectChannels',
+            });
         }
     }
 

@@ -49,6 +49,42 @@
   font-size: 0.875rem;
 }
 
+.channelSection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chipGeneral,
+.chipAssign {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.chipGeneral {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.chipAssign {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .closeBtn {
   border: 1px solid #e2e8f0;
   background: #f8fafc;
@@ -193,10 +229,146 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+}
+
+.postsListLoading {
+  min-height: 120px;
+}
+
+.postsLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #64748b;
+  font-size: 0.875rem;
+  border-radius: 10px;
+}
+
+.platformTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.platformTab,
+.platformTabActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+
+  em {
+    font-style: normal;
+    font-size: 0.75rem;
+    color: #64748b;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 999px;
+    padding: 1px 6px;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.platformTabActive {
+  font-weight: 700;
+}
+
+.platformGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.platformGroupHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid;
+  border-radius: 10px;
+}
+
+.platformGroupTitle {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.platformGroupCount {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.platformGroupList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.paginationBtns {
+  display: flex;
+  gap: 8px;
+}
+
+.pageBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #2563eb;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #eef2ff;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .postCard {
   border: 1px solid #e2e8f0;
+  border-left-width: 4px;
   border-radius: 10px;
   padding: 12px 14px;
   background: #fff;
@@ -211,10 +383,26 @@
   color: #64748b;
 }
 
-.platform {
-  text-transform: uppercase;
-  font-weight: 700;
-  color: #2563eb;
+.postOrigin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.channelLabel {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.postDate {
+  flex-shrink: 0;
 }
 
 .postText {
@@ -271,6 +459,18 @@
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+}
+
+@media (max-width: 720px) {
+  .platformGroupCount {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

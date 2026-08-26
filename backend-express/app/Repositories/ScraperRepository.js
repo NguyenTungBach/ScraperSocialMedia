@@ -11,11 +11,13 @@ const {
     classifyTrendDirection,
     isNewSocialPost,
 } = require('../Helpers/PostScoreHelper');
+const { normalizeYoutubeVideo } = require('../Helpers/YouTubeHelper');
 const {
-    includesNormalized,
     parsePersonName,
     personNameTokens,
 } = require('../Helpers/TextNormalizeHelper');
+const { matchChannelByPostUrl } = require('../Helpers/ChannelUrlHelper');
+const ChannelRepository = require('./ChannelRepository');
 const geminiConfig = require('../../config/gemini');
 
 const NEW_WITHIN_HOURS = 48;
@@ -26,6 +28,7 @@ class ScraperRepository {
         this.scraperRunModel = db.ScraperRun;
         this.subjectScraperRunModel = db.SubjectScraperRun;
         this.socialPostModel = db.SocialPost;
+        this.channelRepository = new ChannelRepository();
     }
 
     subjectMatchTokens(subject) {
@@ -127,7 +130,11 @@ class ScraperRepository {
             order: [['id', 'DESC']],
             limit,
             offset,
-            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+            include: [
+                { model: this.socialPostModel, as: 'socialPost' },
+                ...this.subjectChannelIncludes(),
+            ],
+            distinct: true,
         });
 
         const subjectIds = rows.map((row) => row.id);
@@ -159,11 +166,68 @@ class ScraperRepository {
         return { rows: serialized, count, page: currentPage, per_page: limit };
     }
 
+    serializeChannel(row) {
+        const plain = typeof row?.toJSON === 'function' ? row.toJSON() : { ...row };
+        return {
+            id: plain.id,
+            name: plain.name,
+            url: plain.url,
+            type_channel: plain.type_channel,
+            created_at: plain.created_at ?? null,
+            updated_at: plain.updated_at ?? null,
+        };
+    }
+
+    subjectChannelIncludes() {
+        return [
+            {
+                model: db.Channel,
+                as: 'channels',
+                through: { attributes: [] },
+            },
+        ];
+    }
+
+    pickChannelIds(payload, key) {
+        if (payload[key] === undefined) return undefined;
+        const raw = payload[key];
+        if (!Array.isArray(raw)) return [];
+        return [...new Set(raw.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    }
+
+    async syncSubjectChannels(subjectId, { channel_ids }, { transaction } = {}) {
+        if (channel_ids === undefined) return;
+
+        if (channel_ids.length > 0) {
+            const found = await db.Channel.count({
+                where: { id: { [Op.in]: channel_ids } },
+                transaction,
+            });
+            if (found !== channel_ids.length) {
+                throw createError(422, 'One or more channel_ids not found');
+            }
+        }
+        await db.SubjectChannel.destroy({
+            where: { subject_id: subjectId },
+            transaction,
+        });
+        if (channel_ids.length > 0) {
+            await db.SubjectChannel.bulkCreate(
+                channel_ids.map((channel_id) => ({
+                    subject_id: subjectId,
+                    channel_id,
+                })),
+                { transaction }
+            );
+        }
+    }
+
     serializeSubjectListItem(row, { scraper_runs_count = 0 } = {}) {
         const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
         const socialPost = plain.socialPost
             ? this.serializeSocialPost(plain.socialPost)
             : null;
+        const channels = (plain.channels || []).map((ch) => this.serializeChannel(ch));
 
         return {
             id: plain.id,
@@ -174,6 +238,7 @@ class ScraperRepository {
             source: plain.source,
             created_at: plain.created_at,
             updated_at: plain.updated_at,
+            channels,
             scraper_runs_count,
             has_scraper_runs: scraper_runs_count > 0,
             can_delete: scraper_runs_count === 0,
@@ -218,6 +283,7 @@ class ScraperRepository {
         item_type = 'person',
         status = 'active',
         source = 'manual',
+        channel_ids,
     } = {}) {
         const trimmedName = String(name || '').trim();
         if (!trimmedName) {
@@ -225,12 +291,34 @@ class ScraperRepository {
         }
 
         const nick = normalized_name != null ? String(normalized_name).trim() : '';
-        const subject = await this.subjectModel.create({
-            name: trimmedName,
-            normalized_name: nick || null,
-            item_type: item_type || 'person',
-            status: status || 'active',
-            source: source || 'manual',
+        const ids = this.pickChannelIds({ channel_ids }, 'channel_ids');
+
+        const subject = await db.sequelize.transaction(async (transaction) => {
+            const created = await this.subjectModel.create(
+                {
+                    name: trimmedName,
+                    normalized_name: nick || null,
+                    item_type: item_type || 'person',
+                    status: status || 'active',
+                    source: source || 'manual',
+                },
+                { transaction }
+            );
+
+            await this.syncSubjectChannels(
+                created.id,
+                { channel_ids: ids ?? [] },
+                { transaction }
+            );
+
+            return created;
+        });
+
+        await subject.reload({
+            include: [
+                { model: this.socialPostModel, as: 'socialPost' },
+                ...this.subjectChannelIncludes(),
+            ],
         });
 
         return this.serializeSubjectListItem(subject, { scraper_runs_count: 0 });
@@ -238,7 +326,10 @@ class ScraperRepository {
 
     async updateSubject(id, payload = {}) {
         const subject = await this.subjectModel.findByPk(id, {
-            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+            include: [
+                { model: this.socialPostModel, as: 'socialPost' },
+                ...this.subjectChannelIncludes(),
+            ],
         });
         if (!subject) return null;
 
@@ -257,15 +348,27 @@ class ScraperRepository {
         if (payload.item_type !== undefined) updates.item_type = payload.item_type;
         if (payload.status !== undefined) updates.status = payload.status;
 
-        if (Object.keys(updates).length > 0) {
-            await subject.update(updates);
-        }
+        const ids = this.pickChannelIds(payload, 'channel_ids');
+
+        await db.sequelize.transaction(async (transaction) => {
+            if (Object.keys(updates).length > 0) {
+                await subject.update(updates, { transaction });
+            }
+            await this.syncSubjectChannels(
+                subject.id,
+                { channel_ids: ids },
+                { transaction }
+            );
+        });
 
         const scraper_runs_count = await this.subjectScraperRunModel.count({
             where: { subject_id: subject.id },
         });
         await subject.reload({
-            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+            include: [
+                { model: this.socialPostModel, as: 'socialPost' },
+                ...this.subjectChannelIncludes(),
+            ],
         });
 
         return this.serializeSubjectListItem(subject, { scraper_runs_count });
@@ -334,6 +437,7 @@ class ScraperRepository {
             source: plain.source,
             external_run_id: plain.external_run_id,
             scraper_id: plain.scraper_id,
+            channel_id: plain.channel_id ?? null,
             hot_score: scores.hot_score,
             trend_score: scores.trend_score,
             discussion: metrics.discussion,
@@ -383,12 +487,42 @@ class ScraperRepository {
         }
     }
 
+    async countSubjectPostsByPlatform(subjectId) {
+        const sequelize = db.sequelize;
+        const rows = await sequelize.query(
+            `SELECT sr.platform AS platform, COUNT(*) AS count
+             FROM subjects_scraper_runs ssr
+             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+             WHERE ssr.subject_id = :subjectId
+             GROUP BY sr.platform
+             ORDER BY count DESC`,
+            {
+                replacements: { subjectId: Number(subjectId) },
+                type: sequelize.QueryTypes.SELECT,
+            }
+        );
+
+        const posts_by_platform = {};
+        let total = 0;
+        for (const row of rows) {
+            const key = String(row.platform || 'facebook').toLowerCase();
+            const count = Number(row.count) || 0;
+            posts_by_platform[key] = count;
+            total += count;
+        }
+        posts_by_platform.all = total;
+        return posts_by_platform;
+    }
+
     /**
      * Chi tiết subject: thông tin + aggregate social_posts + danh sách bài liên quan (có metrics).
      */
-    async getSubjectDetail(id, { page = 1, per_page = 20, sort_by = 'posted_at' } = {}) {
+    async getSubjectDetail(id, { page = 1, per_page = 20, sort_by = 'posted_at', platform = null } = {}) {
         const subject = await this.subjectModel.findByPk(id, {
-            include: [{ model: this.socialPostModel, as: 'socialPost' }],
+            include: [
+                { model: this.socialPostModel, as: 'socialPost' },
+                ...this.subjectChannelIncludes(),
+            ],
         });
         if (!subject) return null;
 
@@ -396,21 +530,27 @@ class ScraperRepository {
         const currentPage = Math.max(Number(page) || 1, 1);
         const offset = (currentPage - 1) * limit;
 
+        const platformFilter = platform ? String(platform).trim().toLowerCase() : null;
+        const scraperRunInclude = {
+            model: this.scraperRunModel,
+            as: 'scraperRun',
+            attributes: { exclude: ['raw_data'] },
+            required: true,
+        };
+        if (platformFilter) {
+            scraperRunInclude.where = { platform: platformFilter };
+        }
+
         const { rows, count } = await this.subjectScraperRunModel.findAndCountAll({
             where: { subject_id: id },
-            include: [
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
-                    attributes: { exclude: ['raw_data'] },
-                    required: true,
-                },
-            ],
+            include: [scraperRunInclude],
             order: this.buildSubjectPostsOrder(sort_by),
             limit,
             offset,
             distinct: true,
         });
+
+        const posts_by_platform = await this.countSubjectPostsByPlatform(id);
 
         const plainSubject =
             typeof subject.toJSON === 'function' ? subject.toJSON() : { ...subject };
@@ -433,7 +573,10 @@ class ScraperRepository {
                   computed_at: null,
               };
 
+        const channels = (plainSubject.channels || []).map((ch) => this.serializeChannel(ch));
+
         delete plainSubject.socialPost;
+        delete plainSubject.channels;
 
         const posts = rows.map((link) => {
             const plainLink = typeof link.toJSON === 'function' ? link.toJSON() : link;
@@ -452,9 +595,11 @@ class ScraperRepository {
                 source: plainSubject.source,
                 created_at: plainSubject.created_at,
                 updated_at: plainSubject.updated_at,
+                channels,
             },
             aggregate,
             posts,
+            posts_by_platform,
             pagination: {
                 display: posts.length,
                 total_records: count,
@@ -463,34 +608,24 @@ class ScraperRepository {
                 total_pages: Math.ceil(count / limit) || 0,
             },
             sort_by,
+            platform: platformFilter,
         };
     }
 
-    matchSubjectsForPost(post, subjects) {
-        const haystack = `${post.title || ''} ${post.text || ''}`;
-        return subjects.filter((subject) => {
-            if (includesNormalized(haystack, subject.name)) return true;
-            if (subject.normalized_name && includesNormalized(haystack, subject.normalized_name)) {
-                return true;
-            }
-            return false;
-        });
-    }
-
     /**
-     * Lưu từng item Apify vào scraper_runs, gắn subjects_scraper_runs, cập nhật social_posts.
+     * Lưu từng item Apify vào scraper_runs, gắn subjects qua subject_channels, cập nhật social_posts.
+     * @param {{ run: object, items: object[], channels: Array<{id,url}> }} params
      */
-    async ingestApifyItems({ run, items }) {
-        const subjects = await this.subjectModel.findAll({
-            where: { status: 'active' },
-        });
+    async ingestApifyItems({ run, items, channels = [] }) {
         const now = new Date();
         const affectedSubjectIds = new Set();
+        const channelList = Array.isArray(channels) ? channels : [];
 
         let inserted = 0;
         let updated = 0;
         let skipped = 0;
         let linksCreated = 0;
+        let unmatchedChannel = 0;
 
         const savedRuns = [];
 
@@ -501,6 +636,23 @@ class ScraperRepository {
                     skipped += 1;
                     continue;
                 }
+
+                let matchedChannel = null;
+                if (channelList.length === 1) {
+                    matchedChannel = channelList[0];
+                } else if (channelList.length > 1) {
+                    matchedChannel =
+                        matchChannelByPostUrl(normalized.post_url, channelList) ||
+                        matchChannelByPostUrl(normalized.input_url || null, channelList);
+                }
+
+                if (!matchedChannel && channelList.length > 0) {
+                    unmatchedChannel += 1;
+                }
+
+                const channelFk = {
+                    channel_id: matchedChannel ? matchedChannel.id : null,
+                };
 
                 const payload = {
                     platform: normalized.platform,
@@ -529,31 +681,57 @@ class ScraperRepository {
                 });
 
                 if (scraperRun) {
-                    await scraperRun.update(payload, { transaction });
+                    const updatePayload = { ...payload };
+                    if (scraperRun.channel_id == null && matchedChannel) {
+                        Object.assign(updatePayload, channelFk);
+                    }
+                    await scraperRun.update(updatePayload, { transaction });
                     updated += 1;
                 } else {
-                    scraperRun = await this.scraperRunModel.create(payload, { transaction });
+                    scraperRun = await this.scraperRunModel.create(
+                        { ...payload, ...channelFk },
+                        { transaction }
+                    );
                     inserted += 1;
                 }
 
                 savedRuns.push(scraperRun);
 
-                const matched = this.matchSubjectsForPost(scraperRun, subjects);
-                for (const subject of matched) {
-                    const [link, created] = await this.subjectScraperRunModel.findOrCreate({
+                const subjectIdsToLink = new Set();
+
+                if (matchedChannel) {
+                    const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
+                        matchedChannel.id,
+                        { transaction }
+                    );
+                    for (const sid of linkedSubjectIds) {
+                        subjectIdsToLink.add(sid);
+                    }
+                }
+
+                const existingLinks = await this.subjectScraperRunModel.findAll({
+                    where: { scraper_run_id: scraperRun.id },
+                    attributes: ['subject_id'],
+                    transaction,
+                });
+                for (const link of existingLinks) {
+                    affectedSubjectIds.add(Number(link.subject_id));
+                }
+
+                for (const subjectId of subjectIdsToLink) {
+                    const [, created] = await this.subjectScraperRunModel.findOrCreate({
                         where: {
-                            subject_id: subject.id,
+                            subject_id: subjectId,
                             scraper_run_id: scraperRun.id,
                         },
                         defaults: {
-                            subject_id: subject.id,
+                            subject_id: subjectId,
                             scraper_run_id: scraperRun.id,
                         },
                         transaction,
                     });
                     if (created) linksCreated += 1;
-                    affectedSubjectIds.add(subject.id);
-                    void link;
+                    affectedSubjectIds.add(subjectId);
                 }
             }
 
@@ -563,7 +741,160 @@ class ScraperRepository {
         });
 
         return {
-            upsert_stats: { inserted, updated, skipped, links_created: linksCreated },
+            upsert_stats: {
+                inserted,
+                updated,
+                skipped,
+                links_created: linksCreated,
+                unmatched_channel: unmatchedChannel,
+            },
+            affected_subject_ids: [...affectedSubjectIds],
+            items_saved: savedRuns.length,
+        };
+    }
+
+    /**
+     * Lưu video YouTube vào scraper_runs, gắn subjects qua subject_channels, cập nhật social_posts.
+     * @param {{ videos: object[], channels: Array<{id,url}>, channel?: {id,url} }} params
+     *   videos — raw videos.list items HOẶC đã normalize (có platform_post_id)
+     *   channel — khi scrape 1 kênh, ưu tiên gán channel_id này
+     */
+    async ingestYoutubeItems({ videos = [], channels = [], channel = null } = {}) {
+        const now = new Date();
+        const affectedSubjectIds = new Set();
+        const channelList = Array.isArray(channels) ? channels : [];
+        const preferredChannel = channel || (channelList.length === 1 ? channelList[0] : null);
+
+        let inserted = 0;
+        let updated = 0;
+        let skipped = 0;
+        let linksCreated = 0;
+        let unmatchedChannel = 0;
+
+        const savedRuns = [];
+
+        await db.sequelize.transaction(async (transaction) => {
+            for (const item of videos) {
+                const normalized =
+                    item && item.platform === 'youtube' && item.platform_post_id
+                        ? item
+                        : normalizeYoutubeVideo(item);
+
+                if (!normalized.platform_post_id) {
+                    skipped += 1;
+                    continue;
+                }
+
+                let matchedChannel = preferredChannel;
+                if (!matchedChannel && channelList.length > 1) {
+                    matchedChannel = matchChannelByPostUrl(
+                        normalized.post_url,
+                        channelList
+                    );
+                }
+
+                if (!matchedChannel && channelList.length > 0 && !preferredChannel) {
+                    unmatchedChannel += 1;
+                }
+
+                const channelFk = {
+                    channel_id: matchedChannel ? matchedChannel.id : null,
+                };
+
+                const payload = {
+                    platform: 'youtube',
+                    platform_post_id: normalized.platform_post_id,
+                    post_url: normalized.post_url,
+                    title: normalized.title,
+                    text: normalized.text,
+                    likes: normalized.likes,
+                    comments: normalized.comments,
+                    shares: 0,
+                    angry_count: 0,
+                    posted_at: normalized.posted_at,
+                    scraped_at: now,
+                    source: 'youtube_api',
+                    external_run_id: null,
+                    scraper_id: 'youtube_data_api_v3',
+                    raw_data: normalized.raw_data || item,
+                };
+
+                let scraperRun = await this.scraperRunModel.findOne({
+                    where: {
+                        platform: payload.platform,
+                        platform_post_id: payload.platform_post_id,
+                    },
+                    transaction,
+                });
+
+                if (scraperRun) {
+                    const updatePayload = { ...payload };
+                    if (scraperRun.channel_id == null && matchedChannel) {
+                        Object.assign(updatePayload, channelFk);
+                    }
+                    await scraperRun.update(updatePayload, { transaction });
+                    updated += 1;
+                } else {
+                    scraperRun = await this.scraperRunModel.create(
+                        { ...payload, ...channelFk },
+                        { transaction }
+                    );
+                    inserted += 1;
+                }
+
+                savedRuns.push(scraperRun);
+
+                const subjectIdsToLink = new Set();
+
+                if (matchedChannel) {
+                    const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
+                        matchedChannel.id,
+                        { transaction }
+                    );
+                    for (const sid of linkedSubjectIds) {
+                        subjectIdsToLink.add(sid);
+                    }
+                }
+
+                const existingLinks = await this.subjectScraperRunModel.findAll({
+                    where: { scraper_run_id: scraperRun.id },
+                    attributes: ['subject_id'],
+                    transaction,
+                });
+                for (const link of existingLinks) {
+                    affectedSubjectIds.add(Number(link.subject_id));
+                }
+
+                for (const subjectId of subjectIdsToLink) {
+                    const [, created] = await this.subjectScraperRunModel.findOrCreate({
+                        where: {
+                            subject_id: subjectId,
+                            scraper_run_id: scraperRun.id,
+                        },
+                        defaults: {
+                            subject_id: subjectId,
+                            scraper_run_id: scraperRun.id,
+                        },
+                        transaction,
+                    });
+                    if (created) linksCreated += 1;
+                    affectedSubjectIds.add(subjectId);
+                }
+            }
+
+            for (const subjectId of affectedSubjectIds) {
+                await this.recomputeSocialPost(subjectId, { transaction });
+            }
+        });
+
+        return {
+            upsert_stats: {
+                inserted,
+                updated,
+                skipped,
+                links_created: linksCreated,
+                unmatched_channel: unmatchedChannel,
+            },
             affected_subject_ids: [...affectedSubjectIds],
             items_saved: savedRuns.length,
         };
@@ -653,8 +984,20 @@ class ScraperRepository {
             trendThreshold: thresholds.trend,
         });
 
+        let subject = plain.subject || null;
+        if (subject) {
+            subject = {
+                id: subject.id,
+                name: subject.name,
+                normalized_name: subject.normalized_name,
+                status: subject.status,
+                channels: (subject.channels || []).map((ch) => this.serializeChannel(ch)),
+            };
+        }
+
         return {
             ...plain,
+            subject,
             rank,
             discussion: metrics.discussion,
             interaction: metrics.interaction,
@@ -663,6 +1006,15 @@ class ScraperRepository {
             is_new: isNewSocialPost(plain, NEW_WITHIN_HOURS),
             hot_score: metrics.hot_score,
             trend_score: metrics.trend_score,
+        };
+    }
+
+    socialPostSubjectInclude() {
+        return {
+            model: this.subjectModel,
+            as: 'subject',
+            attributes: ['id', 'name', 'normalized_name', 'status'],
+            include: this.subjectChannelIncludes(),
         };
     }
 
@@ -725,13 +1077,8 @@ class ScraperRepository {
             order: this.buildSocialPostOrder(sort_by),
             limit,
             offset,
-            include: [
-                {
-                    model: this.subjectModel,
-                    as: 'subject',
-                    attributes: ['id', 'name', 'normalized_name', 'status'],
-                },
-            ],
+            include: [this.socialPostSubjectInclude()],
+            distinct: true,
         });
 
         const result = rows.map((row, index) =>
@@ -787,13 +1134,7 @@ class ScraperRepository {
         const rows = await this.socialPostModel.findAll({
             order: this.buildSocialPostOrder(sort_by),
             limit: chartLimit,
-            include: [
-                {
-                    model: this.subjectModel,
-                    as: 'subject',
-                    attributes: ['id', 'name', 'normalized_name', 'status'],
-                },
-            ],
+            include: [this.socialPostSubjectInclude()],
         });
 
         return rows.map((row, index) => this.serializeSocialPost(row, { rank: index + 1 }));
@@ -842,7 +1183,7 @@ class ScraperRepository {
         return this.socialPostModel.findAll({
             where,
             order: [['hot_score', 'DESC']],
-            include: [{ model: this.subjectModel, as: 'subject', attributes: ['id', 'name'] }],
+            include: [this.socialPostSubjectInclude()],
         });
     }
 }

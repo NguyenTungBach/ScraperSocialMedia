@@ -76,13 +76,21 @@ npm run dev
 | Method | Path | Mô tả |
 |--------|------|--------|
 | POST | `/api/subjects/discover` | Gemini → insert `subjects` (`{data:[]}`) |
-| GET | `/api/subjects` | Danh sách subjects |
+| GET | `/api/subjects` | Danh sách subjects (kèm `channels[]`) |
+| POST | `/api/subjects` | Tạo subject; body có `channel_ids[]` |
+| PUT | `/api/subjects/:id` | Cập nhật subject; body có `channel_ids[]` |
+| POST | `/api/subjects/:id/channels` | Gắn kênh `{ "channel_id": 2 }` |
+| DELETE | `/api/subjects/:id/channels/:channelId` | Gỡ kênh |
 | GET | `/api/subjects/:id` | Chi tiết + bài liên quan + aggregate |
-| POST | `/api/scraper/run` | Apify Actor mới → `scraper_runs` → match → `social_posts` |
-| GET | `/api/scraper/apify/runs` | Lịch sử Actor runs trên Apify ([console](https://console.apify.com/actors/runs)) |
-| POST | `/api/scraper/run-from-history` | Ingest lại từ `runId` Apify (không chạy Actor mới); body `{ "runId": "..." }` |
-| GET | `/api/scraper/runs` | Danh sách bài scrape trong DB local |
-| GET | `/api/scraper/runs/:id` | Chi tiết 1 bài trong DB |
+| GET | `/api/channels` | Danh sách kênh (catalog) |
+| POST | `/api/channels` | Tạo kênh |
+| PUT | `/api/channels/:id` | Cập nhật kênh |
+| DELETE | `/api/channels/:id` | Xóa kênh |
+| POST | `/api/scraper/apify/facebook/run` | Apify Actor mới; body `{ "channel_id": [2,3], "resultsLimit": 20 }` |
+| GET | `/api/scraper/apify/runs` | Lịch sử Actor runs trên Apify ([console](https://console.apify.com/actors/runs)) — dùng `result[].id` làm `runId` |
+| POST | `/api/scraper/apify/facebook/run-from-history` | Ingest lại từ run Apify đã có; body `{ "runId": "...", "channel_id": [2,3] }` |
+| GET | `/api/scraper/apify/facebook/runs` | Danh sách bài scrape trong DB local |
+| GET | `/api/scraper/apify/facebook/runs/:id` | Chi tiết 1 bài trong DB |
 | GET | `/api/social-posts` | Tổng hợp, sort `hot_score` DESC |
 | POST | `/api/alerts/gmail` | Gửi mail nếu hot **và** trend vượt ngưỡng |
 
@@ -91,15 +99,22 @@ npm run dev
 ```http
 POST /api/subjects/discover
 
-POST /api/scraper/run
+GET /api/scraper/apify/runs?page=1&per_page=10
+
+POST /api/scraper/apify/facebook/run
 Content-Type: application/json
 
 {
-  "resultsLimit": 5,
-  "startUrls": [
-    "https://www.facebook.com/Theanh28",
-    "https://www.facebook.com/tintucvtv24"
-  ]
+  "channel_id": [2, 3],
+  "resultsLimit": 5
+}
+
+POST /api/scraper/apify/facebook/run-from-history
+Content-Type: application/json
+
+{
+  "runId": "ApifyRunIdFromListAbove",
+  "channel_id": [2]
 }
 
 GET /api/social-posts

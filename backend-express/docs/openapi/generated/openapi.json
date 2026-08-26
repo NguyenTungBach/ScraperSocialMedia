@@ -54,23 +54,22 @@
           "driver"
         ]
       },
-      "User": {
+      "Channel": {
         "type": "object",
         "properties": {
           "id": {
             "type": "integer"
           },
-          "user_code": {
+          "name": {
             "type": "string"
           },
-          "user_name": {
-            "type": "string"
+          "url": {
+            "type": "string",
+            "format": "uri"
           },
-          "role": {
-            "$ref": "#/components/schemas/UserType"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
+          "type_channel": {
+            "type": "string",
+            "example": "facebook"
           },
           "created_at": {
             "type": "string",
@@ -81,11 +80,57 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
-          },
-          "deleted_at": {
+          }
+        }
+      },
+      "SubjectChannelIds": {
+        "type": "object",
+        "properties": {
+          "channel_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID kênh trong bảng channels"
+          }
+        }
+      },
+      "ScraperChannelIds": {
+        "type": "object",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID kênh trong bảng channels (DB local)"
+          }
+        }
+      },
+      "ScraperRunFromHistory": {
+        "type": "object",
+        "required": [
+          "runId",
+          "channel_id"
+        ],
+        "properties": {
+          "runId": {
             "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "description": "Apify Run ID (từ GET /scraper/apify/runs)"
+          },
+          "channel_id": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         }
       }
@@ -445,68 +490,12 @@
         }
       }
     },
-    "/scraper/run": {
-      "post": {
-        "tags": [
-          "Scraper"
-        ],
-        "summary": "Chạy Apify Facebook scraper → lưu scraper_runs → match subjects → cập nhật social_posts",
-        "description": "1. Gọi Apify Actor lấy bài.\n2. Mỗi bài upsert vào `scraper_runs`.\n3. Match `title`/`text` với `subjects.name` hoặc `normalized_name` (kiểu %name%).\n4. Tạo `subjects_scraper_runs` và recompute `social_posts` (SUM engagement + trend/hot).\n",
-        "security": [],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "captionText": {
-                    "type": "boolean",
-                    "example": false
-                  },
-                  "resultsLimit": {
-                    "type": "integer",
-                    "example": 5
-                  },
-                  "startUrls": {
-                    "type": "array",
-                    "items": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "url": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Scrape + match thành công"
-          },
-          "500": {
-            "description": "Thiếu APIFY_API_TOKEN hoặc lỗi Apify"
-          }
-        }
-      }
-    },
-    "/scraper/runs": {
+    "/channels": {
       "get": {
         "tags": [
-          "Scraper"
+          "Channels"
         ],
-        "summary": "Danh sách scraper_runs (bài đã scrape)",
+        "summary": "Danh sách kênh (catalog)",
         "security": [],
         "parameters": [
           {
@@ -525,6 +514,23 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tìm theo name hoặc url"
+          },
+          {
+            "in": "query",
+            "name": "type_channel",
+            "schema": {
+              "type": "string",
+              "example": "facebook"
+            },
+            "description": "Lọc theo nền tảng"
           }
         ],
         "responses": {
@@ -532,14 +538,59 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Tạo kênh mới",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "url"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Theanh28"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://www.facebook.com/Theanh28"
+                  },
+                  "type_channel": {
+                    "type": "string",
+                    "default": "facebook",
+                    "example": "facebook"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
       }
     },
-    "/scraper/runs/{id}": {
-      "get": {
+    "/channels/{id}": {
+      "put": {
         "tags": [
-          "Scraper"
+          "Channels"
         ],
-        "summary": "Chi tiết một scraper_run (bài)",
+        "summary": "Cập nhật kênh",
         "security": [],
         "parameters": [
           {
@@ -549,6 +600,291 @@
             "schema": {
               "type": "integer"
             }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "type_channel": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Channels"
+        ],
+        "summary": "Xóa kênh",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          }
+        }
+      }
+    },
+    "/scraper/apify/facebook/run": {
+      "post": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Chạy Apify Facebook scraper theo channel_id[]",
+        "description": "Body nhận `channel_id[]` (ID bảng `channels` trong DB local).\nBackend lấy `url` từ DB → `startUrls` Apify → scrape mới.\nUpsert `scraper_runs` (kèm `channel_id`) → link subjects qua `subject_channels` → recompute `social_posts`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "channel_id"
+                ],
+                "properties": {
+                  "channel_id": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "description": "ID kênh trong bảng `channels`",
+                    "example": [
+                      2,
+                      3
+                    ]
+                  },
+                  "captionText": {
+                    "type": "boolean",
+                    "description": "Tuỳ chọn — truyền xuống input Apify Actor"
+                  },
+                  "resultsLimit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Số bài tối đa mỗi kênh",
+                    "example": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scrape + ingest thành công"
+          },
+          "422": {
+            "description": "channel_id không hợp lệ hoặc không có URL kênh"
+          }
+        }
+      }
+    },
+    "/scraper/apify/runs": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Lịch sử Actor runs trên Apify",
+        "description": "Danh sách run trên Apify Console ([actors/runs](https://console.apify.com/actors/runs)).\nDùng field `id` trong `result[]` làm `runId` cho POST `/scraper/apify/facebook/run-from-history`.\n",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Lọc theo trạng thái Apify (vd. SUCCEEDED, FAILED, RUNNING)"
+          },
+          {
+            "in": "query",
+            "name": "desc",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "Sắp xếp mới nhất trước"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — `result[]` chứa Apify run (`id`, `status`, `console_url`, …)"
+          }
+        }
+      }
+    },
+    "/scraper/apify/facebook/run-from-history": {
+      "post": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Ingest dataset Apify run đã có theo channel_id[]",
+        "description": "**Không chạy Actor mới** — chỉ đọc dataset của run Apify đã có.\n\n1. `runId` — Apify Run ID (string), lấy từ GET `/scraper/apify/runs` → `result[].id`\n   hoặc từ URL console `.../actors/{actId}/runs/{runId}`.\n2. `channel_id[]` — ID kênh trong bảng `channels` (DB local).\n\nMỗi bài được gán `scraper_runs.channel_id`, sau đó map sang subjects qua bảng `subject_channels`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "runId",
+                  "channel_id"
+                ],
+                "properties": {
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Apify Run ID (không phải channel_id hay subject_id)",
+                    "example": "abc123XYZ"
+                  },
+                  "channel_id": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "description": "ID kênh trong bảng `channels`",
+                    "example": [
+                      2,
+                      3
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ingest thành công"
+          },
+          "400": {
+            "description": "Run chưa có dataset"
+          },
+          "404": {
+            "description": "Apify run không tồn tại"
+          },
+          "422": {
+            "description": "channel_id không hợp lệ"
+          }
+        }
+      }
+    },
+    "/scraper/apify/facebook/runs": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Danh sách scraper_runs (bài trong DB local)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tìm theo title/text/post_url"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK — mỗi bài có `channel_id`"
+          }
+        }
+      }
+    },
+    "/scraper/apify/facebook/runs/{id}": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Chi tiết một scraper_run",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID bài trong bảng `scraper_runs` (DB local)"
           }
         ],
         "responses": {
@@ -566,7 +902,7 @@
         "tags": [
           "SocialPosts"
         ],
-        "summary": "Danh sách tổng hợp social_posts (sắp xếp hot_score giảm dần)",
+        "summary": "Danh sách tổng hợp social_posts (có metrics + sort)",
         "security": [],
         "parameters": [
           {
@@ -585,6 +921,104 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hot_score",
+                "trend_score",
+                "discussion",
+                "interaction",
+                "sentiment"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "new_only",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/social-posts/stats": {
+      "get": {
+        "tags": [
+          "SocialPosts"
+        ],
+        "summary": "Thống kê tổng / uptrend / downtrend",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/social-posts/dashboard": {
+      "get": {
+        "tags": [
+          "SocialPosts"
+        ],
+        "summary": "Dashboard home — stats + chart + ranking",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hot_score",
+                "trend_score",
+                "discussion",
+                "interaction",
+                "sentiment"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "new_only",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
           }
         ],
         "responses": {
@@ -600,7 +1034,7 @@
           "Subjects"
         ],
         "summary": "Gọi Gemini lấy danh sách subjects và lưu DB",
-        "description": "Prompt mặc định lấy tên người nổi tiếng / giang hồ mạng / phát ngôn gây bão\nliên quan an ninh trật tự VN trong 4 tháng gần đây.\nResponse Gemini kỳ vọng `{\"data\":[\"Tên 1\",\"Tên 2\"]}`.\n",
+        "description": "Prompt mặc định lấy tên người nổi tiếng / giang hồ mạng / phát ngôn gây bão\nliên quan an ninh trật tự VN trong 4 tháng gần đây.\nResponse Gemini kỳ vọng:\n`{\"data\":[{\"name\":\"...\",\"nick_name\":\"...\"}]}`\nMap DB: `name` → `subjects.name`, `nick_name` → `subjects.normalized_name`.\n",
         "security": [],
         "responses": {
           "200": {
@@ -617,7 +1051,7 @@
         "tags": [
           "Subjects"
         ],
-        "summary": "Danh sách subjects",
+        "summary": "Danh sách subjects (search + paginate)",
         "security": [],
         "parameters": [
           {
@@ -644,6 +1078,22 @@
               "type": "string",
               "example": "active"
             }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tìm theo name hoặc biệt danh (normalized_name)"
+          },
+          {
+            "in": "query",
+            "name": "key_search",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Alias của q"
           }
         ],
         "responses": {
@@ -651,14 +1101,131 @@
             "description": "OK"
           }
         }
-      }
-    },
-    "/subjects/{id}": {
-      "get": {
+      },
+      "post": {
         "tags": [
           "Subjects"
         ],
-        "summary": "Chi tiết subject + bài liên quan (scraper_runs) + tổng hợp social_posts",
+        "summary": "Tạo đối tượng mới",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "normalized_name": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "item_type": {
+                    "type": "string",
+                    "example": "person"
+                  },
+                  "status": {
+                    "type": "string",
+                    "example": "active"
+                  },
+                  "source": {
+                    "type": "string",
+                    "example": "manual"
+                  },
+                  "channel_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "description": "Gắn kênh qua bảng `subject_channels`",
+                    "example": [
+                      1,
+                      2,
+                      3
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/subjects/{id}": {
+      "put": {
+        "tags": [
+          "Subjects"
+        ],
+        "summary": "Cập nhật đối tượng",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "normalized_name": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "item_type": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "channel_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "description": "Thay thế toàn bộ kênh gắn với subject"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Subjects"
+        ],
+        "summary": "Xóa cứng đối tượng (chặn nếu còn subjects_scraper_runs)",
         "security": [],
         "parameters": [
           {
@@ -672,10 +1239,155 @@
         ],
         "responses": {
           "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          },
+          "409": {
+            "description": "Đối tượng đang có bài liên kết"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Subjects"
+        ],
+        "summary": "Chi tiết subject + tổng hợp + danh sách bài viết liên quan (đầy đủ metrics)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "posted_at",
+                "likes",
+                "comments",
+                "shares",
+                "interaction",
+                "hot_score"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
             "description": "OK"
           },
           "404": {
             "description": "Không tìm thấy"
+          }
+        }
+      }
+    },
+    "/subjects/{id}/channels": {
+      "post": {
+        "tags": [
+          "Subjects"
+        ],
+        "summary": "Gắn thêm một kênh vào subject",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Subject ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "channel_id"
+                ],
+                "properties": {
+                  "channel_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "ID kênh trong bảng `channels`"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Subject hoặc channel không tồn tại"
+          }
+        }
+      }
+    },
+    "/subjects/{id}/channels/{channelId}": {
+      "delete": {
+        "tags": [
+          "Subjects"
+        ],
+        "summary": "Gỡ kênh khỏi subject",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Subject ID"
+          },
+          {
+            "in": "path",
+            "name": "channelId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Channel ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Liên kết không tồn tại"
           }
         }
       }

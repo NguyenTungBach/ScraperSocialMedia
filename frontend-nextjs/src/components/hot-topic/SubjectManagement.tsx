@@ -10,6 +10,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Radio,
   Search,
   Trash2,
   TrendingDown,
@@ -18,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
+import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import {
   subjectsApi,
   type SubjectListItem,
@@ -30,6 +32,7 @@ import {
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { SubjectDetailModal } from './SubjectDetailModal';
+import { PlatformBadge } from './PlatformBadge';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './SubjectManagement.module.scss';
 
@@ -65,14 +68,78 @@ function TopicThumbnail({ color, title }: { color: string; title: string }) {
   );
 }
 
+function ChannelChips({ channels = [] }: { channels?: ChannelItem[] }) {
+  if (channels.length === 0) {
+    return <span className={styles.mutedDash}>—</span>;
+  }
+  return (
+    <div className={styles.channelChips}>
+      {channels.map((ch) => (
+        <span key={ch.id} className={styles.chipAssign} title={ch.url}>
+          <PlatformBadge platform={ch.type_channel} />
+          <span className={styles.chipName}>{ch.name}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ChannelChecklist({
+  label,
+  items,
+  selectedIds,
+  onToggle,
+}: {
+  label: string;
+  items: ChannelItem[];
+  selectedIds: number[];
+  onToggle: (id: number) => void;
+}) {
+  return (
+    <div className={styles.channelPicker}>
+      <div className={styles.channelPickerLabel}>{label}</div>
+      {items.length === 0 ? (
+        <p className={styles.channelPickerEmpty}>
+          Chưa có kênh trong danh mục. Mở “Quản lý kênh” để thêm.
+        </p>
+      ) : (
+        <div className={styles.channelPickerList}>
+          {items.map((item) => {
+            const checked = selectedIds.includes(item.id);
+            return (
+              <label key={item.id} className={styles.channelOption}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(item.id)}
+                />
+                <span>
+                  <PlatformBadge platform={item.type_channel} />
+                  <strong>{item.name}</strong>
+                  <em>{item.url}</em>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type FormMode = 'create' | 'edit';
 
 interface SubjectFormState {
   name: string;
   normalized_name: string;
+  channel_ids: number[];
 }
 
-const EMPTY_FORM: SubjectFormState = { name: '', normalized_name: '' };
+const EMPTY_FORM: SubjectFormState = {
+  name: '',
+  normalized_name: '',
+  channel_ids: [],
+};
 
 export function SubjectManagement() {
   const [searchInput, setSearchInput] = useState('');
@@ -93,6 +160,17 @@ export function SubjectManagement() {
   const [form, setForm] = useState<SubjectFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const [channelOptions, setChannelOptions] = useState<ChannelItem[]>([]);
+
+  const loadChannelOptions = useCallback(async () => {
+    try {
+      const res = await channelsApi.list({ per_page: 100 });
+      setChannelOptions(res.data?.result || []);
+    } catch (err) {
+      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+    }
+  }, []);
 
   const loadList = useCallback(async (options?: { page?: number; q?: string }) => {
     const nextPage = options?.page ?? 1;
@@ -124,6 +202,10 @@ export function SubjectManagement() {
   }, [loadList, query]);
 
   useEffect(() => {
+    void loadChannelOptions();
+  }, [loadChannelOptions]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       setPage(1);
       setQuery(searchInput.trim());
@@ -136,6 +218,7 @@ export function SubjectManagement() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormOpen(true);
+    void loadChannelOptions();
   };
 
   const openEdit = (item: SubjectListItem) => {
@@ -144,8 +227,10 @@ export function SubjectManagement() {
     setForm({
       name: item.name || '',
       normalized_name: item.normalized_name || '',
+      channel_ids: (item.channels || []).map((ch) => ch.id),
     });
     setFormOpen(true);
+    void loadChannelOptions();
   };
 
   const closeForm = () => {
@@ -153,6 +238,15 @@ export function SubjectManagement() {
     setFormOpen(false);
     setEditingId(null);
     setForm(EMPTY_FORM);
+  };
+
+  const toggleChannel = (id: number) => {
+    setForm((prev) => ({
+      ...prev,
+      channel_ids: prev.channel_ids.includes(id)
+        ? prev.channel_ids.filter((x) => x !== id)
+        : [...prev.channel_ids, id],
+    }));
   };
 
   const submitForm = async (event: React.FormEvent) => {
@@ -168,6 +262,7 @@ export function SubjectManagement() {
       const payload = {
         name,
         normalized_name: form.normalized_name.trim() || null,
+        channel_ids: form.channel_ids,
       };
       if (formMode === 'create') {
         await subjectsApi.create({ ...payload, source: 'manual' });
@@ -265,7 +360,9 @@ export function SubjectManagement() {
         <div className={styles.toolbarInner}>
           <div>
             <h1 className={styles.pageTitle}>Quản lý đối tượng</h1>
-            <p className={styles.pageDesc}>Thêm, sửa, xóa và xem bài viết liên quan</p>
+            <p className={styles.pageDesc}>
+              Thêm/sửa/xóa đối tượng và gắn kênh theo dõi
+            </p>
           </div>
 
           <div className={styles.toolbarActions}>
@@ -279,6 +376,10 @@ export function SubjectManagement() {
                 aria-label="Tìm kiếm đối tượng"
               />
             </label>
+            <Link href="/channels" className={styles.secondaryBtn}>
+              <Radio size={16} aria-hidden />
+              Quản lý kênh
+            </Link>
             <button type="button" className={styles.addBtn} onClick={openCreate}>
               <Plus size={16} aria-hidden />
               Thêm đối tượng
@@ -307,6 +408,7 @@ export function SubjectManagement() {
           <div className={styles.tableHeader}>
             <span>Tên</span>
             <span>Biệt danh</span>
+            <span>Kênh theo dõi</span>
             <span>Chỉ số phân tích</span>
             <span className={styles.actionsHead}>Thao tác</span>
           </div>
@@ -336,6 +438,8 @@ export function SubjectManagement() {
                     </div>
 
                     <div className={styles.nickname}>{nick}</div>
+
+                    <ChannelChips channels={item.channels} />
 
                     <div className={dash.metrics}>
                       <div className={dash.metricItem}>
@@ -455,7 +559,7 @@ export function SubjectManagement() {
       {formOpen && (
         <div className={styles.modalOverlay} role="presentation" onClick={closeForm}>
           <div
-            className={styles.modal}
+            className={cn(styles.modal, styles.modalWide)}
             role="dialog"
             aria-modal="true"
             aria-labelledby="subject-form-title"
@@ -497,6 +601,14 @@ export function SubjectManagement() {
                   placeholder="Biệt danh (không bắt buộc)"
                 />
               </label>
+
+              <ChannelChecklist
+                label="Kênh theo dõi"
+                items={channelOptions}
+                selectedIds={form.channel_ids}
+                onToggle={toggleChannel}
+              />
+
               <div className={styles.modalFooter}>
                 <button type="button" className={styles.cancelBtn} onClick={closeForm} disabled={saving}>
                   Hủy

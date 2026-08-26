@@ -1,5 +1,8 @@
 import { apiClient, type ApiResponse } from './client';
+import type { ChannelItem } from './channels';
 import type { SocialPostItem, SocialPostsPagination, TrendDirection } from './socialPosts';
+
+export type { ChannelItem };
 
 export interface SubjectInfo {
   id: number;
@@ -10,6 +13,7 @@ export interface SubjectInfo {
   source?: string;
   created_at?: string | null;
   updated_at?: string | null;
+  channels?: ChannelItem[];
 }
 
 export interface SubjectAggregate {
@@ -54,6 +58,7 @@ export interface SubjectCreatePayload {
   item_type?: string;
   status?: string;
   source?: string;
+  channel_ids?: number[];
 }
 
 export interface SubjectUpdatePayload {
@@ -61,6 +66,7 @@ export interface SubjectUpdatePayload {
   normalized_name?: string | null;
   item_type?: string;
   status?: string;
+  channel_ids?: number[];
 }
 
 export interface SubjectRelatedPost {
@@ -79,6 +85,7 @@ export interface SubjectRelatedPost {
   source?: string;
   external_run_id?: string | null;
   scraper_id?: string | null;
+  channel_id?: number | null;
   hot_score: number;
   trend_score: number;
   discussion: number;
@@ -101,14 +108,17 @@ export interface SubjectDetail {
   subject: SubjectInfo;
   aggregate: SubjectAggregate | SocialPostItem;
   posts: SubjectRelatedPost[];
+  posts_by_platform?: Record<string, number>;
   pagination: SocialPostsPagination;
   sort_by: SubjectPostsSortBy;
+  platform?: string | null;
 }
 
 export interface SubjectDetailParams {
   page?: number;
   per_page?: number;
   sort_by?: SubjectPostsSortBy;
+  platform?: string;
 }
 
 export const subjectsApi = {
@@ -145,6 +155,7 @@ export const subjectsApi = {
         page: params.page ?? 1,
         per_page: params.per_page ?? 20,
         sort_by: params.sort_by ?? 'posted_at',
+        platform: params.platform || undefined,
       },
     }) as Promise<ApiResponse<SubjectDetail>>,
 };

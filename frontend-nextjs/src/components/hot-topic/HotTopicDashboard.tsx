@@ -46,6 +46,7 @@ import {
   type TopicCategory,
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
+import { PlatformBadge } from './PlatformBadge';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
 
@@ -75,6 +76,14 @@ const PAGE_SIZE = 20;
 function mapToHotTopic(item: SocialPostItem): HotTopic {
   const title = item.subject?.name?.trim() || `Subject #${item.subject_id}`;
   const nickName = item.subject?.normalized_name?.trim() || '';
+  const channels = item.subject?.channels || [];
+  const channelLabel = channels.length
+    ? channels
+        .slice(0, 3)
+        .map((ch) => ch.name)
+        .join(' · ')
+    : '';
+
   return {
     id: String(item.id),
     subjectId: item.subject_id || item.subject?.id || 0,
@@ -83,6 +92,13 @@ function mapToHotTopic(item: SocialPostItem): HotTopic {
     nickName,
     category: 'social-news',
     categoryLabel: nickName ? `Biệt danh: ${nickName}` : 'Đối tượng theo dõi',
+    channelLabel,
+    channels: channels.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      type_channel: ch.type_channel,
+      url: ch.url,
+    })),
     isNew: item.is_new,
     thumbnailColor: colorForId(item.id),
     discussion: item.discussion,
@@ -127,6 +143,7 @@ function chartTopicToHotTopic(item: ChartTopic): HotTopic {
     nickName: '',
     category: 'social-news',
     categoryLabel: item.categoryLabel,
+    channelLabel: '',
     thumbnailColor: item.thumbnailColor,
     discussion: item.discussion,
     discussionTrend: item.discussionTrend,
@@ -238,6 +255,20 @@ function RankingRow({
             {topic.isNew && <span className={styles.newBadge}>Mới xuất hiện</span>}
           </div>
           <span className={styles.topicCategory}>{topic.categoryLabel}</span>
+          {(topic.channels?.length || 0) > 0 ? (
+            <div className={styles.topicChannelChips}>
+              {topic.channels!.map((ch) => (
+                <span key={ch.id} className={styles.topicChannelChip} title={ch.url || ch.name}>
+                  <PlatformBadge platform={ch.type_channel} />
+                  <span>{ch.name}</span>
+                </span>
+              ))}
+            </div>
+          ) : topic.channelLabel ? (
+            <span className={styles.topicChannels} title={topic.channelLabel}>
+              {topic.channelLabel}
+            </span>
+          ) : null}
         </div>
       </div>
 

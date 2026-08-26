@@ -16,6 +16,42 @@ schemas:
       - `driver`
     type: string
     enum: [admin, driver]
+  Channel:
+    type: object
+    properties:
+      id: { type: integer }
+      name: { type: string }
+      url: { type: string, format: uri }
+      type_channel: { type: string, example: facebook }
+      created_at: { type: string, format: date-time, nullable: true }
+      updated_at: { type: string, format: date-time, nullable: true }
+  SubjectChannelIds:
+    type: object
+    properties:
+      channel_ids:
+        type: array
+        items: { type: integer, minimum: 1 }
+        description: ID kênh trong bảng channels
+  ScraperChannelIds:
+    type: object
+    required: [channel_id]
+    properties:
+      channel_id:
+        type: array
+        minItems: 1
+        items: { type: integer, minimum: 1 }
+        description: ID kênh trong bảng channels (DB local)
+  ScraperRunFromHistory:
+    type: object
+    required: [runId, channel_id]
+    properties:
+      runId:
+        type: string
+        description: Apify Run ID (từ GET /scraper/apify/runs)
+      channel_id:
+        type: array
+        minItems: 1
+        items: { type: integer, minimum: 1 }
   User:
     type: object
     properties:

@@ -1,4 +1,5 @@
 import { apiClient, type ApiResponse } from './client';
+import type { ChannelItem } from './channels';
 
 export type SocialPostSortBy =
   | 'hot_score'
@@ -14,6 +15,7 @@ export interface SocialPostSubject {
   name: string;
   normalized_name?: string | null;
   status?: string;
+  channels?: ChannelItem[];
 }
 
 export interface SocialPostItem {

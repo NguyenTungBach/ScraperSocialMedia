@@ -57,7 +57,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   },
   customCssUrl: null,
   customfavIcon: null,
-  customSiteTitle: 'Hoyocodes API Documentation'
+  customSiteTitle: 'ScraperSocialMedia API Documentation'
 }));
 
 // OpenAPI specification JSON endpoint

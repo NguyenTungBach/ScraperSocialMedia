@@ -4,6 +4,7 @@ const express = require('express');
 const ScraperController = require('../../app/Http/Controllers/Api/ScraperController');
 const {
     validateRunScraper,
+    validateRunYoutube,
     validateRunFromHistory,
     validateApifyRunsQuery,
     validateListQuery,
@@ -12,12 +13,16 @@ const {
 const router = express.Router();
 const controller = new ScraperController();
 
-/** POST /api/scraper/run — chạy Actor Apify mới */
-router.post('/run', validateRunScraper, controller.run.bind(controller));
-
-/** POST /api/scraper/run-from-history — ingest từ Apify run đã có (không tốn scrape mới) */
+/** POST /api/scraper/apify/facebook/run */
 router.post(
-    '/run-from-history',
+    '/apify/facebook/run',
+    validateRunScraper,
+    controller.run.bind(controller)
+);
+
+/** POST /api/scraper/apify/facebook/run-from-history */
+router.post(
+    '/apify/facebook/run-from-history',
     validateRunFromHistory,
     controller.runFromHistory.bind(controller)
 );
@@ -29,10 +34,21 @@ router.get(
     controller.listApifyRuns.bind(controller)
 );
 
-/** GET /api/scraper/runs — bài đã lưu trong DB local */
-router.get('/runs', validateListQuery, controller.listRuns.bind(controller));
+/** GET /api/scraper/apify/facebook/runs — bài đã lưu trong DB local */
+router.get(
+    '/apify/facebook/runs',
+    validateListQuery,
+    controller.listRuns.bind(controller)
+);
 
-/** GET /api/scraper/runs/:id — chi tiết 1 bài trong DB */
-router.get('/runs/:id', controller.getRun.bind(controller));
+/** GET /api/scraper/apify/facebook/runs/:id */
+router.get('/apify/facebook/runs/:id', controller.getRun.bind(controller));
+
+/** POST /api/scraper/youtube/run — cào video kênh YouTube qua Data API v3 */
+router.post(
+    '/youtube/run',
+    validateRunYoutube,
+    controller.runYoutube.bind(controller)
+);
 
 module.exports = router;
