@@ -2,8 +2,10 @@
 # 1) GET /channels?type_channel=youtube → lấy id
 # 2) POST /scraper/youtube/run { channel_id: [...] }
 #
-# Secret cần cấu hình trên GitHub (Settings → Secrets and variables → Actions):
-#   API_BASE_URL — ví dụ https://your-api.example.com/api  (có đuôi /api, không slash cuối)
+# Variable cần cấu hình trên GitHub:
+#   Settings → Secrets and variables → Actions → Variables (tab Variables)
+#   Name:  API_BASE_URL
+#   Value: https://your-api.example.com/api  (có đuôi /api, không slash cuối)
 
 name: YouTube Scraper Cron
 
@@ -21,12 +23,12 @@ jobs:
     steps:
       - name: Fetch YouTube channel IDs and run scraper
         env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: |
           set -euo pipefail
 
           if [ -z "${API_BASE_URL:-}" ]; then
-            echo "::error::Missing secret API_BASE_URL (e.g. https://host/api)"
+            echo "::error::Missing repository variable API_BASE_URL (e.g. https://host/api)"
             exit 1
           fi
 
