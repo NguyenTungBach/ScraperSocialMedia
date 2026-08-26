@@ -15,7 +15,7 @@ export interface HotTopic {
   isNew?: boolean;
   thumbnailColor: string;
   discussion: number;
-  discussionTrend: 'up' | 'down' | 'neutral';
+  discussionTrend: 'up' | 'down';
   interaction: number;
   sentiment: number;
   hotScore: number;
@@ -40,7 +40,7 @@ export interface ChartTopic {
   rank: number;
   categoryLabel: string;
   startDate: string;
-  discussionTrend: 'up' | 'down' | 'neutral';
+  discussionTrend: 'up' | 'down';
 }
 
 export const TOPIC_CATEGORIES: {

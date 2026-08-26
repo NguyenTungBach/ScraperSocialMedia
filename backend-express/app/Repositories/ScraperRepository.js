@@ -276,7 +276,7 @@ class ScraperRepository {
                       discussion: 0,
                       interaction: 0,
                       sentiment: 0,
-                      trend_direction: 'neutral',
+                      trend_direction: 'down',
                       is_new: false,
                       computed_at: null,
                   },
@@ -1293,7 +1293,6 @@ class ScraperRepository {
             total: items.length,
             uptrend,
             downtrend,
-            neutral: items.length - uptrend - downtrend,
             new_count,
             thresholds: {
                 hot_score: thresholds.hot,
@@ -1302,9 +1301,7 @@ class ScraperRepository {
             definitions: {
                 uptrend:
                     'Chủ đề đạt ngưỡng hot_score hoặc trend_score (đang nóng / tương tác mạnh).',
-                downtrend:
-                    'Cả hot_score và trend_score dưới 25% ngưỡng (engagement thấp / nguội).',
-                neutral: 'Không thuộc uptrend hay downtrend.',
+                downtrend: 'Chưa đạt ngưỡng hot_score và trend_score.',
             },
         };
     }

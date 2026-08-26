@@ -8,7 +8,7 @@ export type SocialPostSortBy =
   | 'interaction'
   | 'sentiment';
 
-export type TrendDirection = 'up' | 'down' | 'neutral';
+export type TrendDirection = 'up' | 'down';
 
 export interface SocialPostSubject {
   id: number;
@@ -44,7 +44,6 @@ export interface SocialPostStats {
   total: number;
   uptrend: number;
   downtrend: number;
-  neutral: number;
   new_count: number;
   thresholds: {
     hot_score: number;
@@ -53,7 +52,6 @@ export interface SocialPostStats {
   definitions: {
     uptrend: string;
     downtrend: string;
-    neutral: string;
   };
 }
 

@@ -418,17 +418,15 @@ export function SubjectDetailModal({
               <div className={styles.aggCard}>
                 <span>Xu hướng</span>
                 <strong className={styles.trendValue}>
-                  {aggregate?.trend_direction === 'up' && (
+                  {aggregate?.trend_direction === 'up' ? (
                     <>
                       <TrendingUp size={16} /> Uptrend
                     </>
-                  )}
-                  {aggregate?.trend_direction === 'down' && (
+                  ) : (
                     <>
                       <TrendingDown size={16} /> Downtrend
                     </>
                   )}
-                  {aggregate?.trend_direction === 'neutral' && 'Neutral'}
                 </strong>
               </div>
             </section>

@@ -169,8 +169,7 @@ function deriveEngagementMetrics(row = {}) {
 
 /**
  * Uptrend: đạt ngưỡng hot hoặc trend (đang nóng / tương tác mạnh).
- * Downtrend: cả hai điểm dưới 25% ngưỡng (engagement thấp / nguội).
- * Neutral: còn lại.
+ * Downtrend: chưa đạt ngưỡng (còn lại).
  */
 function classifyTrendDirection(row, { hotThreshold, trendThreshold } = {}) {
     const hot = roundScore(row.hot_score);
@@ -179,8 +178,7 @@ function classifyTrendDirection(row, { hotThreshold, trendThreshold } = {}) {
     const trendTh = Number(trendThreshold) || 500;
 
     if (hot >= hotTh || trend >= trendTh) return 'up';
-    if (hot < hotTh * 0.25 && trend < trendTh * 0.25) return 'down';
-    return 'neutral';
+    return 'down';
 }
 
 function isNewSocialPost(row, withinHours = 48) {
