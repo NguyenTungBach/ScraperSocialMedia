@@ -58,6 +58,7 @@ const listQueryObjectSchema = z.object({
     status: z.string().optional(),
     q: z.string().optional(),
     key_search: z.string().optional(),
+    type_channel: z.string().trim().max(50).optional(),
     sort_by: z
         .enum(['hot_score', 'trend_score', 'discussion', 'interaction', 'sentiment'])
         .optional(),

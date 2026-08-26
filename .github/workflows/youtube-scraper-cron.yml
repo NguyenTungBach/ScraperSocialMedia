@@ -88,14 +88,23 @@ jobs:
 
               data = payload.get("data") or {}
               rows = data.get("result") or []
-              for row in rows:
+              # Lọc lại phía client (phòng API chưa filter / type_channel bị strip)
+              youtube_rows = [
+                  row
+                  for row in rows
+                  if str(row.get("type_channel") or "").strip().lower() == "youtube"
+              ]
+              for row in youtube_rows:
                   cid = row.get("id")
                   if cid is not None:
                       channel_ids.append(int(cid))
 
               pagination = data.get("pagination") or {}
               total_pages = int(pagination.get("total_pages") or 1)
-              print(f"Fetched page {page}/{total_pages}: {len(rows)} channel(s)")
+              print(
+                  f"Fetched page {page}/{total_pages}: "
+                  f"{len(rows)} row(s), {len(youtube_rows)} youtube"
+              )
               if page >= total_pages or not rows:
                   break
               page += 1
