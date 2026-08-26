@@ -1,8 +1,18 @@
 'use strict';
 
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 
 function toCount(value) {
+    if (value == null || value === '') return 0;
+    if (typeof value === 'bigint') {
+        const n = Number(value);
+        return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+    }
+    if (typeof value === 'string') {
+        const n = Number(value.trim());
+        return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+    }
     if (typeof value === 'number' && Number.isFinite(value)) {
         return Math.max(0, Math.floor(value));
     }
@@ -98,7 +108,12 @@ function buildPlatformPostId(item) {
  * hot   = shares×3 + comments×2 + angry×4 + likes×1
  */
 function toNumber(value) {
-    const n = Number(value);
+    if (value == null || value === '') return 0;
+    if (typeof value === 'bigint') {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+    const n = Number(typeof value === 'string' ? value.trim() : value);
     return Number.isFinite(n) ? n : 0;
 }
 
@@ -176,6 +191,107 @@ function isNewSocialPost(row, withinHours = 48) {
     return Date.now() - created.getTime() <= withinHours * 60 * 60 * 1000;
 }
 
+/**
+ * Tháng lịch chứa `refDate` (local server): [start, end) — end = đầu tháng sau.
+ */
+function getCalendarMonthRange(refDate = new Date()) {
+    const d = refDate instanceof Date ? refDate : new Date(refDate);
+    const base = Number.isNaN(d.getTime()) ? new Date() : d;
+    const start = new Date(base.getFullYear(), base.getMonth(), 1, 0, 0, 0, 0);
+    const end = new Date(base.getFullYear(), base.getMonth() + 1, 1, 0, 0, 0, 0);
+    return { start, end };
+}
+
+/** Parse YYYY-MM-DD → Date local 00:00:00, hoặc null nếu invalid. */
+function parseDateOnly(value) {
+    if (value == null || value === '') return null;
+    const raw = String(value).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) {
+        const d = new Date(raw);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const y = Number(m[1]);
+    const month = Number(m[2]) - 1;
+    const day = Number(m[3]);
+    const d = new Date(y, month, day, 0, 0, 0, 0);
+    if (d.getFullYear() !== y || d.getMonth() !== month || d.getDate() !== day) return null;
+    return d;
+}
+
+/**
+ * Cửa sổ posted_at từ query date_from / date_to (YYYY-MM-DD, inclusive).
+ * Không truyền gì → tháng lịch hiện tại.
+ * Chỉ date_from → từ ngày đó đến cuối tháng của date_from.
+ * Chỉ date_to → từ đầu tháng của date_to đến hết ngày date_to.
+ * end trả về exclusive (đầu ngày kế tiếp sau date_to).
+ */
+function resolvePostedAtRange({ date_from, date_to, refDate = new Date() } = {}) {
+    const from = parseDateOnly(date_from);
+    const to = parseDateOnly(date_to);
+
+    if (!from && !to) {
+        return getCalendarMonthRange(refDate);
+    }
+
+    let start;
+    let endExclusive;
+
+    if (from && to) {
+        start = from;
+        endExclusive = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1, 0, 0, 0, 0);
+        if (endExclusive.getTime() <= start.getTime()) {
+            endExclusive = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0);
+        }
+    } else if (from) {
+        start = from;
+        endExclusive = new Date(from.getFullYear(), from.getMonth() + 1, 1, 0, 0, 0, 0);
+    } else {
+        const monthStart = new Date(to.getFullYear(), to.getMonth(), 1, 0, 0, 0, 0);
+        start = monthStart;
+        endExclusive = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1, 0, 0, 0, 0);
+    }
+
+    return { start, end: endExclusive };
+}
+
+/** YYYY-MM-DD local từ Date. */
+function formatDateOnly(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+/**
+ * Bài có posted_at ∈ [start, end).
+ * Thiếu / invalid posted_at → false.
+ */
+function isWithinPostedAtRange(postedAt, { start, end } = {}) {
+    if (postedAt == null) return false;
+    const posted = postedAt instanceof Date ? postedAt : new Date(postedAt);
+    if (Number.isNaN(posted.getTime())) return false;
+    const t = posted.getTime();
+    if (start && t < start.getTime()) return false;
+    if (end && t >= end.getTime()) return false;
+    return true;
+}
+
+/** Sequelize where fragment cho scraper_runs.posted_at. */
+function buildPostedAtWhere({ start, end } = {}) {
+    const where = {};
+    if (start && end) {
+        where.posted_at = { [Op.gte]: start, [Op.lt]: end };
+    } else if (start) {
+        where.posted_at = { [Op.gte]: start };
+    } else if (end) {
+        where.posted_at = { [Op.lt]: end };
+    }
+    return where;
+}
+
 function normalizeApifyItem(item) {
     const likes = pickCount(item, ['likes', 'likeCount', 'reactions']) ?? 0;
     const comments = pickCount(item, ['comments', 'commentCount', 'commentsCount']) ?? 0;
@@ -200,13 +316,19 @@ function normalizeApifyItem(item) {
 
 module.exports = {
     buildPlatformPostId,
+    buildPostedAtWhere,
     calculateScores,
     classifyTrendDirection,
     deriveEngagementMetrics,
+    formatDateOnly,
     formatScore,
+    getCalendarMonthRange,
     isNewSocialPost,
+    isWithinPostedAtRange,
     normalizeApifyItem,
+    parseDateOnly,
     pickInputUrl,
+    resolvePostedAtRange,
     roundScore,
     toCount,
     toNumber,

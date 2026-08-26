@@ -112,6 +112,8 @@ export interface SubjectDetail {
   pagination: SocialPostsPagination;
   sort_by: SubjectPostsSortBy;
   platform?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
 }
 
 export interface SubjectDetailParams {
@@ -119,6 +121,8 @@ export interface SubjectDetailParams {
   per_page?: number;
   sort_by?: SubjectPostsSortBy;
   platform?: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 export const subjectsApi = {
@@ -156,6 +160,8 @@ export const subjectsApi = {
         per_page: params.per_page ?? 20,
         sort_by: params.sort_by ?? 'posted_at',
         platform: params.platform || undefined,
+        date_from: params.date_from || undefined,
+        date_to: params.date_to || undefined,
       },
     }) as Promise<ApiResponse<SubjectDetail>>,
 };

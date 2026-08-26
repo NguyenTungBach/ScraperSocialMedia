@@ -11,7 +11,7 @@ const router = express.Router();
 const controller = new SocialPostController();
 
 /** GET /api/social-posts/stats */
-router.get('/stats', controller.stats.bind(controller));
+router.get('/stats', validateListQuery, controller.stats.bind(controller));
 
 /** GET /api/social-posts/dashboard */
 router.get('/dashboard', validateSocialPostsDashboardQuery, controller.dashboard.bind(controller));

@@ -249,18 +249,43 @@ $st-red: #dc2626;
 .datePicker {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 4px 10px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   color: $st-white;
   font-size: 0.8125rem;
-  cursor: pointer;
-  transition: background 0.15s;
 
-  &:hover {
-    background: rgba(255, 255, 255, 0.18);
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  input[type='date'] {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.2);
+    color: $st-white;
+    padding: 3px 6px;
+    font-size: 0.75rem;
+    color-scheme: dark;
+  }
+
+  button {
+    border: none;
+    background: rgba(255, 255, 255, 0.15);
+    color: $st-white;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
   }
 }
 
@@ -944,17 +969,19 @@ $st-red: #dc2626;
 }
 
 .brandChip {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
   background: $st-bg;
   border: 1px solid $st-border;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: $st-muted;
+  white-space: nowrap;
 }
 
 .rowActionBtn {

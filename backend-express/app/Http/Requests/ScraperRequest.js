@@ -46,6 +46,12 @@ const subjectChannelSchema = z.object({
     channel_id: z.coerce.number().int().positive(),
 });
 
+const dateOnlySchema = z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
+    .optional();
+
 const listQueryObjectSchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
     per_page: z.coerce.number().int().min(1).max(100).optional(),
@@ -63,6 +69,8 @@ const listQueryObjectSchema = z.object({
             if (typeof value === 'boolean') return value;
             return value === 'true' || value === '1';
         }),
+    date_from: dateOnlySchema,
+    date_to: dateOnlySchema,
 });
 
 const withSearchAlias = (data) => ({
@@ -106,6 +114,8 @@ const subjectDetailQuerySchema = z.object({
         .enum(['posted_at', 'likes', 'comments', 'shares', 'interaction', 'hot_score'])
         .optional(),
     platform: z.string().trim().min(1).max(50).optional(),
+    date_from: dateOnlySchema,
+    date_to: dateOnlySchema,
 });
 
 const alertGmailSchema = z

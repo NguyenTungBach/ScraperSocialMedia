@@ -72,6 +72,8 @@ export interface SocialPostsDashboard {
   pagination: SocialPostsPagination;
   sort_by: SocialPostSortBy;
   new_only: boolean;
+  date_from?: string | null;
+  date_to?: string | null;
 }
 
 export interface SocialPostsDashboardParams {
@@ -80,6 +82,8 @@ export interface SocialPostsDashboardParams {
   sort_by?: SocialPostSortBy;
   new_only?: boolean;
   chart_limit?: number;
+  date_from?: string;
+  date_to?: string;
 }
 
 export const socialPostsApi = {
@@ -92,11 +96,19 @@ export const socialPostsApi = {
         sort_by: params.sort_by ?? 'discussion',
         new_only: params.new_only ? 'true' : 'false',
         chart_limit: params.chart_limit ?? 10,
+        date_from: params.date_from || undefined,
+        date_to: params.date_to || undefined,
       },
     }) as Promise<ApiResponse<SocialPostsDashboard>>,
 
-  getStats: () =>
-    apiClient.get<SocialPostStats>('/social-posts/stats', { skipAuth: true }),
+  getStats: (params: { date_from?: string; date_to?: string } = {}) =>
+    apiClient.get<SocialPostStats>('/social-posts/stats', {
+      skipAuth: true,
+      params: {
+        date_from: params.date_from || undefined,
+        date_to: params.date_to || undefined,
+      },
+    }),
 
   list: (params: Omit<SocialPostsDashboardParams, 'chart_limit'> = {}) =>
     apiClient.get<{ result: SocialPostItem[]; pagination: SocialPostsPagination }>(
@@ -108,6 +120,8 @@ export const socialPostsApi = {
           per_page: params.per_page ?? 20,
           sort_by: params.sort_by ?? 'hot_score',
           new_only: params.new_only ? 'true' : 'false',
+          date_from: params.date_from || undefined,
+          date_to: params.date_to || undefined,
         },
       }
     ),

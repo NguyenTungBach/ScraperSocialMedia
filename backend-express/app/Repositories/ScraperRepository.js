@@ -10,6 +10,11 @@ const {
     deriveEngagementMetrics,
     classifyTrendDirection,
     isNewSocialPost,
+    isWithinPostedAtRange,
+    resolvePostedAtRange,
+    buildPostedAtWhere,
+    formatDateOnly,
+    getCalendarMonthRange,
 } = require('../Helpers/PostScoreHelper');
 const { normalizeYoutubeVideo } = require('../Helpers/YouTubeHelper');
 const {
@@ -19,6 +24,7 @@ const {
 const { matchChannelByPostUrl } = require('../Helpers/ChannelUrlHelper');
 const ChannelRepository = require('./ChannelRepository');
 const geminiConfig = require('../../config/gemini');
+const { qualifyCol } = require('../Helpers/DialectHelper');
 
 const NEW_WITHIN_HOURS = 48;
 
@@ -463,7 +469,7 @@ class ScraperRepository {
                 return [
                     [
                         sequelize.literal(
-                            '(`scraperRun`.`likes` + `scraperRun`.`comments` + `scraperRun`.`shares`)'
+                            `(${qualifyCol(sequelize, 'scraperRun', 'likes')} + ${qualifyCol(sequelize, 'scraperRun', 'comments')} + ${qualifyCol(sequelize, 'scraperRun', 'shares')})`
                         ),
                         'DESC',
                     ],
@@ -474,7 +480,7 @@ class ScraperRepository {
                 return [
                     [
                         sequelize.literal(
-                            '(`scraperRun`.`shares` * 3 + `scraperRun`.`comments` * 2 + `scraperRun`.`angry_count` * 4 + `scraperRun`.`likes`)'
+                            `(${qualifyCol(sequelize, 'scraperRun', 'shares')} * 3 + ${qualifyCol(sequelize, 'scraperRun', 'comments')} * 2 + ${qualifyCol(sequelize, 'scraperRun', 'angry_count')} * 4 + ${qualifyCol(sequelize, 'scraperRun', 'likes')})`
                         ),
                         'DESC',
                     ],
@@ -487,17 +493,24 @@ class ScraperRepository {
         }
     }
 
-    async countSubjectPostsByPlatform(subjectId) {
+    async countSubjectPostsByPlatform(subjectId, { date_from, date_to } = {}) {
         const sequelize = db.sequelize;
+        const range = resolvePostedAtRange({ date_from, date_to });
         const rows = await sequelize.query(
             `SELECT sr.platform AS platform, COUNT(*) AS count
              FROM subjects_scraper_runs ssr
              INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
              WHERE ssr.subject_id = :subjectId
+               AND sr.posted_at >= :start
+               AND sr.posted_at < :end
              GROUP BY sr.platform
              ORDER BY count DESC`,
             {
-                replacements: { subjectId: Number(subjectId) },
+                replacements: {
+                    subjectId: Number(subjectId),
+                    start: range.start,
+                    end: range.end,
+                },
                 type: sequelize.QueryTypes.SELECT,
             }
         );
@@ -515,9 +528,44 @@ class ScraperRepository {
     }
 
     /**
-     * Chi tiết subject: thông tin + aggregate social_posts + danh sách bài liên quan (có metrics).
+     * Aggregate engagement của 1 subject trong cửa sổ posted_at.
      */
-    async getSubjectDetail(id, { page = 1, per_page = 20, sort_by = 'posted_at', platform = null } = {}) {
+    buildAggregateFromRuns(runs = []) {
+        let likes = 0;
+        let comments = 0;
+        let shares = 0;
+        let angry_count = 0;
+        let posts_count = 0;
+
+        for (const post of runs) {
+            if (!post) continue;
+            likes += toCount(post.likes);
+            comments += toCount(post.comments);
+            shares += toCount(post.shares);
+            angry_count += toCount(post.angry_count);
+            posts_count += 1;
+        }
+
+        const scores = calculateScores({ likes, comments, shares, angry_count });
+        return {
+            likes,
+            comments,
+            shares,
+            angry_count,
+            posts_count,
+            trend_score: scores.trend_score,
+            hot_score: scores.hot_score,
+            computed_at: new Date(),
+        };
+    }
+
+    /**
+     * Chi tiết subject: aggregate + bài viết theo cửa sổ posted_at (mặc định tháng hiện tại).
+     */
+    async getSubjectDetail(
+        id,
+        { page = 1, per_page = 20, sort_by = 'posted_at', platform = null, date_from, date_to } = {}
+    ) {
         const subject = await this.subjectModel.findByPk(id, {
             include: [
                 { model: this.socialPostModel, as: 'socialPost' },
@@ -526,20 +574,26 @@ class ScraperRepository {
         });
         if (!subject) return null;
 
+        const range = resolvePostedAtRange({ date_from, date_to });
+        const postedAtWhere = buildPostedAtWhere(range);
+
         const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
         const currentPage = Math.max(Number(page) || 1, 1);
         const offset = (currentPage - 1) * limit;
 
         const platformFilter = platform ? String(platform).trim().toLowerCase() : null;
+        const scraperRunWhere = { ...postedAtWhere };
+        if (platformFilter) {
+            scraperRunWhere.platform = platformFilter;
+        }
+
         const scraperRunInclude = {
             model: this.scraperRunModel,
             as: 'scraperRun',
             attributes: { exclude: ['raw_data'] },
             required: true,
+            where: scraperRunWhere,
         };
-        if (platformFilter) {
-            scraperRunInclude.where = { platform: platformFilter };
-        }
 
         const { rows, count } = await this.subjectScraperRunModel.findAndCountAll({
             where: { subject_id: id },
@@ -550,29 +604,35 @@ class ScraperRepository {
             distinct: true,
         });
 
-        const posts_by_platform = await this.countSubjectPostsByPlatform(id);
+        // Aggregate toàn bộ bài trong cửa sổ (không phụ thuộc page/platform filter cho totals).
+        const allLinksInRange = await this.subjectScraperRunModel.findAll({
+            where: { subject_id: id },
+            include: [
+                {
+                    model: this.scraperRunModel,
+                    as: 'scraperRun',
+                    attributes: ['likes', 'comments', 'shares', 'angry_count', 'posted_at'],
+                    required: true,
+                    where: postedAtWhere,
+                },
+            ],
+        });
+        const aggregatePayload = this.buildAggregateFromRuns(
+            allLinksInRange.map((link) => link.scraperRun)
+        );
+        const aggregate = this.serializeSocialPost({
+            ...aggregatePayload,
+            subject_id: Number(id),
+            created_at: subject.created_at,
+        });
+
+        const posts_by_platform = await this.countSubjectPostsByPlatform(id, {
+            date_from: formatDateOnly(range.start),
+            date_to: formatDateOnly(new Date(range.end.getTime() - 1)),
+        });
 
         const plainSubject =
             typeof subject.toJSON === 'function' ? subject.toJSON() : { ...subject };
-        const socialPost = plainSubject.socialPost || null;
-        const aggregate = socialPost
-            ? this.serializeSocialPost(socialPost)
-            : {
-                  likes: 0,
-                  comments: 0,
-                  shares: 0,
-                  angry_count: 0,
-                  posts_count: 0,
-                  hot_score: 0,
-                  trend_score: 0,
-                  discussion: 0,
-                  interaction: 0,
-                  sentiment: 0,
-                  trend_direction: 'down',
-                  is_new: false,
-                  computed_at: null,
-              };
-
         const channels = (plainSubject.channels || []).map((ch) => this.serializeChannel(ch));
 
         delete plainSubject.socialPost;
@@ -609,6 +669,8 @@ class ScraperRepository {
             },
             sort_by,
             platform: platformFilter,
+            date_from: formatDateOnly(range.start),
+            date_to: formatDateOnly(new Date(range.end.getTime() - 1)),
         };
     }
 
@@ -907,18 +969,24 @@ class ScraperRepository {
             transaction,
         });
 
+        // Cache social_posts = tổng engagement trong tháng lịch hiện tại (theo posted_at).
+        const monthRange = getCalendarMonthRange();
         let likes = 0;
         let comments = 0;
         let shares = 0;
         let angry_count = 0;
+        let postsInWindow = 0;
 
         for (const link of links) {
             const post = link.scraperRun;
             if (!post) continue;
+            if (!isWithinPostedAtRange(post.posted_at, monthRange)) continue;
+
             likes += toCount(post.likes);
             comments += toCount(post.comments);
             shares += toCount(post.shares);
             angry_count += toCount(post.angry_count);
+            postsInWindow += 1;
         }
 
         const scores = calculateScores({ likes, comments, shares, angry_count });
@@ -930,7 +998,7 @@ class ScraperRepository {
             angry_count,
             trend_score: scores.trend_score,
             hot_score: scores.hot_score,
-            posts_count: links.length,
+            posts_count: postsInWindow,
             computed_at: new Date(),
         };
 
@@ -1061,59 +1129,171 @@ class ScraperRepository {
         return where;
     }
 
+    metricSortValue(row, sortBy = 'hot_score') {
+        const metrics = deriveEngagementMetrics(row);
+        switch (sortBy) {
+            case 'trend_score':
+                return metrics.trend_score;
+            case 'discussion':
+                return metrics.discussion;
+            case 'interaction':
+                return metrics.interaction;
+            case 'sentiment':
+                return metrics.sentiment;
+            case 'hot_score':
+            default:
+                return metrics.hot_score;
+        }
+    }
+
+    /**
+     * Aggregate live theo posted_at (group by subject) — dùng cho dashboard khi có khoảng thời gian.
+     */
+    async listAggregatedSocialPostsByPostedAt({
+        page = 1,
+        per_page = 20,
+        sort_by = 'hot_score',
+        new_only = false,
+        date_from,
+        date_to,
+    } = {}) {
+        const range = resolvePostedAtRange({ date_from, date_to });
+        const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
+        const currentPage = Math.max(Number(page) || 1, 1);
+        const offset = (currentPage - 1) * limit;
+        const sequelize = db.sequelize;
+
+        const aggRows = await sequelize.query(
+            `SELECT
+                ssr.subject_id AS subject_id,
+                COALESCE(SUM(sr.likes), 0) AS likes,
+                COALESCE(SUM(sr.comments), 0) AS comments,
+                COALESCE(SUM(sr.shares), 0) AS shares,
+                COALESCE(SUM(sr.angry_count), 0) AS angry_count,
+                COUNT(*) AS posts_count
+             FROM subjects_scraper_runs ssr
+             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+             WHERE sr.posted_at >= :start
+               AND sr.posted_at < :end
+             GROUP BY ssr.subject_id`,
+            {
+                replacements: { start: range.start, end: range.end },
+                type: sequelize.QueryTypes.SELECT,
+            }
+        );
+
+        const subjectIds = aggRows.map((r) => Number(r.subject_id)).filter(Boolean);
+        const subjects =
+            subjectIds.length === 0
+                ? []
+                : await this.subjectModel.findAll({
+                      where: { id: { [Op.in]: subjectIds } },
+                      include: this.subjectChannelIncludes(),
+                  });
+        const subjectById = new Map(
+            subjects.map((s) => [Number(s.id), typeof s.toJSON === 'function' ? s.toJSON() : s])
+        );
+
+        let items = [];
+        for (const row of aggRows) {
+            const subjectId = Number(row.subject_id);
+            const subject = subjectById.get(subjectId);
+            if (!subject) continue;
+
+            const likes = toCount(row.likes);
+            const comments = toCount(row.comments);
+            const shares = toCount(row.shares);
+            const angry_count = toCount(row.angry_count);
+            const posts_count = toCount(row.posts_count);
+            const scores = calculateScores({ likes, comments, shares, angry_count });
+            const payload = {
+                id: subjectId,
+                subject_id: subjectId,
+                likes,
+                comments,
+                shares,
+                angry_count,
+                posts_count,
+                hot_score: scores.hot_score,
+                trend_score: scores.trend_score,
+                computed_at: new Date(),
+                created_at: subject.created_at,
+                updated_at: subject.updated_at,
+                subject: {
+                    id: subject.id,
+                    name: subject.name,
+                    normalized_name: subject.normalized_name,
+                    status: subject.status,
+                    channels: (subject.channels || []).map((ch) => this.serializeChannel(ch)),
+                },
+            };
+
+            if (new_only && !isNewSocialPost(payload, NEW_WITHIN_HOURS)) continue;
+            items.push(this.serializeSocialPost(payload));
+        }
+
+        items.sort((a, b) => {
+            const diff = this.metricSortValue(b, sort_by) - this.metricSortValue(a, sort_by);
+            if (diff !== 0) return diff;
+            return Number(b.subject_id) - Number(a.subject_id);
+        });
+
+        const count = items.length;
+        const pageRows = items.slice(offset, offset + limit).map((row, index) => ({
+            ...row,
+            rank: offset + index + 1,
+        }));
+
+        return {
+            rows: pageRows,
+            count,
+            page: currentPage,
+            per_page: limit,
+            date_from: formatDateOnly(range.start),
+            date_to: formatDateOnly(new Date(range.end.getTime() - 1)),
+            all_rows: items,
+        };
+    }
+
     async listSocialPosts({
         page = 1,
         per_page = 20,
         sort_by = 'hot_score',
         new_only = false,
+        date_from,
+        date_to,
     } = {}) {
-        const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
-        const currentPage = Math.max(Number(page) || 1, 1);
-        const offset = (currentPage - 1) * limit;
-        const where = this.buildSocialPostWhere({ new_only });
-
-        const { rows, count } = await this.socialPostModel.findAndCountAll({
-            where,
-            order: this.buildSocialPostOrder(sort_by),
-            limit,
-            offset,
-            include: [this.socialPostSubjectInclude()],
-            distinct: true,
+        return this.listAggregatedSocialPostsByPostedAt({
+            page,
+            per_page,
+            sort_by,
+            new_only,
+            date_from,
+            date_to,
         });
-
-        const result = rows.map((row, index) =>
-            this.serializeSocialPost(row, { rank: offset + index + 1 })
-        );
-
-        return { rows: result, count, page: currentPage, per_page: limit };
     }
 
-    async getSocialPostStats() {
+    buildStatsFromAggregates(items = []) {
         const thresholds = this.trendThresholds();
-        const rows = await this.socialPostModel.findAll({
-            attributes: ['id', 'hot_score', 'trend_score', 'likes', 'angry_count', 'created_at'],
-        });
-
         let uptrend = 0;
         let downtrend = 0;
         let new_count = 0;
 
-        for (const row of rows) {
-            const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
-            const direction = classifyTrendDirection(plain, {
+        for (const row of items) {
+            const direction = classifyTrendDirection(row, {
                 hotThreshold: thresholds.hot,
                 trendThreshold: thresholds.trend,
             });
             if (direction === 'up') uptrend += 1;
             else if (direction === 'down') downtrend += 1;
-            if (isNewSocialPost(plain, NEW_WITHIN_HOURS)) new_count += 1;
+            if (isNewSocialPost(row, NEW_WITHIN_HOURS)) new_count += 1;
         }
 
         return {
-            total: rows.length,
+            total: items.length,
             uptrend,
             downtrend,
-            neutral: rows.length - uptrend - downtrend,
+            neutral: items.length - uptrend - downtrend,
             new_count,
             thresholds: {
                 hot_score: thresholds.hot,
@@ -1129,15 +1309,29 @@ class ScraperRepository {
         };
     }
 
-    async getSocialPostChart({ sort_by = 'hot_score', limit = 10 } = {}) {
-        const chartLimit = Math.min(Math.max(Number(limit) || 10, 1), 20);
-        const rows = await this.socialPostModel.findAll({
-            order: this.buildSocialPostOrder(sort_by),
-            limit: chartLimit,
-            include: [this.socialPostSubjectInclude()],
+    async getSocialPostStats({ date_from, date_to } = {}) {
+        const list = await this.listAggregatedSocialPostsByPostedAt({
+            page: 1,
+            per_page: 10000,
+            sort_by: 'hot_score',
+            new_only: false,
+            date_from,
+            date_to,
         });
+        return this.buildStatsFromAggregates(list.all_rows || list.rows);
+    }
 
-        return rows.map((row, index) => this.serializeSocialPost(row, { rank: index + 1 }));
+    async getSocialPostChart({ sort_by = 'hot_score', limit = 10, date_from, date_to } = {}) {
+        const chartLimit = Math.min(Math.max(Number(limit) || 10, 1), 20);
+        const list = await this.listAggregatedSocialPostsByPostedAt({
+            page: 1,
+            per_page: chartLimit,
+            sort_by,
+            new_only: false,
+            date_from,
+            date_to,
+        });
+        return list.rows;
     }
 
     async getSocialPostsDashboard({
@@ -1146,26 +1340,55 @@ class ScraperRepository {
         sort_by = 'discussion',
         new_only = false,
         chart_limit = 10,
+        date_from,
+        date_to,
     } = {}) {
-        const [stats, chart, list] = await Promise.all([
-            this.getSocialPostStats(),
-            this.getSocialPostChart({ sort_by, limit: chart_limit }),
-            this.listSocialPosts({ page, per_page, sort_by, new_only }),
-        ]);
+        const range = resolvePostedAtRange({ date_from, date_to });
+        const full = await this.listAggregatedSocialPostsByPostedAt({
+            page: 1,
+            per_page: 10000,
+            sort_by,
+            new_only: false,
+            date_from,
+            date_to,
+        });
+        const allRows = full.all_rows || [];
+        const stats = this.buildStatsFromAggregates(allRows);
+
+        const chartLimit = Math.min(Math.max(Number(chart_limit) || 10, 1), 20);
+        const chart = allRows.slice(0, chartLimit).map((row, index) => ({
+            ...row,
+            rank: index + 1,
+        }));
+
+        let rankingSource = allRows;
+        if (new_only) {
+            rankingSource = allRows.filter((row) => isNewSocialPost(row, NEW_WITHIN_HOURS));
+        }
+
+        const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
+        const currentPage = Math.max(Number(page) || 1, 1);
+        const offset = (currentPage - 1) * limit;
+        const ranking = rankingSource.slice(offset, offset + limit).map((row, index) => ({
+            ...row,
+            rank: offset + index + 1,
+        }));
 
         return {
             stats,
             chart,
-            ranking: list.rows,
+            ranking,
             pagination: {
-                display: list.rows.length,
-                total_records: list.count,
-                per_page: list.per_page,
-                current_page: list.page,
-                total_pages: Math.ceil(list.count / list.per_page) || 0,
+                display: ranking.length,
+                total_records: rankingSource.length,
+                per_page: limit,
+                current_page: currentPage,
+                total_pages: Math.ceil(rankingSource.length / limit) || 0,
             },
             sort_by,
             new_only: Boolean(new_only),
+            date_from: formatDateOnly(range.start),
+            date_to: formatDateOnly(new Date(range.end.getTime() - 1)),
         };
     }
 

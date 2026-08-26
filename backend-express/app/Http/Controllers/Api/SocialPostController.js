@@ -63,7 +63,7 @@ class SocialPostController {
      */
     async stats(req, res, next) {
         try {
-            const data = await this.repository.getSocialPostStats();
+            const data = await this.repository.getSocialPostStats(req.validatedData || {});
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, data);
         } catch (error) {
             return next(error);

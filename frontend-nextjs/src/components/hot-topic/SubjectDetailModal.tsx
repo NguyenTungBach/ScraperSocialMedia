@@ -28,6 +28,7 @@ import {
   resolvePostPlatform,
   sortPlatformKeys,
 } from '@/lib/utils/socialPlatforms';
+import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { cn } from '@/lib/utils';
 import type { ChannelItem } from '@/lib/api/channels';
 import { PlatformBadge } from './PlatformBadge';
@@ -145,26 +146,46 @@ interface SubjectDetailModalProps {
   subjectId: number | null;
   open: boolean;
   onClose: () => void;
+  /** Đồng bộ khoảng thời gian từ dashboard (optional). */
+  dateFrom?: string;
+  dateTo?: string;
 }
 
-export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailModalProps) {
+export function SubjectDetailModal({
+  subjectId,
+  open,
+  onClose,
+  dateFrom: externalDateFrom,
+  dateTo: externalDateTo,
+}: SubjectDetailModalProps) {
+  const initialRange = getCurrentMonthDateRange();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubjectDetail | null>(null);
   const [sortBy, setSortBy] = useState<SubjectPostsSortBy>('posted_at');
   const [platformFilter, setPlatformFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [dateFrom, setDateFrom] = useState(externalDateFrom || initialRange.date_from);
+  const [dateTo, setDateTo] = useState(externalDateTo || initialRange.date_to);
+  const [appliedDateFrom, setAppliedDateFrom] = useState(
+    externalDateFrom || initialRange.date_from
+  );
+  const [appliedDateTo, setAppliedDateTo] = useState(externalDateTo || initialRange.date_to);
 
   const load = useCallback(
     async (options?: {
       page?: number;
       sort?: SubjectPostsSortBy;
       platform?: string;
+      date_from?: string;
+      date_to?: string;
     }) => {
       if (!subjectId) return;
       const nextPage = options?.page ?? page;
       const nextSort = options?.sort ?? sortBy;
       const nextPlatform = options?.platform ?? platformFilter;
+      const nextFrom = options?.date_from ?? appliedDateFrom;
+      const nextTo = options?.date_to ?? appliedDateTo;
 
       setLoading(true);
       setError(null);
@@ -175,6 +196,8 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
           per_page: POSTS_PER_PAGE,
           sort_by: nextSort,
           platform: nextPlatform || undefined,
+          date_from: nextFrom,
+          date_to: nextTo,
         });
         const data = res.data;
         if (!data) throw new Error('Empty subject detail');
@@ -183,6 +206,8 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
         setPage(data.pagination?.current_page ?? nextPage);
         if (options?.sort !== undefined) setSortBy(nextSort);
         if (options?.platform !== undefined) setPlatformFilter(nextPlatform);
+        if (options?.date_from !== undefined) setAppliedDateFrom(nextFrom);
+        if (options?.date_to !== undefined) setAppliedDateTo(nextTo);
       } catch (err) {
         setError(getApiErrorMessage(err));
         setDetail(null);
@@ -190,7 +215,7 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
         setLoading(false);
       }
     },
-    [subjectId, sortBy, platformFilter, page]
+    [subjectId, sortBy, platformFilter, page, appliedDateFrom, appliedDateTo]
   );
 
   useEffect(() => {
@@ -202,8 +227,15 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
       setSortBy('posted_at');
       return;
     }
-    void load({ page: 1, sort: 'posted_at', platform: '' });
-  }, [open, subjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const range = getCurrentMonthDateRange();
+    const from = externalDateFrom || range.date_from;
+    const to = externalDateTo || range.date_to;
+    setDateFrom(from);
+    setDateTo(to);
+    setAppliedDateFrom(from);
+    setAppliedDateTo(to);
+    void load({ page: 1, sort: 'posted_at', platform: '', date_from: from, date_to: to });
+  }, [open, subjectId, externalDateFrom, externalDateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -252,6 +284,21 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
     void load({ page: 1, sort: nextSort, platform: platformFilter });
   };
 
+  const handleApplyDates = () => {
+    const from = dateFrom || getCurrentMonthDateRange().date_from;
+    const to = dateTo || getCurrentMonthDateRange().date_to;
+    setDateFrom(from);
+    setDateTo(to);
+    void load({ page: 1, date_from: from, date_to: to });
+  };
+
+  const handleResetMonth = () => {
+    const range = getCurrentMonthDateRange();
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    void load({ page: 1, date_from: range.date_from, date_to: range.date_to });
+  };
+
   const goToPage = (nextPage: number) => {
     if (nextPage < 1 || nextPage > totalPages || postsLoading) return;
     void load({ page: nextPage, sort: sortBy, platform: platformFilter });
@@ -262,8 +309,8 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
       return (
         <div className={styles.empty}>
           {platformFilter
-            ? `Chưa có bài viết nào trên ${getPlatformMeta(platformFilter).label}.`
-            : 'Chưa có bài viết nào gắn với đối tượng này.'}
+            ? `Chưa có bài viết nào trên ${getPlatformMeta(platformFilter).label} trong khoảng đã chọn.`
+            : 'Chưa có bài viết nào trong khoảng thời gian đã chọn.'}
         </div>
       );
     }
@@ -402,20 +449,48 @@ export function SubjectDetailModal({ subjectId, open, onClose }: SubjectDetailMo
                 Bài viết liên quan{' '}
                 <em>({totalRecords})</em>
               </h3>
-              <label>
-                Sắp xếp
-                <select
-                  value={sortBy}
-                  disabled={postsLoading}
-                  onChange={(e) => handleSortChange(e.target.value as SubjectPostsSortBy)}
-                >
-                  {SORT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className={styles.postsToolbarRight}>
+                <div className={styles.dateRangeFilter}>
+                  <label>
+                    Từ
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      disabled={postsLoading}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Đến
+                    <input
+                      type="date"
+                      value={dateTo}
+                      disabled={postsLoading}
+                      onChange={(e) => setDateTo(e.target.value)}
+                    />
+                  </label>
+                  <button type="button" disabled={postsLoading} onClick={handleApplyDates}>
+                    Áp dụng
+                  </button>
+                  <button type="button" disabled={postsLoading} onClick={handleResetMonth}>
+                    Tháng này
+                  </button>
+                </div>
+                <label>
+                  Sắp xếp
+                  <select
+                    value={sortBy}
+                    disabled={postsLoading}
+                    onChange={(e) => handleSortChange(e.target.value as SubjectPostsSortBy)}
+                  >
+                    {SORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
 
             {platformTabs.length > 1 && (

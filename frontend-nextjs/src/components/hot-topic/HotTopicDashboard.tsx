@@ -36,7 +36,6 @@ import {
 import {
   TOPIC_CATEGORIES,
   colorForId,
-  formatDateRangeLabel,
   formatMetric,
   formatScore,
   formatShortDate,
@@ -46,6 +45,7 @@ import {
   type TopicCategory,
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
+import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { PlatformBadge } from './PlatformBadge';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
@@ -328,6 +328,7 @@ function buildYAxisLabels(maxValue: number): string[] {
 }
 
 export function HotTopicDashboard() {
+  const initialRange = getCurrentMonthDateRange();
   const [selectedCategory, setSelectedCategory] = useState<TopicCategory>('all');
   const [rankedBy, setRankedBy] = useState<RankedBy>('discussion');
   const [showNewOnly, setShowNewOnly] = useState(false);
@@ -335,6 +336,10 @@ export function HotTopicDashboard() {
   const [supportOpen, setSupportOpen] = useState(true);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [dateFrom, setDateFrom] = useState(initialRange.date_from);
+  const [dateTo, setDateTo] = useState(initialRange.date_to);
+  const [appliedDateFrom, setAppliedDateFrom] = useState(initialRange.date_from);
+  const [appliedDateTo, setAppliedDateTo] = useState(initialRange.date_to);
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -343,7 +348,9 @@ export function HotTopicDashboard() {
   const [chartTopics, setChartTopics] = useState<ChartTopic[]>([]);
   const [topics, setTopics] = useState<HotTopic[]>([]);
   const [totalPages, setTotalPages] = useState(1);
-  const [periodLabel, setPeriodLabel] = useState(formatDateRangeLabel());
+  const [periodLabel, setPeriodLabel] = useState(
+    formatMonthRangeLabel(initialRange.date_from, initialRange.date_to)
+  );
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -357,6 +364,23 @@ export function HotTopicDashboard() {
     setDetailOpen(false);
     setDetailSubjectId(null);
   }, []);
+
+  const applyDateRange = () => {
+    const from = dateFrom || getCurrentMonthDateRange().date_from;
+    const to = dateTo || getCurrentMonthDateRange().date_to;
+    setDateFrom(from);
+    setDateTo(to);
+    setAppliedDateFrom(from);
+    setAppliedDateTo(to);
+  };
+
+  const resetToCurrentMonth = () => {
+    const range = getCurrentMonthDateRange();
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    setAppliedDateFrom(range.date_from);
+    setAppliedDateTo(range.date_to);
+  };
 
   const loadDashboard = useCallback(
     async (options?: { page?: number; append?: boolean }) => {
@@ -374,6 +398,8 @@ export function HotTopicDashboard() {
           sort_by: RANKED_BY_TO_SORT[rankedBy],
           new_only: showNewOnly,
           chart_limit: 10,
+          date_from: appliedDateFrom,
+          date_to: appliedDateTo,
         });
 
         const data = res.data;
@@ -390,13 +416,12 @@ export function HotTopicDashboard() {
         setTopics((prev) => (append ? [...prev, ...mapped] : mapped));
         setPage(data.pagination?.current_page ?? nextPage);
         setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
-
-        const latestComputed =
-          data.chart?.[0]?.computed_at ||
-          data.ranking?.[0]?.computed_at ||
-          data.ranking?.[0]?.updated_at ||
-          null;
-        setPeriodLabel(formatDateRangeLabel(latestComputed));
+        setPeriodLabel(
+          formatMonthRangeLabel(
+            data.date_from || appliedDateFrom,
+            data.date_to || appliedDateTo
+          )
+        );
       } catch (err) {
         setError(getApiErrorMessage(err));
         if (!append) {
@@ -409,7 +434,7 @@ export function HotTopicDashboard() {
         setLoadingMore(false);
       }
     },
-    [rankedBy, showNewOnly]
+    [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]
   );
 
   useEffect(() => {
@@ -512,10 +537,31 @@ export function HotTopicDashboard() {
               <span className={styles.toggleSwitch} aria-hidden />
               Chỉ hiện chủ đề mới xuất hiện
             </label>
-            <button type="button" className={styles.datePicker}>
+            <div className={styles.datePicker}>
               <Calendar size={15} aria-hidden />
-              Snapshot gần nhất
-            </button>
+              <label>
+                Từ
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </label>
+              <label>
+                Đến
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </label>
+              <button type="button" onClick={applyDateRange}>
+                Áp dụng
+              </button>
+              <button type="button" onClick={resetToCurrentMonth} title="Tháng hiện tại">
+                Tháng này
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -747,6 +793,8 @@ export function HotTopicDashboard() {
         open={detailOpen}
         subjectId={detailSubjectId}
         onClose={closeDetail}
+        dateFrom={appliedDateFrom}
+        dateTo={appliedDateTo}
       />
     </div>
   );
