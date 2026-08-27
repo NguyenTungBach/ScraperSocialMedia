@@ -1,8 +1,9 @@
 'use strict';
 
 const SamplePingCommand = require('./Commands/SamplePingCommand');
+const AlertGmailCommand = require('./Commands/AlertGmailCommand');
 
-const COMMANDS = [SamplePingCommand];
+const COMMANDS = [SamplePingCommand, AlertGmailCommand];
 
 function listCommands() {
     return COMMANDS;

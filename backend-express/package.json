@@ -13,6 +13,7 @@
     "pm2:reload": "pm2 reload ecosystem.config.cjs",
     "schedule:worker": "node scripts/scheduler.js",
     "app:sample-ping": "node scripts/run-command.js app:sample-ping",
+    "app:alert-gmail": "node scripts/run-command.js app:alert-gmail",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate-create": "sequelize-cli migration:generate --name",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",

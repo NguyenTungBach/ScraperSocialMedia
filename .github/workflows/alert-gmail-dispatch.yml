@@ -1,10 +1,15 @@
-# Gửi email alert hot/trend (POST /alerts/gmail).
-# Chỉ chạy thủ công — không có lịch cron.
+# Gửi email alert hot/trend — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
+# Lý do: Render free thường timeout Gmail SMTP; runner GitHub gửi mail ổn hơn.
 #
-# Variable cần cấu hình trên GitHub:
-#   Settings → Secrets and variables → Actions → Variables (tab Variables)
-#   Name:  API_BASE_URL
-#   Value: https://your-api.example.com/api  (có đuôi /api, không slash cuối)
+# Cấu hình Secrets (Settings → Secrets and variables → Actions → Secrets):
+#   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#   MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD
+#   MAIL_FROM_ADDRESS, MAIL_MAIN
+#   GEMINI_API_KEY
+#
+# Tuỳ chọn Secrets / Variables:
+#   DB_SSL=true (Variable), GEMINI_MODEL, ALERT_HOT_THRESHOLD, ALERT_TREND_THRESHOLD
+#   MAIL_ALERT_BCC, APP_NAME
 #
 # Chạy: Actions → "Alert Gmail" → Run workflow
 
@@ -18,11 +23,11 @@ on:
         required: false
         type: string
       to:
-        description: 'Override email người nhận (mặc định MAIL_MAIN trên server)'
+        description: 'Override email người nhận (mặc định MAIL_MAIN)'
         required: false
         type: string
       bcc:
-        description: 'BCC thêm, phân cách bằng dấu phẩy (gộp với MAIL_ALERT_BCC trên server)'
+        description: 'BCC thêm, phân cách bằng dấu phẩy'
         required: false
         type: string
 
@@ -30,99 +35,52 @@ jobs:
   send-alert:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend-express
 
     steps:
-      - name: Run alert Gmail check
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend-express/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run alert Gmail
         env:
-          API_BASE_URL: ${{ vars.API_BASE_URL }}
-          INPUT_SUBJECT_ID: ${{ inputs.subject_id }}
-          INPUT_TO: ${{ inputs.to }}
-          INPUT_BCC: ${{ inputs.bcc }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${API_BASE_URL:-}" ]; then
-            echo "::error::Missing repository variable API_BASE_URL (e.g. https://host/api)"
-            exit 1
-          fi
-
-          API_BASE_URL="${API_BASE_URL%/}"
-
-          python3 <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.error
-          import urllib.request
-
-          base = os.environ["API_BASE_URL"].rstrip("/")
-          timeout = 1800  # 30 phút — phân tích Gemini có thể lâu
-
-          body = {}
-          subject_id = (os.environ.get("INPUT_SUBJECT_ID") or "").strip()
-          to = (os.environ.get("INPUT_TO") or "").strip()
-          bcc = (os.environ.get("INPUT_BCC") or "").strip()
-
-          if subject_id:
-              try:
-                  body["subject_id"] = int(subject_id)
-              except ValueError:
-                  print(f"::error::Invalid subject_id: {subject_id!r}", file=sys.stderr)
-                  sys.exit(1)
-          if to:
-              body["to"] = to
-          if bcc:
-              body["bcc"] = bcc
-
-          url = f"{base}/alerts/gmail"
-          data = json.dumps(body).encode("utf-8") if body else b"{}"
-          headers = {
-              "Accept": "application/json",
-              "Content-Type": "application/json",
-          }
-          req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-
-          print(f"POST {url}")
-          if body:
-              print("Body:", json.dumps(body, ensure_ascii=False))
-
-          try:
-              with urllib.request.urlopen(req, timeout=timeout) as resp:
-                  raw = resp.read().decode("utf-8")
-                  payload = json.loads(raw) if raw else {}
-                  status = resp.status
-          except urllib.error.HTTPError as e:
-              raw = e.read().decode("utf-8", errors="replace")
-              try:
-                  payload = json.loads(raw) if raw else {}
-              except json.JSONDecodeError:
-                  payload = {"raw": raw}
-              print(f"::error::HTTP {e.code} POST {url}: {payload}", file=sys.stderr)
-              sys.exit(1)
-          except Exception as e:
-              print(f"::error::POST {url} failed: {e}", file=sys.stderr)
-              sys.exit(1)
-
-          if status != 200 or payload.get("code") not in (None, 200):
-              print(f"::error::Unexpected response: {payload}", file=sys.stderr)
-              sys.exit(1)
-
-          result = payload.get("data") or {}
-          summary = {
-              "sent": result.get("sent"),
-              "reason": result.get("reason"),
-              "to": result.get("to"),
-              "bcc_count": result.get("bcc_count"),
-              "count": result.get("count"),
-              "thresholds": result.get("thresholds"),
-              "analysis": result.get("analysis"),
-              "subjects": result.get("subjects"),
-          }
-          print("Alert OK:", json.dumps(summary, ensure_ascii=False, indent=2))
-
-          if not result.get("sent"):
-              print(
-                  "No email sent — no subjects over threshold "
-                  f"(reason={result.get('reason', 'unknown')})."
-              )
-          PY
+          NODE_ENV: production
+          APP_NAME: ${{ vars.APP_NAME || 'ScraperSocialMedia' }}
+          DB_CONNECTION: mysql
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_DATABASE: ${{ secrets.DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_SSL: ${{ vars.DB_SSL || 'true' }}
+          MAIL_MAILER: smtp
+          MAIL_HOST: ${{ secrets.MAIL_HOST }}
+          MAIL_PORT: ${{ secrets.MAIL_PORT || '587' }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_ENCRYPTION: tls
+          MAIL_FROM_ADDRESS: ${{ secrets.MAIL_FROM_ADDRESS }}
+          MAIL_MAIN: ${{ secrets.MAIL_MAIN }}
+          MAIL_ALERT_BCC: ${{ secrets.MAIL_ALERT_BCC }}
+          GEMINI_ENABLED: 'true'
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
+          GEMINI_FALLBACK_MODELS: ${{ vars.GEMINI_FALLBACK_MODELS || 'gemini-3.6-flash,gemini-3.5-flash-lite' }}
+          ALERT_HOT_THRESHOLD: ${{ vars.ALERT_HOT_THRESHOLD || '8000' }}
+          ALERT_TREND_THRESHOLD: ${{ vars.ALERT_TREND_THRESHOLD || '5000' }}
+          ALERT_TOP_VIDEOS_PER_SUBJECT: ${{ vars.ALERT_TOP_VIDEOS_PER_SUBJECT || '10' }}
+          ALERT_SUBJECT_ID: ${{ inputs.subject_id }}
+          ALERT_TO: ${{ inputs.to }}
+          ALERT_BCC: ${{ inputs.bcc }}
+        run: npm run app:alert-gmail
