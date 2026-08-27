@@ -1,0 +1,128 @@
+# Gửi email alert hot/trend (POST /alerts/gmail).
+# Chỉ chạy thủ công — không có lịch cron.
+#
+# Variable cần cấu hình trên GitHub:
+#   Settings → Secrets and variables → Actions → Variables (tab Variables)
+#   Name:  API_BASE_URL
+#   Value: https://your-api.example.com/api  (có đuôi /api, không slash cuối)
+#
+# Chạy: Actions → "Alert Gmail" → Run workflow
+
+name: Alert Gmail
+
+on:
+  workflow_dispatch:
+    inputs:
+      subject_id:
+        description: 'Chỉ kiểm tra 1 subject (để trống = tất cả)'
+        required: false
+        type: string
+      to:
+        description: 'Override email người nhận (mặc định MAIL_MAIN trên server)'
+        required: false
+        type: string
+      bcc:
+        description: 'BCC thêm, phân cách bằng dấu phẩy (gộp với MAIL_ALERT_BCC trên server)'
+        required: false
+        type: string
+
+jobs:
+  send-alert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Run alert Gmail check
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          INPUT_SUBJECT_ID: ${{ inputs.subject_id }}
+          INPUT_TO: ${{ inputs.to }}
+          INPUT_BCC: ${{ inputs.bcc }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error::Missing repository variable API_BASE_URL (e.g. https://host/api)"
+            exit 1
+          fi
+
+          API_BASE_URL="${API_BASE_URL%/}"
+
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          base = os.environ["API_BASE_URL"].rstrip("/")
+          timeout = 1800  # 30 phút — phân tích Gemini có thể lâu
+
+          body = {}
+          subject_id = (os.environ.get("INPUT_SUBJECT_ID") or "").strip()
+          to = (os.environ.get("INPUT_TO") or "").strip()
+          bcc = (os.environ.get("INPUT_BCC") or "").strip()
+
+          if subject_id:
+              try:
+                  body["subject_id"] = int(subject_id)
+              except ValueError:
+                  print(f"::error::Invalid subject_id: {subject_id!r}", file=sys.stderr)
+                  sys.exit(1)
+          if to:
+              body["to"] = to
+          if bcc:
+              body["bcc"] = bcc
+
+          url = f"{base}/alerts/gmail"
+          data = json.dumps(body).encode("utf-8") if body else b"{}"
+          headers = {
+              "Accept": "application/json",
+              "Content-Type": "application/json",
+          }
+          req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+          print(f"POST {url}")
+          if body:
+              print("Body:", json.dumps(body, ensure_ascii=False))
+
+          try:
+              with urllib.request.urlopen(req, timeout=timeout) as resp:
+                  raw = resp.read().decode("utf-8")
+                  payload = json.loads(raw) if raw else {}
+                  status = resp.status
+          except urllib.error.HTTPError as e:
+              raw = e.read().decode("utf-8", errors="replace")
+              try:
+                  payload = json.loads(raw) if raw else {}
+              except json.JSONDecodeError:
+                  payload = {"raw": raw}
+              print(f"::error::HTTP {e.code} POST {url}: {payload}", file=sys.stderr)
+              sys.exit(1)
+          except Exception as e:
+              print(f"::error::POST {url} failed: {e}", file=sys.stderr)
+              sys.exit(1)
+
+          if status != 200 or payload.get("code") not in (None, 200):
+              print(f"::error::Unexpected response: {payload}", file=sys.stderr)
+              sys.exit(1)
+
+          result = payload.get("data") or {}
+          summary = {
+              "sent": result.get("sent"),
+              "reason": result.get("reason"),
+              "to": result.get("to"),
+              "bcc_count": result.get("bcc_count"),
+              "count": result.get("count"),
+              "thresholds": result.get("thresholds"),
+              "analysis": result.get("analysis"),
+              "subjects": result.get("subjects"),
+          }
+          print("Alert OK:", json.dumps(summary, ensure_ascii=False, indent=2))
+
+          if not result.get("sent"):
+              print(
+                  "No email sent — no subjects over threshold "
+                  f"(reason={result.get('reason', 'unknown')})."
+              )
+          PY
