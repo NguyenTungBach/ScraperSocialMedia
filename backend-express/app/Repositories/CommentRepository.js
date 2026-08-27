@@ -462,6 +462,8 @@ class CommentRepository {
                     comments: plain.comments,
                     shares: plain.shares,
                     angry_count: plain.angry_count,
+                    views: plain.views,
+                    platform: plain.platform,
                 });
                 return { run: plain, hot_score: scores.hot_score };
             })
@@ -619,6 +621,8 @@ class CommentRepository {
             comments: run.comments,
             shares: run.shares,
             angry_count: run.angry_count,
+            views: run.views,
+            platform: run.platform,
         });
 
         const loneNegative = data.lone.filter((c) => c.classified_as === 'negative');

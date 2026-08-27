@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { BarChart3, BellRing, Globe, Loader2, ScanLine, Search, Users } from 'lucide-react';
+import { BarChart3, BellRing, Globe, Loader2, ScanLine, Users } from 'lucide-react';
 import { alertsApi } from '@/lib/api/alerts';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi } from '@/lib/api/channels';
@@ -13,15 +13,11 @@ import { MakeToast } from '@/lib/utils/toast';
 import styles from './HotTopicDashboard.module.scss';
 
 interface HotTopicHeaderProps {
-  showSearch?: boolean;
   /** Gọi sau khi quét YouTube thành công — dùng để reload dữ liệu trang hiện tại */
   onScrapeSuccess?: () => void | Promise<void>;
 }
 
-export function HotTopicHeader({
-  showSearch = false,
-  onScrapeSuccess,
-}: HotTopicHeaderProps) {
+export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
   const pathname = usePathname();
   const [scraping, setScraping] = useState(false);
   const [checkingAlert, setCheckingAlert] = useState(false);
@@ -152,12 +148,6 @@ export function HotTopicHeader({
         </nav>
 
         <div className={styles.headerActions}>
-          {showSearch && (
-            <button type="button" className={styles.searchBtn}>
-              <Search size={16} aria-hidden />
-              Tìm kiếm
-            </button>
-          )}
           <button type="button" className={styles.loginBtn}>
             Đăng nhập
           </button>

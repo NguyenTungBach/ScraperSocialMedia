@@ -206,6 +206,33 @@ $st-red: #dc2626;
 .paginationBtns {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.pageBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  color: $st-blue;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s;
+
+  &:hover:not(:disabled) {
+    background: $st-bg;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
 .modalOverlay {

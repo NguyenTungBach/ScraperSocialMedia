@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
             comments: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             shares: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             follow: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            views: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             trend_score: {
                 type: DataTypes.DECIMAL(65, 30),
                 allowNull: false,

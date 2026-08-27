@@ -281,7 +281,7 @@ class SubjectController {
      */
     async attachChannel(req, res, next) {
         try {
-            const result = await this.channelRepository.attachSubjectChannel(
+            const result = await this.repository.attachSubjectChannel(
                 req.params.id,
                 req.validatedData.channel_id
             );
@@ -326,7 +326,7 @@ class SubjectController {
      */
     async detachChannel(req, res, next) {
         try {
-            const result = await this.channelRepository.detachSubjectChannel(
+            const result = await this.repository.detachSubjectChannel(
                 req.params.id,
                 req.params.channelId
             );

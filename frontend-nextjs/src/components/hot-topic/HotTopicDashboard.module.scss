@@ -155,25 +155,6 @@ $st-red: #dc2626;
   flex-shrink: 0;
 }
 
-.searchBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  background: transparent;
-  border: 1px solid $st-border;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  color: $st-muted;
-  cursor: pointer;
-  transition: border-color 0.15s;
-
-  &:hover {
-    border-color: $st-navy;
-    color: $st-text;
-  }
-}
-
 .loginBtn {
   padding: 7px 18px;
   background: $st-navy;
@@ -1207,7 +1188,6 @@ $st-red: #dc2626;
     gap: 12px;
   }
 
-  .searchBtn span,
   .logoBy {
     display: none;
   }

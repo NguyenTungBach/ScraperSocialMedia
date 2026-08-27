@@ -475,7 +475,6 @@ export function HotTopicDashboard() {
   return (
     <div className={styles.dashboard}>
       <HotTopicHeader
-        showSearch
         onScrapeSuccess={() => loadDashboard({ page: 1, append: false })}
       />
 
@@ -592,8 +591,9 @@ export function HotTopicDashboard() {
               <div>
                 <h3>Tóm tắt phương pháp luận</h3>
                 <p>
-                  Hot = shares×3 + comments×2 + angry×4 + likes · Trend = likes + comments×2 +
-                  shares×3.
+                  YouTube: Trend = likes + comments×2 + ⌊views/100⌋×3 · Hot = likes +
+                  comments×3 + ⌊views/100⌋×3 · Cảm xúc tạm = 0. Facebook: Hot = likes +
+                  comments×2 + shares×3 + angry×4 · Trend = likes + comments×2 + shares×3.
                 </p>
               </div>
             </div>

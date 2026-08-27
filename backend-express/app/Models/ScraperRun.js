@@ -43,6 +43,7 @@ module.exports = (sequelize, DataTypes) => {
             shares: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             angry_count: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             follow: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            views: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             posted_at: { type: DataTypes.DATE, allowNull: true },
             scraped_at: { type: DataTypes.DATE, allowNull: true },
             source: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'apify' },

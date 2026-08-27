@@ -358,7 +358,7 @@ export function ChannelManagement() {
             <div className={styles.paginationBtns}>
               <button
                 type="button"
-                className={dash.loadMoreBtn}
+                className={styles.pageBtn}
                 disabled={loading || page <= 1}
                 onClick={() => loadList({ page: page - 1, q: query, type_channel: platformFilter })}
               >
@@ -366,7 +366,7 @@ export function ChannelManagement() {
               </button>
               <button
                 type="button"
-                className={dash.loadMoreBtn}
+                className={styles.pageBtn}
                 disabled={loading || page >= totalPages}
                 onClick={() => loadList({ page: page + 1, q: query, type_channel: platformFilter })}
               >

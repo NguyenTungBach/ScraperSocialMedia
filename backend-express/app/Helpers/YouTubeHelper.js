@@ -3,22 +3,69 @@
 const { toCount } = require('./PostScoreHelper');
 
 /**
- * Parse @handle từ URL kênh YouTube.
- * Hỗ trợ: https://www.youtube.com/@taca, https://youtube.com/@taca/videos, @taca, taca
- * @returns {string|null} handle không có @ (vd. "taca")
+ * Parse tham chiếu kênh YouTube từ URL / chuỗi.
+ * Hỗ trợ:
+ *   https://www.youtube.com/@taca
+ *   https://www.youtube.com/c/nguoivietonline
+ *   https://www.youtube.com/channel/UCxxxx
+ *   https://www.youtube.com/user/SomeUser
+ *   @taca | taca
+ *
+ * @returns {{ kind: 'handle'|'id'|'username'|'custom', value: string } | null}
  */
-function extractHandleFromUrl(url) {
+function parseYoutubeChannelRef(url) {
     const raw = String(url || '').trim();
     if (!raw) return null;
 
-    const atMatch = raw.match(/@([A-Za-z0-9._-]+)/);
-    if (atMatch) return atMatch[1];
+    const bareAt = raw.match(/^@([A-Za-z0-9._-]+)$/);
+    if (bareAt) return { kind: 'handle', value: bareAt[1] };
 
-    // Pure handle không có URL / @
-    if (/^[A-Za-z0-9._-]+$/.test(raw) && !raw.includes('.')) {
-        return raw;
+    if (/^UC[\w-]{20,}$/.test(raw)) {
+        return { kind: 'id', value: raw };
     }
 
+    if (/^[A-Za-z0-9._-]+$/.test(raw) && !raw.includes('.')) {
+        return { kind: 'handle', value: raw };
+    }
+
+    let pathname = raw;
+    try {
+        const parsed = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
+        pathname = parsed.pathname || '';
+    } catch {
+        pathname = raw;
+    }
+
+    const path = pathname.replace(/\/+$/, '');
+
+    const atPath = path.match(/\/@([A-Za-z0-9._-]+)/i);
+    if (atPath) return { kind: 'handle', value: atPath[1] };
+
+    const channelId = path.match(/\/channel\/(UC[\w-]{20,})/i);
+    if (channelId) return { kind: 'id', value: channelId[1] };
+
+    const user = path.match(/\/user\/([A-Za-z0-9._-]+)/i);
+    if (user) return { kind: 'username', value: user[1] };
+
+    const custom = path.match(/\/c\/([A-Za-z0-9._-]+)/i);
+    if (custom) return { kind: 'custom', value: custom[1] };
+
+    const atAnywhere = raw.match(/@([A-Za-z0-9._-]+)/);
+    if (atAnywhere) return { kind: 'handle', value: atAnywhere[1] };
+
+    return null;
+}
+
+/**
+ * @deprecated Dùng parseYoutubeChannelRef.
+ * @returns {string|null} handle không có @
+ */
+function extractHandleFromUrl(url) {
+    const ref = parseYoutubeChannelRef(url);
+    if (!ref) return null;
+    if (ref.kind === 'handle' || ref.kind === 'custom' || ref.kind === 'username') {
+        return ref.value;
+    }
     return null;
 }
 
@@ -56,8 +103,8 @@ function normalizeYoutubeVideo(video, extras = {}) {
         comments: toCount(Number(statistics.commentCount ?? video?.commentCount ?? 0)),
         shares: 0,
         angry_count: 0,
+        views: toCount(Number(statistics.viewCount ?? video?.viewCount ?? video?.views ?? 0)),
         follow: toCount(Number(extras.follow ?? video?.follow ?? 0)),
-        viewCount: toCount(Number(statistics.viewCount ?? video?.viewCount ?? 0)),
         raw_data: video,
     };
 }
@@ -72,7 +119,7 @@ function toYoutubeVideoResponse(normalized) {
         publishedAt: normalized.posted_at
             ? new Date(normalized.posted_at).toISOString()
             : null,
-        viewCount: normalized.viewCount ?? 0,
+        viewCount: normalized.views ?? 0,
         likeCount: normalized.likes,
         commentCount: normalized.comments,
         follow: normalized.follow ?? 0,
@@ -84,5 +131,6 @@ module.exports = {
     buildWatchUrl,
     extractHandleFromUrl,
     normalizeYoutubeVideo,
+    parseYoutubeChannelRef,
     toYoutubeVideoResponse,
 };

@@ -6,6 +6,7 @@ const db = require('../Models');
 const {
     normalizeApifyItem,
     calculateScores,
+    calculateScoresFromRuns,
     toCount,
     deriveEngagementMetrics,
     classifyTrendDirection,
@@ -15,6 +16,8 @@ const {
     buildPostedAtWhere,
     formatDateOnly,
     getCalendarMonthRange,
+    normalizePlatform,
+    resolveSubjectPlatform,
 } = require('../Helpers/PostScoreHelper');
 const { normalizeYoutubeVideo } = require('../Helpers/YouTubeHelper');
 const {
@@ -204,7 +207,7 @@ class ScraperRepository {
     }
 
     async syncSubjectChannels(subjectId, { channel_ids }, { transaction } = {}) {
-        if (channel_ids === undefined) return;
+        if (channel_ids === undefined) return { reconciled: false };
 
         if (channel_ids.length > 0) {
             const found = await db.Channel.count({
@@ -228,6 +231,193 @@ class ScraperRepository {
                 { transaction }
             );
         }
+
+        const linkStats = await this.reconcileSubjectScraperRuns(subjectId, { transaction });
+        return { reconciled: true, ...linkStats };
+    }
+
+    /**
+     * Đồng bộ subjects_scraper_runs theo subject_channels hiện tại:
+     * - Xóa link tới bài có channel_id không thuộc subject (hoặc channel_id null)
+     * - Tạo link tới mọi scraper_runs của các channel đang gắn
+     */
+    async reconcileSubjectScraperRuns(subjectId, { transaction } = {}) {
+        const sid = Number(subjectId);
+        const channelRows = await db.SubjectChannel.findAll({
+            where: { subject_id: sid },
+            attributes: ['channel_id'],
+            transaction,
+        });
+        const channelIds = channelRows.map((row) => Number(row.channel_id)).filter(Boolean);
+        const channelSet = new Set(channelIds);
+
+        const existingLinks = await this.subjectScraperRunModel.findAll({
+            where: { subject_id: sid },
+            include: [
+                {
+                    model: this.scraperRunModel,
+                    as: 'scraperRun',
+                    attributes: ['id', 'channel_id'],
+                    required: false,
+                },
+            ],
+            transaction,
+        });
+
+        const removeIds = [];
+        for (const link of existingLinks) {
+            const chId =
+                link.scraperRun?.channel_id != null ? Number(link.scraperRun.channel_id) : null;
+            if (chId == null || !channelSet.has(chId)) {
+                removeIds.push(link.id);
+            }
+        }
+
+        let removed = 0;
+        if (removeIds.length > 0) {
+            removed = await this.subjectScraperRunModel.destroy({
+                where: { id: { [Op.in]: removeIds } },
+                transaction,
+            });
+        }
+
+        let linked = 0;
+        if (channelIds.length > 0) {
+            const runs = await this.scraperRunModel.findAll({
+                where: { channel_id: { [Op.in]: channelIds } },
+                attributes: ['id'],
+                transaction,
+            });
+            for (const run of runs) {
+                const [, created] = await this.subjectScraperRunModel.findOrCreate({
+                    where: {
+                        subject_id: sid,
+                        scraper_run_id: run.id,
+                    },
+                    defaults: {
+                        subject_id: sid,
+                        scraper_run_id: run.id,
+                    },
+                    transaction,
+                });
+                if (created) linked += 1;
+            }
+        }
+
+        return { removed: Number(removed) || 0, linked };
+    }
+
+    /**
+     * Khi scrape 1 channel: bỏ link cũ của subject không còn gắn channel,
+     * rồi reconcile mọi subject đang/đã từng liên quan tới bài của channel đó.
+     */
+    async reconcileLinksForChannel(channelId, { transaction } = {}) {
+        const cid = Number(channelId);
+        if (!cid) return [];
+
+        const currentSubjectIds = (
+            await this.channelRepository.listSubjectIdsForChannel(cid, { transaction })
+        ).map(Number);
+        const currentSet = new Set(currentSubjectIds);
+        const affected = new Set(currentSubjectIds);
+
+        const sequelize = db.sequelize;
+        const staleRows = await sequelize.query(
+            `SELECT DISTINCT ssr.subject_id AS subject_id
+             FROM subjects_scraper_runs ssr
+             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+             WHERE sr.channel_id = :channelId`,
+            {
+                replacements: { channelId: cid },
+                type: sequelize.QueryTypes.SELECT,
+                transaction,
+            }
+        );
+        for (const row of staleRows) {
+            affected.add(Number(row.subject_id));
+        }
+
+        // Gỡ link bài của channel này khỏi subject không còn map channel
+        if (currentSet.size === 0) {
+            await sequelize.query(
+                `DELETE ssr FROM subjects_scraper_runs ssr
+                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+                 WHERE sr.channel_id = :channelId`,
+                { replacements: { channelId: cid }, transaction }
+            );
+        } else {
+            await sequelize.query(
+                `DELETE ssr FROM subjects_scraper_runs ssr
+                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+                 WHERE sr.channel_id = :channelId
+                   AND ssr.subject_id NOT IN (:subjectIds)`,
+                {
+                    replacements: {
+                        channelId: cid,
+                        subjectIds: [...currentSet],
+                    },
+                    transaction,
+                }
+            );
+        }
+
+        for (const sid of affected) {
+            await this.reconcileSubjectScraperRuns(sid, { transaction });
+        }
+
+        return [...affected];
+    }
+
+    /**
+     * Gắn đúng subjects hiện tại cho 1 scraper_run; xóa link subject cũ không còn thuộc channel.
+     */
+    async syncScraperRunSubjectLinks(scraperRunId, subjectIdsToLink, { transaction } = {}) {
+        const allowed = [...new Set([...subjectIdsToLink].map(Number).filter(Boolean))];
+        const allowedSet = new Set(allowed);
+        let linksCreated = 0;
+        let linksRemoved = 0;
+
+        const existingLinks = await this.subjectScraperRunModel.findAll({
+            where: { scraper_run_id: scraperRunId },
+            attributes: ['id', 'subject_id'],
+            transaction,
+        });
+
+        const removeIds = [];
+        for (const link of existingLinks) {
+            const sid = Number(link.subject_id);
+            if (!allowedSet.has(sid)) {
+                removeIds.push(link.id);
+            }
+        }
+        if (removeIds.length > 0) {
+            linksRemoved = await this.subjectScraperRunModel.destroy({
+                where: { id: { [Op.in]: removeIds } },
+                transaction,
+            });
+        }
+
+        for (const subjectId of allowed) {
+            const [, created] = await this.subjectScraperRunModel.findOrCreate({
+                where: {
+                    subject_id: subjectId,
+                    scraper_run_id: scraperRunId,
+                },
+                defaults: {
+                    subject_id: subjectId,
+                    scraper_run_id: scraperRunId,
+                },
+                transaction,
+            });
+            if (created) linksCreated += 1;
+        }
+
+        return {
+            links_created: Number(linksCreated) || 0,
+            links_removed: Number(linksRemoved) || 0,
+            subject_ids: allowed,
+            previous_subject_ids: existingLinks.map((l) => Number(l.subject_id)),
+        };
     }
 
     serializeSubjectListItem(row, { scraper_runs_count = 0 } = {}) {
@@ -258,6 +448,7 @@ class ScraperRepository {
                       shares: socialPost.shares,
                       angry_count: socialPost.angry_count,
                       follow: socialPost.follow ?? 0,
+                      views: socialPost.views ?? 0,
                       posts_count: socialPost.posts_count,
                       hot_score: socialPost.hot_score,
                       trend_score: socialPost.trend_score,
@@ -274,6 +465,7 @@ class ScraperRepository {
                       shares: 0,
                       angry_count: 0,
                       follow: 0,
+                      views: 0,
                       posts_count: 0,
                       hot_score: 0,
                       trend_score: 0,
@@ -320,10 +512,14 @@ class ScraperRepository {
                 { channel_ids: ids ?? [] },
                 { transaction }
             );
+            await this.recomputeSocialPost(created.id, { transaction });
 
             return created;
         });
 
+        const scraper_runs_count = await this.subjectScraperRunModel.count({
+            where: { subject_id: subject.id },
+        });
         await subject.reload({
             include: [
                 { model: this.socialPostModel, as: 'socialPost' },
@@ -331,7 +527,7 @@ class ScraperRepository {
             ],
         });
 
-        return this.serializeSubjectListItem(subject, { scraper_runs_count: 0 });
+        return this.serializeSubjectListItem(subject, { scraper_runs_count });
     }
 
     async updateSubject(id, payload = {}) {
@@ -364,11 +560,14 @@ class ScraperRepository {
             if (Object.keys(updates).length > 0) {
                 await subject.update(updates, { transaction });
             }
-            await this.syncSubjectChannels(
+            const syncResult = await this.syncSubjectChannels(
                 subject.id,
                 { channel_ids: ids },
                 { transaction }
             );
+            if (syncResult?.reconciled) {
+                await this.recomputeSocialPost(subject.id, { transaction });
+            }
         });
 
         const scraper_runs_count = await this.subjectScraperRunModel.count({
@@ -382,6 +581,37 @@ class ScraperRepository {
         });
 
         return this.serializeSubjectListItem(subject, { scraper_runs_count });
+    }
+
+    async attachSubjectChannel(subjectId, channelId) {
+        const result = await this.channelRepository.attachSubjectChannel(subjectId, channelId);
+
+        await db.sequelize.transaction(async (transaction) => {
+            await this.reconcileSubjectScraperRuns(subjectId, { transaction });
+            // Channel có thể vừa tách khỏi subject khác — dọn link sót trên channel này
+            const affected = await this.reconcileLinksForChannel(channelId, { transaction });
+            const toRecompute = new Set([Number(subjectId), ...affected.map(Number)]);
+            for (const sid of toRecompute) {
+                await this.recomputeSocialPost(sid, { transaction });
+            }
+        });
+
+        return result;
+    }
+
+    async detachSubjectChannel(subjectId, channelId) {
+        const result = await this.channelRepository.detachSubjectChannel(subjectId, channelId);
+
+        await db.sequelize.transaction(async (transaction) => {
+            await this.reconcileSubjectScraperRuns(subjectId, { transaction });
+            const affected = await this.reconcileLinksForChannel(channelId, { transaction });
+            const toRecompute = new Set([Number(subjectId), ...affected.map(Number)]);
+            for (const sid of toRecompute) {
+                await this.recomputeSocialPost(sid, { transaction });
+            }
+        });
+
+        return result;
     }
 
     async deleteSubject(id) {
@@ -422,6 +652,8 @@ class ScraperRepository {
             comments: plain.comments,
             shares: plain.shares,
             angry_count: plain.angry_count,
+            views: plain.views,
+            platform: plain.platform,
         });
         const metrics = deriveEngagementMetrics({
             ...plain,
@@ -443,6 +675,7 @@ class ScraperRepository {
             shares: toCount(plain.shares),
             angry_count: toCount(plain.angry_count),
             follow: toCount(plain.follow),
+            views: toCount(plain.views),
             posted_at: plain.posted_at,
             scraped_at: plain.scraped_at,
             source: plain.source,
@@ -466,6 +699,22 @@ class ScraperRepository {
     buildSubjectPostsOrder(sortBy = 'posted_at') {
         const sequelize = db.sequelize;
         const run = { model: this.scraperRunModel, as: 'scraperRun' };
+        const likes = qualifyCol(sequelize, 'scraperRun', 'likes');
+        const comments = qualifyCol(sequelize, 'scraperRun', 'comments');
+        const shares = qualifyCol(sequelize, 'scraperRun', 'shares');
+        const angry = qualifyCol(sequelize, 'scraperRun', 'angry_count');
+        const views = qualifyCol(sequelize, 'scraperRun', 'views');
+        const platform = qualifyCol(sequelize, 'scraperRun', 'platform');
+
+        const hotScoreExpr = `(CASE
+            WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 3 + FLOOR(${views} / 100) * 3)
+            ELSE (${likes} + ${comments} * 2 + ${shares} * 3 + ${angry} * 4)
+        END)`;
+        const interactionExpr = `(CASE
+            WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments})
+            ELSE (${likes} + ${comments} + ${shares})
+        END)`;
+
         switch (sortBy) {
             case 'likes':
                 return [[run, 'likes', 'DESC'], [run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
@@ -475,23 +724,13 @@ class ScraperRepository {
                 return [[run, 'shares', 'DESC'], [run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
             case 'interaction':
                 return [
-                    [
-                        sequelize.literal(
-                            `(${qualifyCol(sequelize, 'scraperRun', 'likes')} + ${qualifyCol(sequelize, 'scraperRun', 'comments')} + ${qualifyCol(sequelize, 'scraperRun', 'shares')})`
-                        ),
-                        'DESC',
-                    ],
+                    [sequelize.literal(interactionExpr), 'DESC'],
                     [run, 'posted_at', 'DESC'],
                     [run, 'id', 'DESC'],
                 ];
             case 'hot_score':
                 return [
-                    [
-                        sequelize.literal(
-                            `(${qualifyCol(sequelize, 'scraperRun', 'shares')} * 3 + ${qualifyCol(sequelize, 'scraperRun', 'comments')} * 2 + ${qualifyCol(sequelize, 'scraperRun', 'angry_count')} * 4 + ${qualifyCol(sequelize, 'scraperRun', 'likes')})`
-                        ),
-                        'DESC',
-                    ],
+                    [sequelize.literal(hotScoreExpr), 'DESC'],
                     [run, 'posted_at', 'DESC'],
                     [run, 'id', 'DESC'],
                 ];
@@ -543,8 +782,10 @@ class ScraperRepository {
         let comments = 0;
         let shares = 0;
         let angry_count = 0;
+        let views = 0;
         let posts_count = 0;
         const followByChannel = new Map();
+        const scoreInputs = [];
 
         for (const post of runs) {
             if (!post) continue;
@@ -552,7 +793,16 @@ class ScraperRepository {
             comments += toCount(post.comments);
             shares += toCount(post.shares);
             angry_count += toCount(post.angry_count);
+            views += toCount(post.views);
             posts_count += 1;
+            scoreInputs.push({
+                platform: post.platform,
+                likes: post.likes,
+                comments: post.comments,
+                shares: post.shares,
+                angry_count: post.angry_count,
+                views: post.views,
+            });
 
             const channelKey =
                 post.channel_id != null ? `ch:${post.channel_id}` : `run:${post.id}`;
@@ -566,12 +816,13 @@ class ScraperRepository {
             follow += value;
         }
 
-        const scores = calculateScores({ likes, comments, shares, angry_count });
+        const scores = calculateScoresFromRuns(scoreInputs);
         return {
             likes,
             comments,
             shares,
             angry_count,
+            views,
             follow,
             posts_count,
             trend_score: scores.trend_score,
@@ -633,10 +884,13 @@ class ScraperRepository {
                     model: this.scraperRunModel,
                     as: 'scraperRun',
                     attributes: [
+                        'id',
+                        'platform',
                         'likes',
                         'comments',
                         'shares',
                         'angry_count',
+                        'views',
                         'follow',
                         'channel_id',
                         'posted_at',
@@ -653,6 +907,7 @@ class ScraperRepository {
             ...aggregatePayload,
             subject_id: Number(id),
             created_at: subject.created_at,
+            subject: typeof subject.toJSON === 'function' ? subject.toJSON() : subject,
         });
 
         const posts_by_platform = await this.countSubjectPostsByPlatform(id, {
@@ -769,6 +1024,7 @@ class ScraperRepository {
                     comments: normalized.comments,
                     shares: normalized.shares,
                     angry_count: normalized.angry_count,
+                    views: toCount(normalized.views),
                     follow: toCount(normalized.follow),
                     posted_at: normalized.posted_at,
                     scraped_at: now,
@@ -815,29 +1071,17 @@ class ScraperRepository {
                     }
                 }
 
-                const existingLinks = await this.subjectScraperRunModel.findAll({
-                    where: { scraper_run_id: scraperRun.id },
-                    attributes: ['subject_id'],
-                    transaction,
-                });
-                for (const link of existingLinks) {
-                    affectedSubjectIds.add(Number(link.subject_id));
+                const linkSync = await this.syncScraperRunSubjectLinks(
+                    scraperRun.id,
+                    subjectIdsToLink,
+                    { transaction }
+                );
+                linksCreated += linkSync.links_created;
+                for (const sid of linkSync.previous_subject_ids) {
+                    affectedSubjectIds.add(sid);
                 }
-
-                for (const subjectId of subjectIdsToLink) {
-                    const [, created] = await this.subjectScraperRunModel.findOrCreate({
-                        where: {
-                            subject_id: subjectId,
-                            scraper_run_id: scraperRun.id,
-                        },
-                        defaults: {
-                            subject_id: subjectId,
-                            scraper_run_id: scraperRun.id,
-                        },
-                        transaction,
-                    });
-                    if (created) linksCreated += 1;
-                    affectedSubjectIds.add(subjectId);
+                for (const sid of linkSync.subject_ids) {
+                    affectedSubjectIds.add(sid);
                 }
             }
 
@@ -875,6 +1119,7 @@ class ScraperRepository {
         let updated = 0;
         let skipped = 0;
         let linksCreated = 0;
+        let linksRemoved = 0;
         let unmatchedChannel = 0;
 
         const savedRuns = [];
@@ -917,6 +1162,7 @@ class ScraperRepository {
                     comments: normalized.comments,
                     shares: 0,
                     angry_count: 0,
+                    views: toCount(normalized.views),
                     follow: toCount(normalized.follow),
                     posted_at: normalized.posted_at,
                     scraped_at: now,
@@ -936,7 +1182,8 @@ class ScraperRepository {
 
                 if (scraperRun) {
                     const updatePayload = { ...payload };
-                    if (scraperRun.channel_id == null && matchedChannel) {
+                    // YouTube: luôn gắn đúng channel đang scrape (tránh sót khi đổi subject/channel)
+                    if (matchedChannel) {
                         Object.assign(updatePayload, channelFk);
                     }
                     await scraperRun.update(updatePayload, { transaction });
@@ -963,29 +1210,33 @@ class ScraperRepository {
                     }
                 }
 
-                const existingLinks = await this.subjectScraperRunModel.findAll({
-                    where: { scraper_run_id: scraperRun.id },
-                    attributes: ['subject_id'],
+                const linkSync = await this.syncScraperRunSubjectLinks(
+                    scraperRun.id,
+                    subjectIdsToLink,
+                    { transaction }
+                );
+                linksCreated += linkSync.links_created;
+                linksRemoved += linkSync.links_removed;
+                for (const sid of linkSync.previous_subject_ids) {
+                    affectedSubjectIds.add(sid);
+                }
+                for (const sid of linkSync.subject_ids) {
+                    affectedSubjectIds.add(sid);
+                }
+            }
+
+            // Đồng bộ toàn bộ bài của channel (kể cả video cũ không nằm trong batch scrape lần này)
+            const channelsToReconcile = new Set();
+            if (preferredChannel?.id) channelsToReconcile.add(Number(preferredChannel.id));
+            for (const ch of channelList) {
+                if (ch?.id) channelsToReconcile.add(Number(ch.id));
+            }
+            for (const channelId of channelsToReconcile) {
+                const reconciledSubjects = await this.reconcileLinksForChannel(channelId, {
                     transaction,
                 });
-                for (const link of existingLinks) {
-                    affectedSubjectIds.add(Number(link.subject_id));
-                }
-
-                for (const subjectId of subjectIdsToLink) {
-                    const [, created] = await this.subjectScraperRunModel.findOrCreate({
-                        where: {
-                            subject_id: subjectId,
-                            scraper_run_id: scraperRun.id,
-                        },
-                        defaults: {
-                            subject_id: subjectId,
-                            scraper_run_id: scraperRun.id,
-                        },
-                        transaction,
-                    });
-                    if (created) linksCreated += 1;
-                    affectedSubjectIds.add(subjectId);
+                for (const sid of reconciledSubjects) {
+                    affectedSubjectIds.add(sid);
                 }
             }
 
@@ -1000,6 +1251,7 @@ class ScraperRepository {
                 updated,
                 skipped,
                 links_created: linksCreated,
+                links_removed: linksRemoved,
                 unmatched_channel: unmatchedChannel,
             },
             affected_subject_ids: [...affectedSubjectIds],
@@ -1020,47 +1272,27 @@ class ScraperRepository {
 
         // Cache social_posts = tổng engagement trong tháng lịch hiện tại (theo posted_at).
         const monthRange = getCalendarMonthRange();
-        let likes = 0;
-        let comments = 0;
-        let shares = 0;
-        let angry_count = 0;
-        let postsInWindow = 0;
-        const followByChannel = new Map();
+        const runsInWindow = [];
 
         for (const link of links) {
             const post = link.scraperRun;
             if (!post) continue;
             if (!isWithinPostedAtRange(post.posted_at, monthRange)) continue;
-
-            likes += toCount(post.likes);
-            comments += toCount(post.comments);
-            shares += toCount(post.shares);
-            angry_count += toCount(post.angry_count);
-            postsInWindow += 1;
-
-            const channelKey =
-                post.channel_id != null ? `ch:${post.channel_id}` : `run:${post.id}`;
-            const follow = toCount(post.follow);
-            const prev = followByChannel.get(channelKey) || 0;
-            if (follow > prev) followByChannel.set(channelKey, follow);
+            runsInWindow.push(post);
         }
 
-        let follow = 0;
-        for (const value of followByChannel.values()) {
-            follow += value;
-        }
-
-        const scores = calculateScores({ likes, comments, shares, angry_count });
+        const aggregate = this.buildAggregateFromRuns(runsInWindow);
         const payload = {
             subject_id: subjectId,
-            likes,
-            comments,
-            shares,
-            angry_count,
-            follow,
-            trend_score: scores.trend_score,
-            hot_score: scores.hot_score,
-            posts_count: postsInWindow,
+            likes: aggregate.likes,
+            comments: aggregate.comments,
+            shares: aggregate.shares,
+            angry_count: aggregate.angry_count,
+            views: aggregate.views,
+            follow: aggregate.follow,
+            trend_score: aggregate.trend_score,
+            hot_score: aggregate.hot_score,
+            posts_count: aggregate.posts_count,
             computed_at: new Date(),
         };
 
@@ -1107,7 +1339,16 @@ class ScraperRepository {
 
     serializeSocialPost(row, { rank = null } = {}) {
         const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
-        const metrics = deriveEngagementMetrics(plain);
+        const platformHint =
+            plain.platform ||
+            resolveSubjectPlatform(plain.subject) ||
+            (toCount(plain.views) > 0 && toCount(plain.shares) === 0 && toCount(plain.angry_count) === 0
+                ? 'youtube'
+                : null);
+        const metrics = deriveEngagementMetrics({
+            ...plain,
+            platform: platformHint || plain.platform,
+        });
         const thresholds = this.trendThresholds();
         const direction = classifyTrendDirection(plain, {
             hotThreshold: thresholds.hot,
@@ -1129,6 +1370,7 @@ class ScraperRepository {
             ...plain,
             subject,
             rank,
+            views: toCount(plain.views),
             discussion: metrics.discussion,
             interaction: metrics.interaction,
             sentiment: metrics.sentiment,
@@ -1150,6 +1392,8 @@ class ScraperRepository {
 
     buildSocialPostOrder(sortBy = 'hot_score') {
         const sequelize = db.sequelize;
+        // social_posts không có platform: heuristic YouTube = có views, shares=0, angry=0
+        const ytHeuristic = '(views > 0 AND shares = 0 AND angry_count = 0)';
         switch (sortBy) {
             case 'trend_score':
                 return [['trend_score', 'DESC'], ['hot_score', 'DESC'], ['id', 'DESC']];
@@ -1161,7 +1405,12 @@ class ScraperRepository {
                 ];
             case 'interaction':
                 return [
-                    [sequelize.literal('(likes + comments + shares)'), 'DESC'],
+                    [
+                        sequelize.literal(
+                            `(CASE WHEN ${ytHeuristic} THEN (likes + comments) ELSE (likes + comments + shares) END)`
+                        ),
+                        'DESC',
+                    ],
                     ['hot_score', 'DESC'],
                     ['id', 'DESC'],
                 ];
@@ -1169,7 +1418,11 @@ class ScraperRepository {
                 return [
                     [
                         sequelize.literal(
-                            '(CASE WHEN (likes + angry_count) = 0 THEN 0 ELSE (likes - angry_count) / (likes + angry_count) END)'
+                            `(CASE
+                                WHEN ${ytHeuristic} THEN 0
+                                WHEN (likes + angry_count) = 0 THEN 0
+                                ELSE (likes - angry_count) / (likes + angry_count)
+                            END)`
                         ),
                         'DESC',
                     ],
@@ -1228,36 +1481,42 @@ class ScraperRepository {
         const aggRows = await sequelize.query(
             `SELECT
                 per_channel.subject_id AS subject_id,
+                per_channel.platform AS platform,
                 COALESCE(SUM(per_channel.likes), 0) AS likes,
                 COALESCE(SUM(per_channel.comments), 0) AS comments,
                 COALESCE(SUM(per_channel.shares), 0) AS shares,
                 COALESCE(SUM(per_channel.angry_count), 0) AS angry_count,
+                COALESCE(SUM(per_channel.views), 0) AS views,
                 COALESCE(SUM(per_channel.channel_follow), 0) AS follow,
                 COALESCE(SUM(per_channel.posts_count), 0) AS posts_count
              FROM (
                 SELECT
                     ssr.subject_id AS subject_id,
                     sr.channel_id AS channel_id,
+                    LOWER(sr.platform) AS platform,
                     COALESCE(SUM(sr.likes), 0) AS likes,
                     COALESCE(SUM(sr.comments), 0) AS comments,
                     COALESCE(SUM(sr.shares), 0) AS shares,
                     COALESCE(SUM(sr.angry_count), 0) AS angry_count,
+                    COALESCE(SUM(sr.views), 0) AS views,
                     COALESCE(MAX(sr.follow), 0) AS channel_follow,
                     COUNT(*) AS posts_count
                 FROM subjects_scraper_runs ssr
                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
                 WHERE sr.posted_at >= :start
                   AND sr.posted_at < :end
-                GROUP BY ssr.subject_id, sr.channel_id
+                GROUP BY ssr.subject_id, sr.channel_id, LOWER(sr.platform)
              ) per_channel
-             GROUP BY per_channel.subject_id`,
+             GROUP BY per_channel.subject_id, per_channel.platform`,
             {
                 replacements: { start: range.start, end: range.end },
                 type: sequelize.QueryTypes.SELECT,
             }
         );
 
-        const subjectIds = aggRows.map((r) => Number(r.subject_id)).filter(Boolean);
+        const subjectIds = [
+            ...new Set(aggRows.map((r) => Number(r.subject_id)).filter(Boolean)),
+        ];
         const subjects =
             subjectIds.length === 0
                 ? []
@@ -1269,39 +1528,75 @@ class ScraperRepository {
             subjects.map((s) => [Number(s.id), typeof s.toJSON === 'function' ? s.toJSON() : s])
         );
 
-        let items = [];
+        const bySubject = new Map();
         for (const row of aggRows) {
             const subjectId = Number(row.subject_id);
             const subject = subjectById.get(subjectId);
             if (!subject) continue;
 
+            const bucket = bySubject.get(subjectId) || {
+                subject,
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                angry_count: 0,
+                views: 0,
+                follow: 0,
+                posts_count: 0,
+                scoreInputs: [],
+            };
+
             const likes = toCount(row.likes);
             const comments = toCount(row.comments);
             const shares = toCount(row.shares);
             const angry_count = toCount(row.angry_count);
+            const views = toCount(row.views);
             const follow = toCount(row.follow);
             const posts_count = toCount(row.posts_count);
-            const scores = calculateScores({ likes, comments, shares, angry_count });
-            const payload = {
-                id: subjectId,
-                subject_id: subjectId,
+            const platform = normalizePlatform(row.platform);
+
+            bucket.likes += likes;
+            bucket.comments += comments;
+            bucket.shares += shares;
+            bucket.angry_count += angry_count;
+            bucket.views += views;
+            bucket.follow += follow;
+            bucket.posts_count += posts_count;
+            bucket.scoreInputs.push({
+                platform,
                 likes,
                 comments,
                 shares,
                 angry_count,
-                follow,
-                posts_count,
+                views,
+            });
+            bySubject.set(subjectId, bucket);
+        }
+
+        let items = [];
+        for (const [subjectId, bucket] of bySubject) {
+            const scores = calculateScoresFromRuns(bucket.scoreInputs);
+            const payload = {
+                id: subjectId,
+                subject_id: subjectId,
+                likes: bucket.likes,
+                comments: bucket.comments,
+                shares: bucket.shares,
+                angry_count: bucket.angry_count,
+                views: bucket.views,
+                follow: bucket.follow,
+                posts_count: bucket.posts_count,
                 hot_score: scores.hot_score,
                 trend_score: scores.trend_score,
                 computed_at: new Date(),
-                created_at: subject.created_at,
-                updated_at: subject.updated_at,
+                created_at: bucket.subject.created_at,
+                updated_at: bucket.subject.updated_at,
                 subject: {
-                    id: subject.id,
-                    name: subject.name,
-                    normalized_name: subject.normalized_name,
-                    status: subject.status,
-                    channels: (subject.channels || []).map((ch) => this.serializeChannel(ch)),
+                    id: bucket.subject.id,
+                    name: bucket.subject.name,
+                    normalized_name: bucket.subject.normalized_name,
+                    status: bucket.subject.status,
+                    channels: (bucket.subject.channels || []).map((ch) => this.serializeChannel(ch)),
                 },
             };
 

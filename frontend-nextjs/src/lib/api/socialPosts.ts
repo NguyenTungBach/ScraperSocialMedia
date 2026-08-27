@@ -26,6 +26,7 @@ export interface SocialPostItem {
   comments: number;
   shares: number;
   follow: number;
+  views?: number;
   posts_count: number;
   hot_score: number;
   trend_score: number;

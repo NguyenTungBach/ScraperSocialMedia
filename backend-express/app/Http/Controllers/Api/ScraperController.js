@@ -9,7 +9,7 @@ const CommentRepository = require('../../../Repositories/CommentRepository');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
 const {
-    extractHandleFromUrl,
+    parseYoutubeChannelRef,
     toYoutubeVideoResponse,
 } = require('../../../Helpers/YouTubeHelper');
 
@@ -404,16 +404,16 @@ class ScraperController {
                     continue;
                 }
 
-                const handle = extractHandleFromUrl(channel.url);
-                if (!handle) {
+                const channelRef = parseYoutubeChannelRef(channel.url);
+                if (!channelRef) {
                     throw createError(
                         422,
-                        `Cannot parse YouTube @handle from channel url (id=${channel.id}): ${channel.url}`
+                        `Cannot parse YouTube channel from url (id=${channel.id}): ${channel.url}`
                     );
                 }
 
                 const { videos, quota_used } =
-                    await this.youtubeService.scrapeChannelByHandle(handle, {
+                    await this.youtubeService.scrapeChannelByRef(channelRef, {
                         maxResults,
                     });
                 quotaUsed += quota_used || 3;

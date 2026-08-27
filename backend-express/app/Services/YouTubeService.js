@@ -62,27 +62,16 @@ class YouTubeService {
     }
 
     /**
-     * channels.list → uploads playlist ID + subscriberCount (quota 1).
+     * channels.list → uploads playlist + subscriberCount từ 1 item.
      */
-    async getUploadsPlaylistId(handle) {
-        const forHandle = this.normalizeHandle(handle);
-        if (!forHandle) {
-            throw createError(422, 'YouTube handle is required');
-        }
-
-        const data = await this.request('channels', {
-            part: 'contentDetails,statistics',
-            forHandle,
-        });
-
-        const channel = data?.items?.[0];
+    pickUploadsFromChannelItem(channel, label = 'channel') {
         const uploadsId =
             channel?.contentDetails?.relatedPlaylists?.uploads || null;
 
         if (!uploadsId) {
             throw createError(
                 404,
-                `YouTube channel not found or has no uploads playlist: @${forHandle}`
+                `YouTube channel not found or has no uploads playlist: ${label}`
             );
         }
 
@@ -91,8 +80,158 @@ class YouTubeService {
         return {
             channelId: channel.id,
             uploadsPlaylistId: uploadsId,
-            follow: Number.isFinite(subscriberCount) ? Math.max(0, Math.floor(subscriberCount)) : 0,
+            follow: Number.isFinite(subscriberCount)
+                ? Math.max(0, Math.floor(subscriberCount))
+                : 0,
         };
+    }
+
+    /**
+     * Resolve kênh theo id / forHandle / forUsername.
+     */
+    async getUploadsPlaylistByParams(params, label) {
+        const data = await this.request('channels', {
+            part: 'contentDetails,statistics',
+            ...params,
+        });
+        const channel = data?.items?.[0];
+        if (!channel) {
+            throw createError(404, `YouTube channel not found: ${label}`);
+        }
+        return this.pickUploadsFromChannelItem(channel, label);
+    }
+
+    /**
+     * /c/CustomName — API không có forCustomUrl trực tiếp.
+     * Thử forHandle → forUsername → search.list (type=channel).
+     * @returns {{ ...uploads, quota_used: number }}
+     */
+    async resolveCustomUrlChannel(customName) {
+        const name = String(customName || '').trim();
+        if (!name) {
+            throw createError(422, 'YouTube custom URL name is required');
+        }
+
+        let quotaUsed = 0;
+
+        try {
+            const result = await this.getUploadsPlaylistByParams(
+                { forHandle: name },
+                `@${name}`
+            );
+            quotaUsed += 1;
+            return { ...result, quota_used: quotaUsed };
+        } catch (err) {
+            if (err.status !== 404) throw err;
+            quotaUsed += 1;
+        }
+
+        try {
+            const result = await this.getUploadsPlaylistByParams(
+                { forUsername: name },
+                `user/${name}`
+            );
+            quotaUsed += 1;
+            return { ...result, quota_used: quotaUsed };
+        } catch (err) {
+            if (err.status !== 404) throw err;
+            quotaUsed += 1;
+        }
+
+        // search.list costs 100 quota units
+        const search = await this.request('search', {
+            part: 'snippet',
+            type: 'channel',
+            q: name,
+            maxResults: 5,
+        });
+        quotaUsed += 100;
+
+        const items = search?.items || [];
+        const lower = name.toLowerCase();
+        const ranked = items
+            .map((it) => {
+                const customUrl = String(it?.snippet?.customUrl || '')
+                    .replace(/^@/, '')
+                    .toLowerCase();
+                const title = String(it?.snippet?.title || '').toLowerCase();
+                const chId = it?.snippet?.channelId || it?.id?.channelId || null;
+                let score = 0;
+                if (customUrl === lower) score = 3;
+                else if (title === lower) score = 2;
+                else if (title.includes(lower) || customUrl.includes(lower)) score = 1;
+                return { it, chId, score };
+            })
+            .filter((row) => row.chId && typeof row.chId === 'string')
+            .sort((a, b) => b.score - a.score);
+
+        const best = ranked[0];
+        if (!best) {
+            throw createError(
+                404,
+                `YouTube channel not found for custom URL /c/${name}`
+            );
+        }
+
+        const result = await this.getUploadsPlaylistByParams(
+            { id: best.chId },
+            `/c/${name}`
+        );
+        quotaUsed += 1;
+        return { ...result, quota_used: quotaUsed };
+    }
+
+    /**
+     * Resolve uploads playlist từ parseYoutubeChannelRef result.
+     * @param {{ kind: string, value: string }} ref
+     */
+    async getUploadsPlaylistFromRef(ref) {
+        if (!ref || !ref.value) {
+            throw createError(422, 'YouTube channel reference is required');
+        }
+
+        if (ref.kind === 'id') {
+            const result = await this.getUploadsPlaylistByParams(
+                { id: ref.value },
+                ref.value
+            );
+            return { ...result, quota_used: 1 };
+        }
+
+        if (ref.kind === 'handle') {
+            const forHandle = this.normalizeHandle(ref.value);
+            const result = await this.getUploadsPlaylistByParams(
+                { forHandle },
+                `@${forHandle}`
+            );
+            return { ...result, quota_used: 1 };
+        }
+
+        if (ref.kind === 'username') {
+            const result = await this.getUploadsPlaylistByParams(
+                { forUsername: ref.value },
+                `user/${ref.value}`
+            );
+            return { ...result, quota_used: 1 };
+        }
+
+        if (ref.kind === 'custom') {
+            return this.resolveCustomUrlChannel(ref.value);
+        }
+
+        throw createError(422, `Unsupported YouTube channel ref kind: ${ref.kind}`);
+    }
+
+    /**
+     * channels.list → uploads playlist ID + subscriberCount (quota 1).
+     * @deprecated Prefer getUploadsPlaylistFromRef
+     */
+    async getUploadsPlaylistId(handle) {
+        const forHandle = this.normalizeHandle(handle);
+        if (!forHandle) {
+            throw createError(422, 'YouTube handle is required');
+        }
+        return this.getUploadsPlaylistByParams({ forHandle }, `@${forHandle}`);
     }
 
     /**
@@ -130,21 +269,20 @@ class YouTubeService {
     }
 
     /**
-     * Orchestrate 3 bước API → mảng video đã normalize.
-     * @returns {{ videos: object[], quota_used: number, channelId: string, uploadsPlaylistId: string }}
+     * Orchestrate API → mảng video đã normalize từ channel ref.
+     * @param {{ kind: string, value: string }} ref
      */
-    async scrapeChannelByHandle(handle, { maxResults } = {}) {
+    async scrapeChannelByRef(ref, { maxResults } = {}) {
         const limit =
             maxResults != null
                 ? Math.min(Math.max(Number(maxResults) || 10, 1), 50)
                 : youtubeConfig.defaultMaxResults;
 
-        const { channelId, uploadsPlaylistId, follow } =
-            await this.getUploadsPlaylistId(handle);
+        const { channelId, uploadsPlaylistId, follow, quota_used: resolveQuota } =
+            await this.getUploadsPlaylistFromRef(ref);
         const videoIds = await this.getPlaylistVideoIds(uploadsPlaylistId, limit);
         const rawVideos = await this.getVideoDetails(videoIds);
 
-        // Giữ thứ tự playlist (mới nhất trước)
         const byId = new Map(rawVideos.map((v) => [v.id, v]));
         const ordered = videoIds.map((id) => byId.get(id)).filter(Boolean);
 
@@ -154,11 +292,22 @@ class YouTubeService {
 
         return {
             videos,
-            quota_used: 3,
+            quota_used: (resolveQuota || 1) + 2,
             channelId,
             uploadsPlaylistId,
             follow: follow || 0,
         };
+    }
+
+    /**
+     * Orchestrate 3 bước API → mảng video đã normalize.
+     * @returns {{ videos: object[], quota_used: number, channelId: string, uploadsPlaylistId: string }}
+     */
+    async scrapeChannelByHandle(handle, { maxResults } = {}) {
+        return this.scrapeChannelByRef(
+            { kind: 'handle', value: this.normalizeHandle(handle) },
+            { maxResults }
+        );
     }
 
     /**

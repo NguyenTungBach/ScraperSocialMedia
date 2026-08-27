@@ -23,6 +23,7 @@ export interface SubjectAggregate {
   shares: number;
   angry_count: number;
   follow: number;
+  views?: number;
   posts_count: number;
   hot_score: number;
   trend_score: number;
@@ -83,6 +84,7 @@ export interface SubjectRelatedPost {
   shares: number;
   angry_count: number;
   follow: number;
+  views?: number;
   posted_at?: string | null;
   scraped_at?: string | null;
   source?: string;

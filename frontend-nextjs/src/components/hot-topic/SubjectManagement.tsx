@@ -503,7 +503,7 @@ export function SubjectManagement() {
             <div className={styles.paginationBtns}>
               <button
                 type="button"
-                className={dash.loadMoreBtn}
+                className={styles.pageBtn}
                 disabled={loading || page <= 1}
                 onClick={() => loadList({ page: page - 1, q: query })}
               >
@@ -511,7 +511,7 @@ export function SubjectManagement() {
               </button>
               <button
                 type="button"
-                className={dash.loadMoreBtn}
+                className={styles.pageBtn}
                 disabled={loading || page >= totalPages}
                 onClick={() => loadList({ page: page + 1, q: query })}
               >

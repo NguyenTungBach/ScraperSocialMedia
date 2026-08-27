@@ -104,8 +104,14 @@ function buildPlatformPostId(item) {
 }
 
 /**
- * trend = likes×1 + comments×2 + shares×3
- * hot   = shares×3 + comments×2 + angry×4 + likes×1
+ * Facebook (mặc định):
+ *   trend = likes×1 + comments×2 + shares×3
+ *   hot   = likes×1 + comments×2 + shares×3 + angry×4
+ *
+ * YouTube:
+ *   view_w = floor(views / 100)
+ *   trend  = likes×1 + comments×2 + view_w×3
+ *   hot    = likes×1 + comments×3 + view_w×3
  */
 function toNumber(value) {
     if (value == null || value === '') return 0;
@@ -127,22 +133,110 @@ function formatScore(value) {
     return roundScore(value).toFixed(2);
 }
 
-function calculateScores({ likes = 0, comments = 0, shares = 0, angry_count = 0 }) {
+function normalizePlatform(platform) {
+    const p = String(platform || '')
+        .trim()
+        .toLowerCase();
+    if (p === 'youtube' || p === 'yt') return 'youtube';
+    if (p === 'facebook' || p === 'fb') return 'facebook';
+    return p || 'facebook';
+}
+
+/** Proxy lan tỏa YouTube thay shares. */
+function youtubeViewWeight(views = 0) {
+    return Math.floor(toCount(views) / 100);
+}
+
+/**
+ * @param {{ likes?: number, comments?: number, shares?: number, angry_count?: number, views?: number, platform?: string }} input
+ */
+function calculateScores({
+    likes = 0,
+    comments = 0,
+    shares = 0,
+    angry_count = 0,
+    views = 0,
+    platform = 'facebook',
+} = {}) {
     const l = toCount(likes);
     const c = toCount(comments);
+    const plat = normalizePlatform(platform);
+
+    if (plat === 'youtube') {
+        const viewW = youtubeViewWeight(views);
+        return {
+            trend_score: roundScore(l * 1 + c * 2 + viewW * 3),
+            hot_score: roundScore(l * 1 + c * 3 + viewW * 3),
+        };
+    }
+
     const s = toCount(shares);
     const a = toCount(angry_count);
-
     return {
         trend_score: roundScore(l * 1 + c * 2 + s * 3),
-        hot_score: roundScore(s * 3 + c * 2 + a * 4 + l * 1),
+        hot_score: roundScore(l * 1 + c * 2 + s * 3 + a * 4),
     };
 }
 
 /**
- * Thảo luận ≈ bình luận + số bài (proxy khi chưa có volume thảo luận thật).
- * Tương tác = likes + comments + shares.
- * Cảm xúc ∈ [-1, 1] từ likes vs angry.
+ * Cộng điểm theo từng nhóm platform (sum metrics rồi apply công thức platform đó).
+ * @param {Array<{ platform?: string, likes?: number, comments?: number, shares?: number, angry_count?: number, views?: number }>} runs
+ */
+function calculateScoresFromRuns(runs = []) {
+    const byPlatform = new Map();
+
+    for (const run of runs) {
+        if (!run) continue;
+        const plat = normalizePlatform(run.platform);
+        const bucket = byPlatform.get(plat) || {
+            likes: 0,
+            comments: 0,
+            shares: 0,
+            angry_count: 0,
+            views: 0,
+        };
+        bucket.likes += toCount(run.likes);
+        bucket.comments += toCount(run.comments);
+        bucket.shares += toCount(run.shares);
+        bucket.angry_count += toCount(run.angry_count);
+        bucket.views += toCount(run.views);
+        byPlatform.set(plat, bucket);
+    }
+
+    let hot_score = 0;
+    let trend_score = 0;
+    for (const [plat, bucket] of byPlatform) {
+        const scores = calculateScores({ ...bucket, platform: plat });
+        hot_score += scores.hot_score;
+        trend_score += scores.trend_score;
+    }
+
+    return {
+        hot_score: roundScore(hot_score),
+        trend_score: roundScore(trend_score),
+    };
+}
+
+/**
+ * Suy platform từ channels của subject (youtube-only / facebook-only / mixed).
+ */
+function resolveSubjectPlatform(subject) {
+    const channels = subject?.channels || [];
+    const types = channels
+        .map((ch) =>
+            normalizePlatform(ch.type_channel || ch.typeChannel || ch.type || ch.platform)
+        )
+        .filter(Boolean);
+    if (types.length === 0) return null;
+    if (types.every((t) => t === 'youtube')) return 'youtube';
+    if (types.every((t) => t === 'facebook')) return 'facebook';
+    return 'mixed';
+}
+
+/**
+ * Thảo luận ≈ bình luận + số bài.
+ * FB: tương tác = likes+comments+shares; cảm xúc từ likes vs angry.
+ * YT: tương tác = likes+comments; cảm xúc = 0 (tạm, chưa có angry).
  */
 function deriveEngagementMetrics(row = {}) {
     const likes = toCount(row.likes);
@@ -153,10 +247,32 @@ function deriveEngagementMetrics(row = {}) {
     const hotScore = roundScore(row.hot_score);
     const trendScore = roundScore(row.trend_score);
 
+    let platform = row.platform ? normalizePlatform(row.platform) : null;
+    if (!platform && row.subject) {
+        platform = resolveSubjectPlatform(row.subject);
+    }
+    // Heuristic: có views, không shares/angry → youtube
+    if (!platform && toCount(row.views) > 0 && shares === 0 && angry === 0) {
+        platform = 'youtube';
+    }
+    if (!platform) platform = 'facebook';
+
     const discussion = comments + postsCount;
-    const interaction = likes + comments + shares;
-    const denom = likes + angry;
-    const sentiment = denom === 0 ? 0 : (likes - angry) / denom;
+    let interaction;
+    let sentiment;
+
+    if (platform === 'youtube') {
+        interaction = likes + comments;
+        sentiment = 0;
+    } else if (platform === 'mixed') {
+        interaction = likes + comments + shares;
+        const denom = likes + angry;
+        sentiment = denom === 0 ? 0 : (likes - angry) / denom;
+    } else {
+        interaction = likes + comments + shares;
+        const denom = likes + angry;
+        sentiment = denom === 0 ? 0 : (likes - angry) / denom;
+    }
 
     return {
         discussion,
@@ -164,6 +280,7 @@ function deriveEngagementMetrics(row = {}) {
         sentiment: Math.round(sentiment * 100) / 100,
         hot_score: hotScore,
         trend_score: trendScore,
+        platform,
     };
 }
 
@@ -295,6 +412,8 @@ function normalizeApifyItem(item) {
     const comments = pickCount(item, ['comments', 'commentCount', 'commentsCount']) ?? 0;
     const shares = pickCount(item, ['shares', 'shareCount', 'sharesCount']) ?? 0;
     const angry_count = pickAngryCount(item);
+    const views =
+        pickCount(item, ['views', 'viewCount', 'videoViewCount', 'playCount']) ?? 0;
 
     return {
         platform: 'facebook',
@@ -308,6 +427,7 @@ function normalizeApifyItem(item) {
         comments: toCount(comments),
         shares: toCount(shares),
         angry_count: toCount(angry_count),
+        views: toCount(views),
         follow: 0,
         raw_data: item,
     };
@@ -317,6 +437,7 @@ module.exports = {
     buildPlatformPostId,
     buildPostedAtWhere,
     calculateScores,
+    calculateScoresFromRuns,
     classifyTrendDirection,
     deriveEngagementMetrics,
     formatDateOnly,
@@ -325,10 +446,13 @@ module.exports = {
     isNewSocialPost,
     isWithinPostedAtRange,
     normalizeApifyItem,
+    normalizePlatform,
     parseDateOnly,
     pickInputUrl,
     resolvePostedAtRange,
+    resolveSubjectPlatform,
     roundScore,
     toCount,
     toNumber,
+    youtubeViewWeight,
 };
