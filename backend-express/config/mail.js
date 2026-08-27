@@ -180,9 +180,14 @@ module.exports = {
             opts.requireTLS = true;
         }
         if (process.env.MAIL_USERNAME) {
+            // App Password Gmail thường có khoảng trắng khi copy; bỏ khoảng trắng + dấu ngoặc.
+            const rawPass = String(process.env.MAIL_PASSWORD || '').trim();
+            const pass = rawPass
+                .replace(/^["']|["']$/g, '')
+                .replace(/\s+/g, '');
             opts.auth = {
-                user: process.env.MAIL_USERNAME,
-                pass: process.env.MAIL_PASSWORD || ''
+                user: String(process.env.MAIL_USERNAME).trim(),
+                pass,
             };
         }
         return opts;
