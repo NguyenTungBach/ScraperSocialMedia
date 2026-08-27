@@ -7,7 +7,15 @@ const {
     resolvePostedAtRange,
     buildPostedAtWhere,
 } = require('../Helpers/PostScoreHelper');
-const { buildAnalysisRows } = require('../Helpers/CommentAnalysisHelper');
+const {
+    buildAnalysisRows,
+    normalizeThreadClassifiedAs,
+    normalizeLoneClassifiedAs,
+    normalizeSentiment,
+    normalizeCategory,
+    normalizeSeverity,
+    normalizeReason,
+} = require('../Helpers/CommentAnalysisHelper');
 
 class CommentRepository {
     constructor() {
@@ -503,11 +511,11 @@ class CommentRepository {
             for (const item of result?.lone?.[bucket] || []) {
                 await this.postCommentModel.update(
                     {
-                        classified_as: bucket,
-                        sentiment: item.sentiment || 'unknown',
-                        category: item.category || 'unknown',
-                        severity: item.severity || 'unknown',
-                        reason: item.reason || null,
+                        classified_as: normalizeLoneClassifiedAs(bucket),
+                        sentiment: normalizeSentiment(item.sentiment),
+                        category: normalizeCategory(item.category),
+                        severity: normalizeSeverity(item.severity),
+                        reason: normalizeReason(item.reason),
                         analysis_status: 'done',
                     },
                     {
@@ -524,12 +532,12 @@ class CommentRepository {
         for (const thread of result?.threads || []) {
             await this.commentThreadModel.update(
                 {
-                    classified_as: thread.classified_as || 'unknown',
+                    classified_as: normalizeThreadClassifiedAs(thread.classified_as),
                     has_negativity: Boolean(thread.has_negativity),
-                    sentiment: thread.sentiment || 'unknown',
-                    category: thread.category || 'unknown',
-                    severity: thread.severity || 'unknown',
-                    reason: thread.reason || null,
+                    sentiment: normalizeSentiment(thread.sentiment),
+                    category: normalizeCategory(thread.category),
+                    severity: normalizeSeverity(thread.severity),
+                    reason: normalizeReason(thread.reason),
                     analysis_status: 'done',
                     analyzed_at: now,
                 },

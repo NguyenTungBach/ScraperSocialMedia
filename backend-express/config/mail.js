@@ -95,6 +95,27 @@ function sesRegion() {
     );
 }
 
+function hasSesCredentials() {
+    const accessKeyId = process.env.AWS_SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+    return Boolean(accessKeyId && secretAccessKey && sesRegion());
+}
+
+function isSmtpConnectionError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return (
+        code === 'etimedout' ||
+        code === 'econnrefused' ||
+        code === 'econnreset' ||
+        code === 'esocket' ||
+        message.includes('connection timeout') ||
+        message.includes('timeout') ||
+        message.includes('connect econnrefused') ||
+        message.includes('socket hang up')
+    );
+}
+
 function isConfigured() {
     const to = process.env.MAIL_MAIN && String(process.env.MAIL_MAIN).trim();
     const { fromAddress: from } = resolveFrom();
@@ -124,6 +145,8 @@ function isTransportReady() {
 module.exports = {
     getMailerType,
     sesRegion,
+    hasSesCredentials,
+    isSmtpConnectionError,
     isConfigured,
     isTransportReady,
     parseEmailList,
@@ -148,7 +171,10 @@ module.exports = {
         const opts = {
             host: process.env.MAIL_HOST,
             port,
-            secure
+            secure,
+            connectionTimeout: Number(process.env.MAIL_CONNECTION_TIMEOUT_MS) || 20_000,
+            greetingTimeout: Number(process.env.MAIL_GREETING_TIMEOUT_MS) || 20_000,
+            socketTimeout: Number(process.env.MAIL_SOCKET_TIMEOUT_MS) || 60_000,
         };
         if (!secure && enc === 'tls') {
             opts.requireTLS = true;

@@ -16,6 +16,29 @@ function isValidRecipient(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
 
+async function sendViaSes({ fromHeader, to, subject, html, bccList }) {
+    const client = buildSesClient();
+    /** @type {{ ToAddresses: string[]; BccAddresses?: string[] }} */
+    const destination = { ToAddresses: [to] };
+    if (bccList.length) {
+        destination.BccAddresses = bccList;
+    }
+    await client.send(
+        new SendEmailCommand({
+            FromEmailAddress: fromHeader,
+            Destination: destination,
+            Content: {
+                Simple: {
+                    Subject: { Data: subject, Charset: 'UTF-8' },
+                    Body: { Html: { Data: html, Charset: 'UTF-8' } },
+                },
+            },
+        })
+    );
+    logger.info(`${LOG_PREFIX} sent (SES)`, { to, subject, bcc_count: bccList.length });
+    return true;
+}
+
 /**
  * @param {{ to: string, subject: string, html: string, bcc?: string[] }} opts
  * @returns {Promise<boolean>}
@@ -35,35 +58,17 @@ async function sendHtml(opts) {
     if (!mailConfig.isTransportReady()) {
         logger.warn(`${LOG_PREFIX} transport not configured`, {
             subject,
-            hint: 'MAIL_FROM_ADDRESS + (MAIL_HOST or MAIL_MAILER=ses + region)'
+            hint: 'MAIL_FROM_ADDRESS + (MAIL_HOST or MAIL_MAILER=ses + region)',
         });
         return false;
     }
 
     const fromHeader = `"${mailConfig.fromName}" <${mailConfig.fromAddress}>`;
+    const payload = { fromHeader, to, subject, html, bccList };
 
     if (mailConfig.getMailerType() === 'ses') {
         try {
-            const client = buildSesClient();
-            /** @type {{ ToAddresses: string[]; BccAddresses?: string[] }} */
-            const destination = { ToAddresses: [to] };
-            if (bccList.length) {
-                destination.BccAddresses = bccList;
-            }
-            await client.send(
-                new SendEmailCommand({
-                    FromEmailAddress: fromHeader,
-                    Destination: destination,
-                    Content: {
-                        Simple: {
-                            Subject: { Data: subject, Charset: 'UTF-8' },
-                            Body: { Html: { Data: html, Charset: 'UTF-8' } }
-                        }
-                    }
-                })
-            );
-            logger.info(`${LOG_PREFIX} sent (SES)`, { to, subject, bcc_count: bccList.length });
-            return true;
+            return await sendViaSes(payload);
         } catch (e) {
             logger.error(`${LOG_PREFIX} SES failed`, { subject, message: e?.message });
             return false;
@@ -77,17 +82,30 @@ async function sendHtml(opts) {
             to,
             bcc: bccList.length ? bccList : undefined,
             subject,
-            html
+            html,
         });
         logger.info(`${LOG_PREFIX} sent (SMTP)`, { to, subject, bcc_count: bccList.length });
         return true;
     } catch (e) {
         logger.error(`${LOG_PREFIX} SMTP failed`, { subject, message: e?.message });
+
+        if (mailConfig.hasSesCredentials() && mailConfig.isSmtpConnectionError(e)) {
+            logger.warn(`${LOG_PREFIX} retrying via SES after SMTP connection failure`);
+            try {
+                return await sendViaSes(payload);
+            } catch (sesError) {
+                logger.error(`${LOG_PREFIX} SES fallback failed`, {
+                    subject,
+                    message: sesError?.message,
+                });
+            }
+        }
+
         return false;
     }
 }
 
 module.exports = {
     sendHtml,
-    isValidRecipient
+    isValidRecipient,
 };

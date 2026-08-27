@@ -19,6 +19,61 @@ const LABEL_MAP = {
     thread: 'Chuỗi hội thoại',
 };
 
+const LONE_CLASSIFIED = new Set(['negative', 'normal', 'unknown']);
+const THREAD_CLASSIFIED = new Set(['negative', 'debate', 'unknown']);
+const SENTIMENT = new Set(['positive', 'neutral', 'negative', 'unknown']);
+const CATEGORY = new Set([
+    'opinion',
+    'attack',
+    'provoke',
+    'debate',
+    'argument',
+    'normal',
+    'other',
+    'unknown',
+]);
+const SEVERITY = new Set(['low', 'medium', 'high', 'unknown']);
+
+function normalizeEnum(value, allowed, fallback = 'unknown') {
+    const key = String(value || '')
+        .trim()
+        .toLowerCase();
+    if (allowed.has(key)) return key;
+    return fallback;
+}
+
+/** Gemini đôi khi trả `normal` cho thread — DB chỉ cho negative | debate | unknown. */
+function normalizeThreadClassifiedAs(value) {
+    const key = String(value || '')
+        .trim()
+        .toLowerCase();
+    if (THREAD_CLASSIFIED.has(key)) return key;
+    if (key === 'normal') return 'unknown';
+    return 'unknown';
+}
+
+function normalizeLoneClassifiedAs(value) {
+    return normalizeEnum(value, LONE_CLASSIFIED, 'unknown');
+}
+
+function normalizeSentiment(value) {
+    return normalizeEnum(value, SENTIMENT, 'unknown');
+}
+
+function normalizeCategory(value) {
+    return normalizeEnum(value, CATEGORY, 'unknown');
+}
+
+function normalizeSeverity(value) {
+    return normalizeEnum(value, SEVERITY, 'unknown');
+}
+
+function normalizeReason(value, maxLen = 500) {
+    const text = String(value || '').trim();
+    if (!text) return null;
+    return text.length > maxLen ? text.slice(0, maxLen) : text;
+}
+
 function classifyLabel(value) {
     if (!value) return '—';
     return LABEL_MAP[String(value)] || String(value);
@@ -110,6 +165,12 @@ function hasAnalysisData(lone = [], threads = []) {
 
 module.exports = {
     classifyLabel,
+    normalizeThreadClassifiedAs,
+    normalizeLoneClassifiedAs,
+    normalizeSentiment,
+    normalizeCategory,
+    normalizeSeverity,
+    normalizeReason,
     buildAnalysisRows,
     countAnalysisByType,
     hasAnalysisData,
