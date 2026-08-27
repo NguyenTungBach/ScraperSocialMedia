@@ -24,6 +24,7 @@ export interface HotTopic {
   comments: number;
   shares: number;
   angryCount: number;
+  follow: number;
   postsCount: number;
   startDate: string;
 }

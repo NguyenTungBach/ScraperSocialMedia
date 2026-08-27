@@ -62,6 +62,24 @@ function parsePort() {
     return Number.isFinite(p) ? p : 587;
 }
 
+/** Danh sách email phân tách bằng dấu phẩy hoặc chấm phẩy (MAIL_ALERT_BCC / BCC_MAIL). */
+function parseEmailList(raw) {
+    if (!raw || typeof raw !== 'string') {
+        return [];
+    }
+    const seen = new Set();
+    const out = [];
+    for (const part of raw.split(/[,;]+/)) {
+        const email = part.trim();
+        if (!email) continue;
+        const key = email.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(email);
+    }
+    return out;
+}
+
 function getMailerType() {
     const m = String(process.env.MAIL_MAILER || 'smtp')
         .toLowerCase()
@@ -108,6 +126,7 @@ module.exports = {
     sesRegion,
     isConfigured,
     isTransportReady,
+    parseEmailList,
     get fromAddress() {
         return resolveFrom().fromAddress;
     },
@@ -116,6 +135,11 @@ module.exports = {
     },
     get mailMain() {
         return process.env.MAIL_MAIN || '';
+    },
+    /** BCC alert — MAIL_ALERT_BCC hoặc BCC_MAIL (phân tách bằng dấu phẩy). */
+    get alertBcc() {
+        const raw = process.env.MAIL_ALERT_BCC || process.env.BCC_MAIL || '';
+        return parseEmailList(raw);
     },
     get transportOptions() {
         const port = parsePort();

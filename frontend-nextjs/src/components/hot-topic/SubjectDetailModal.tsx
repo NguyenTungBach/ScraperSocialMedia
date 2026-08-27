@@ -11,6 +11,7 @@ import {
   ThumbsUp,
   TrendingDown,
   TrendingUp,
+  Users,
   X,
   Angry,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { cn } from '@/lib/utils';
 import type { ChannelItem } from '@/lib/api/channels';
 import { PlatformBadge } from './PlatformBadge';
+import { CommentPanel } from './CommentPanel';
 import styles from './SubjectDetailModal.module.scss';
 
 const PER_PAGE_OPTIONS = [5, 10, 20] as const;
@@ -95,6 +97,12 @@ function PostCard({
         <span className={styles.postDate}>{formatDateTime(post.posted_at)}</span>
       </div>
       <p className={styles.postText}>{truncate(preview)}</p>
+      {post.content_brief && post.content_brief_status === 'done' ? (
+        <div className={styles.contentBriefBox}>
+          <span className={styles.contentBriefLabel}>Tóm tắt nội dung (AI)</span>
+          <p className={styles.contentBriefText}>{post.content_brief}</p>
+        </div>
+      ) : null}
       <div className={styles.postMetrics}>
         <span title="Likes">
           <ThumbsUp size={14} aria-hidden /> {formatMetric(post.likes)}
@@ -104,6 +112,9 @@ function PostCard({
         </span>
         <span title="Shares">
           <Share2 size={14} aria-hidden /> {formatMetric(post.shares)}
+        </span>
+        <span title="Follow">
+          <Users size={14} aria-hidden /> {formatMetric(post.follow ?? 0)}
         </span>
         <span title="Angry">
           <Angry size={14} aria-hidden /> {formatMetric(post.angry_count)}
@@ -123,6 +134,14 @@ function PostCard({
           Mở bài gốc <ExternalLink size={14} aria-hidden />
         </a>
       )}
+      <CommentPanel
+        scraperRunId={post.id}
+        platform={platform}
+        videoTitle={preview}
+        summary={post.comment_summary}
+        contentBrief={post.content_brief}
+        contentBriefStatus={post.content_brief_status}
+      />
     </article>
   );
 }
@@ -416,6 +435,10 @@ export function SubjectDetailModal({
                 <strong>{formatMetric(aggregate?.interaction ?? 0)}</strong>
               </div>
               <div className={styles.aggCard}>
+                <span>Follow</span>
+                <strong>{formatMetric(aggregate?.follow ?? 0)}</strong>
+              </div>
+              <div className={styles.aggCard}>
                 <span>Cảm xúc</span>
                 <strong>{(aggregate?.sentiment ?? 0).toFixed(2)}</strong>
               </div>
@@ -447,6 +470,7 @@ export function SubjectDetailModal({
               <span>Likes {formatMetric(aggregate?.likes ?? 0)}</span>
               <span>Comments {formatMetric(aggregate?.comments ?? 0)}</span>
               <span>Shares {formatMetric(aggregate?.shares ?? 0)}</span>
+              <span>Follow {formatMetric(aggregate?.follow ?? 0)}</span>
               <span>Angry {formatMetric(aggregate?.angry_count ?? 0)}</span>
               <span>Số bài {formatMetric(aggregate?.posts_count ?? 0)}</span>
               <span>

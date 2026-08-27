@@ -25,6 +25,7 @@ export interface SocialPostItem {
   angry_count: number;
   comments: number;
   shares: number;
+  follow: number;
   posts_count: number;
   hot_score: number;
   trend_score: number;

@@ -62,7 +62,7 @@ class YouTubeService {
     }
 
     /**
-     * channels.list → uploads playlist ID (quota 1).
+     * channels.list → uploads playlist ID + subscriberCount (quota 1).
      */
     async getUploadsPlaylistId(handle) {
         const forHandle = this.normalizeHandle(handle);
@@ -71,7 +71,7 @@ class YouTubeService {
         }
 
         const data = await this.request('channels', {
-            part: 'contentDetails',
+            part: 'contentDetails,statistics',
             forHandle,
         });
 
@@ -86,9 +86,12 @@ class YouTubeService {
             );
         }
 
+        const subscriberCount = Number(channel?.statistics?.subscriberCount ?? 0);
+
         return {
             channelId: channel.id,
             uploadsPlaylistId: uploadsId,
+            follow: Number.isFinite(subscriberCount) ? Math.max(0, Math.floor(subscriberCount)) : 0,
         };
     }
 
@@ -136,7 +139,7 @@ class YouTubeService {
                 ? Math.min(Math.max(Number(maxResults) || 10, 1), 50)
                 : youtubeConfig.defaultMaxResults;
 
-        const { channelId, uploadsPlaylistId } =
+        const { channelId, uploadsPlaylistId, follow } =
             await this.getUploadsPlaylistId(handle);
         const videoIds = await this.getPlaylistVideoIds(uploadsPlaylistId, limit);
         const rawVideos = await this.getVideoDetails(videoIds);
@@ -145,15 +148,140 @@ class YouTubeService {
         const byId = new Map(rawVideos.map((v) => [v.id, v]));
         const ordered = videoIds.map((id) => byId.get(id)).filter(Boolean);
 
-        const videos = ordered.map((item) => normalizeYoutubeVideo(item));
+        const videos = ordered.map((item) =>
+            normalizeYoutubeVideo(item, { follow: follow || 0 })
+        );
 
         return {
             videos,
             quota_used: 3,
             channelId,
             uploadsPlaylistId,
+            follow: follow || 0,
         };
     }
+
+    /**
+     * commentThreads.list → top-level comments (quota 1).
+     */
+    async getCommentThreads(videoId, maxResults = 20) {
+        const limit = Math.min(Math.max(Number(maxResults) || 20, 1), 100);
+        try {
+            const data = await this.request('commentThreads', {
+                part: 'snippet,replies',
+                videoId,
+                maxResults: limit,
+                order: 'relevance',
+                textFormat: 'plainText',
+            });
+            return data?.items || [];
+        } catch (err) {
+            if (err.status === 403 || err.message?.includes('commentsDisabled')) {
+                return [];
+            }
+            throw err;
+        }
+    }
+
+    /**
+     * comments.list → replies of a top-level comment (quota 1).
+     */
+    async getCommentReplies(parentId, maxResults = 10) {
+        const limit = Math.min(Math.max(Number(maxResults) || 10, 1), 100);
+        const data = await this.request('comments', {
+            part: 'snippet',
+            parentId,
+            maxResults: limit,
+            textFormat: 'plainText',
+        });
+        return data?.items || [];
+    }
+
+    /**
+     * Scrape comments for one video: maxTop top-level + maxReplies per thread.
+     * @returns {{ comments: object[], quota_used: number, disabled: boolean }}
+     */
+    async scrapeVideoComments(videoId, { maxTop, maxReplies } = {}) {
+        const topLimit = maxTop ?? youtubeConfig.maxTopComments;
+        const replyLimit = maxReplies ?? youtubeConfig.maxReplies;
+        let quotaUsed = 0;
+
+        const threads = await this.getCommentThreads(videoId, topLimit);
+        quotaUsed += 1;
+
+        if (threads.length === 0) {
+            return { comments: [], quota_used: quotaUsed, disabled: false };
+        }
+
+        const { normalizeYoutubeCommentItem, assignThreadKeys } = require('../Helpers/CommentHelper');
+        const flat = [];
+        let sortOrder = 0;
+
+        for (const thread of threads) {
+            const top = normalizeYoutubeCommentItem(thread, { sortOrder: sortOrder++ });
+            if (!top) continue;
+
+            const topId = top.platform_comment_id;
+            top.thread_key = topId;
+            top.parent_platform_comment_id = null;
+            flat.push(top);
+
+            const embedded = thread?.replies?.comments || [];
+            const embeddedNormalized = [];
+            for (const reply of embedded) {
+                const row = normalizeYoutubeCommentItem(reply, {
+                    parentId: topId,
+                    threadKey: topId,
+                    sortOrder: sortOrder++,
+                });
+                if (row) embeddedNormalized.push(row);
+            }
+            flat.push(...embeddedNormalized);
+
+            const totalReplies = toCount(thread?.snippet?.totalReplyCount);
+            if (totalReplies > embeddedNormalized.length && embeddedNormalized.length < replyLimit) {
+                const extra = await this.getCommentReplies(topId, replyLimit);
+                quotaUsed += 1;
+                const existingIds = new Set(flat.map((c) => c.platform_comment_id));
+                for (const reply of extra) {
+                    if (existingIds.has(reply.id)) continue;
+                    const row = normalizeYoutubeCommentItem(reply, {
+                        parentId: topId,
+                        threadKey: topId,
+                        sortOrder: sortOrder++,
+                    });
+                    if (row) {
+                        flat.push(row);
+                        existingIds.add(row.platform_comment_id);
+                    }
+                    if (flat.filter((c) => c.parent_platform_comment_id === topId).length >= replyLimit) {
+                        break;
+                    }
+                }
+            } else if (embeddedNormalized.length > replyLimit) {
+                const keepIds = new Set(
+                    embeddedNormalized.slice(0, replyLimit).map((c) => c.platform_comment_id)
+                );
+                for (let i = flat.length - 1; i >= 0; i -= 1) {
+                    if (
+                        flat[i].parent_platform_comment_id === topId &&
+                        !keepIds.has(flat[i].platform_comment_id)
+                    ) {
+                        flat.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        assignThreadKeys(flat);
+        return { comments: flat, quota_used: quotaUsed, disabled: false };
+    }
+}
+
+function toCount(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
 }
 
 module.exports = YouTubeService;

@@ -13,6 +13,7 @@ const scraperRoutes = require('./scraper');
 const subjectsRoutes = require('./subjects');
 const socialPostsRoutes = require('./socialPosts');
 const alertsRoutes = require('./alerts');
+const commentsRoutes = require('./comments');
 const channelsRoutes = require('./channels');
 
 const AuthController = require('../../app/Http/Controllers/Api/AuthController');
@@ -23,6 +24,7 @@ router.use('/subjects', subjectsRoutes);
 router.use('/scraper', scraperRoutes);
 router.use('/social-posts', socialPostsRoutes);
 router.use('/alerts', alertsRoutes);
+router.use('/comments', commentsRoutes);
 router.use('/channels', channelsRoutes);
 
 router.use('/auth', authRoutes);

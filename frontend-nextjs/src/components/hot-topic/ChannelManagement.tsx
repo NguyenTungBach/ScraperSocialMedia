@@ -4,21 +4,21 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  BarChart3,
-  Globe,
   Loader2,
   Pencil,
   Plus,
+  ScanLine,
   Search,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
-import { SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
+import { scraperApi } from '@/lib/api/scraper';
+import { normalizePlatform, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
+import { HotTopicHeader } from './HotTopicHeader';
 import { PlatformBadge } from './PlatformBadge';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelManagement.module.scss';
@@ -56,6 +56,7 @@ export function ChannelManagement() {
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [scrapingId, setScrapingId] = useState<number | null>(null);
 
   const loadList = useCallback(
     async (options?: { page?: number; q?: string; type_channel?: string }) => {
@@ -160,6 +161,30 @@ export function ChannelManagement() {
     }
   };
 
+  const handleScrapeYoutube = async (item: ChannelItem) => {
+    if (normalizePlatform(item.type_channel) !== 'youtube') {
+      MakeToast({ variant: 'warning', content: 'Chỉ hỗ trợ quét dữ liệu kênh YouTube' });
+      return;
+    }
+
+    setScrapingId(item.id);
+    try {
+      const res = await scraperApi.runYoutube({ channel_id: [item.id] });
+      const data = res.data;
+      const count = data?.items_count ?? 0;
+      const inserted = data?.upsert_stats?.inserted ?? 0;
+      const updated = data?.upsert_stats?.updated ?? 0;
+      MakeToast({
+        variant: 'success',
+        content: `Đã quét ${count} video từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
+      });
+    } catch (err) {
+      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+    } finally {
+      setScrapingId(null);
+    }
+  };
+
   const handleDelete = async (item: ChannelItem) => {
     const ok = window.confirm(`Xóa kênh "${item.name}"?`);
     if (!ok) return;
@@ -184,35 +209,7 @@ export function ChannelManagement() {
 
   return (
     <div className={dash.dashboard}>
-      <header className={dash.header}>
-        <div className={dash.headerInner}>
-          <Link href="/home" className={dash.logo}>
-            <span className={dash.logoSocial}>social</span>
-            <span className={dash.logoTrend}>trend</span>
-            <span className={dash.logoBy}>by Younet Media</span>
-          </Link>
-
-          <nav className={dash.mainNav} aria-label="Main navigation">
-            <Link href="/home" className={dash.navLink}>
-              <BarChart3 size={16} aria-hidden />
-              Xếp hạng
-            </Link>
-            <Link href="/subjects" className={dash.navLink}>
-              <Users size={16} aria-hidden />
-              Đối tượng
-            </Link>
-          </nav>
-
-          <div className={dash.headerActions}>
-            <button type="button" className={dash.loginBtn}>
-              Đăng nhập
-            </button>
-            <button type="button" className={dash.langBtn} aria-label="Ngôn ngữ">
-              <Globe size={18} aria-hidden />
-            </button>
-          </div>
-        </div>
-      </header>
+      <HotTopicHeader />
 
       <div className={styles.toolbar}>
         <div className={styles.toolbarInner}>
@@ -311,6 +308,22 @@ export function ChannelManagement() {
                     <PlatformBadge platform={item.type_channel} size="md" />
                   </div>
                   <div className={styles.rowActions}>
+                    {normalizePlatform(item.type_channel) === 'youtube' && (
+                      <button
+                        type="button"
+                        className={cn(styles.iconBtn, styles.scrapeIconBtn)}
+                        onClick={() => void handleScrapeYoutube(item)}
+                        disabled={scrapingId === item.id}
+                        aria-label={`Quét data YouTube ${item.name}`}
+                        title="Quét data YouTube"
+                      >
+                        {scrapingId === item.id ? (
+                          <Loader2 size={15} className={dash.spin} aria-hidden />
+                        ) : (
+                          <ScanLine size={15} aria-hidden />
+                        )}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className={styles.iconBtn}

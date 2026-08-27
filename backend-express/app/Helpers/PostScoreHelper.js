@@ -308,6 +308,7 @@ function normalizeApifyItem(item) {
         comments: toCount(comments),
         shares: toCount(shares),
         angry_count: toCount(angry_count),
+        follow: 0,
         raw_data: item,
     };
 }

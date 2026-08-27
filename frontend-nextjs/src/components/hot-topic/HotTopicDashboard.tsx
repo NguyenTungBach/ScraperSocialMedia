@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Crown,
   Film,
-  Globe,
   Grid3X3,
   Loader2,
   MessageCircle,
@@ -17,12 +16,10 @@ import {
   Newspaper,
   Phone,
   Plane,
-  Search,
   Sparkles,
   TrendingDown,
   TrendingUp,
   Trophy,
-  Users,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
@@ -46,6 +43,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { PlatformBadge } from './PlatformBadge';
+import { HotTopicHeader } from './HotTopicHeader';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
 
@@ -110,6 +108,7 @@ function mapToHotTopic(item: SocialPostItem): HotTopic {
     comments: item.comments,
     shares: item.shares,
     angryCount: item.angry_count,
+    follow: item.follow ?? 0,
     postsCount: item.posts_count,
     startDate: formatShortDate(item.created_at || item.computed_at),
   };
@@ -154,6 +153,7 @@ function chartTopicToHotTopic(item: ChartTopic): HotTopic {
     comments: 0,
     shares: 0,
     angryCount: 0,
+    follow: 0,
     postsCount: 0,
     startDate: item.startDate,
   };
@@ -213,6 +213,10 @@ function ChartTooltip({ topic, rankedBy }: { topic: HotTopic; rankedBy: RankedBy
         <div>
           <span>Tương tác</span>
           <strong>{formatMetric(topic.interaction)}</strong>
+        </div>
+        <div>
+          <span>Follow</span>
+          <strong>{formatMetric(topic.follow)}</strong>
         </div>
         <div>
           <span>Cảm xúc</span>
@@ -287,6 +291,10 @@ function RankingRow({
         <div className={styles.metricItem}>
           <span className={styles.metricLabel}>Tổng lượng tương tác</span>
           <span className={styles.metricValue}>{formatMetric(topic.interaction)}</span>
+        </div>
+        <div className={styles.metricItem}>
+          <span className={styles.metricLabel}>Follow</span>
+          <span className={styles.metricValue}>{formatMetric(topic.follow)}</span>
         </div>
         <div className={styles.metricItem}>
           <span className={styles.metricLabel}>Chỉ số cảm xúc</span>
@@ -466,39 +474,10 @@ export function HotTopicDashboard() {
 
   return (
     <div className={styles.dashboard}>
-      <header className={styles.header}>
-        <div className={styles.headerInner}>
-          <div className={styles.logo}>
-            <span className={styles.logoSocial}>social</span>
-            <span className={styles.logoTrend}>trend</span>
-            <span className={styles.logoBy}>by Younet Media</span>
-          </div>
-
-          <nav className={styles.mainNav} aria-label="Main navigation">
-            <Link href="/home" className={cn(styles.navLink, styles.navLinkActive)}>
-              <BarChart3 size={16} aria-hidden />
-              Xếp hạng
-            </Link>
-            <Link href="/subjects" className={styles.navLink}>
-              <Users size={16} aria-hidden />
-              Đối tượng
-            </Link>
-          </nav>
-
-          <div className={styles.headerActions}>
-            <button type="button" className={styles.searchBtn}>
-              <Search size={16} aria-hidden />
-              Tìm kiếm
-            </button>
-            <button type="button" className={styles.loginBtn}>
-              Đăng nhập
-            </button>
-            <button type="button" className={styles.langBtn} aria-label="Ngôn ngữ">
-              <Globe size={18} aria-hidden />
-            </button>
-          </div>
-        </div>
-      </header>
+      <HotTopicHeader
+        showSearch
+        onScrapeSuccess={() => loadDashboard({ page: 1, append: false })}
+      />
 
       <div className={styles.filterBar}>
         <div className={styles.filterBarInner}>

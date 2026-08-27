@@ -23,6 +23,7 @@ const {
 } = require('../Helpers/TextNormalizeHelper');
 const { matchChannelByPostUrl } = require('../Helpers/ChannelUrlHelper');
 const ChannelRepository = require('./ChannelRepository');
+const CommentRepository = require('./CommentRepository');
 const geminiConfig = require('../../config/gemini');
 const { qualifyCol } = require('../Helpers/DialectHelper');
 
@@ -35,6 +36,7 @@ class ScraperRepository {
         this.subjectScraperRunModel = db.SubjectScraperRun;
         this.socialPostModel = db.SocialPost;
         this.channelRepository = new ChannelRepository();
+        this.commentRepository = new CommentRepository();
     }
 
     subjectMatchTokens(subject) {
@@ -255,6 +257,7 @@ class ScraperRepository {
                       comments: socialPost.comments,
                       shares: socialPost.shares,
                       angry_count: socialPost.angry_count,
+                      follow: socialPost.follow ?? 0,
                       posts_count: socialPost.posts_count,
                       hot_score: socialPost.hot_score,
                       trend_score: socialPost.trend_score,
@@ -270,6 +273,7 @@ class ScraperRepository {
                       comments: 0,
                       shares: 0,
                       angry_count: 0,
+                      follow: 0,
                       posts_count: 0,
                       hot_score: 0,
                       trend_score: 0,
@@ -438,6 +442,7 @@ class ScraperRepository {
             comments: toCount(plain.comments),
             shares: toCount(plain.shares),
             angry_count: toCount(plain.angry_count),
+            follow: toCount(plain.follow),
             posted_at: plain.posted_at,
             scraped_at: plain.scraped_at,
             source: plain.source,
@@ -452,6 +457,9 @@ class ScraperRepository {
             linked_at: through?.created_at || through?.createdAt || null,
             created_at: plain.created_at,
             updated_at: plain.updated_at,
+            content_brief: plain.content_brief ?? null,
+            content_brief_status: plain.content_brief_status ?? 'not_start',
+            content_brief_at: plain.content_brief_at ?? null,
         };
     }
 
@@ -536,6 +544,7 @@ class ScraperRepository {
         let shares = 0;
         let angry_count = 0;
         let posts_count = 0;
+        const followByChannel = new Map();
 
         for (const post of runs) {
             if (!post) continue;
@@ -544,6 +553,17 @@ class ScraperRepository {
             shares += toCount(post.shares);
             angry_count += toCount(post.angry_count);
             posts_count += 1;
+
+            const channelKey =
+                post.channel_id != null ? `ch:${post.channel_id}` : `run:${post.id}`;
+            const follow = toCount(post.follow);
+            const prev = followByChannel.get(channelKey) || 0;
+            if (follow > prev) followByChannel.set(channelKey, follow);
+        }
+
+        let follow = 0;
+        for (const value of followByChannel.values()) {
+            follow += value;
         }
 
         const scores = calculateScores({ likes, comments, shares, angry_count });
@@ -552,6 +572,7 @@ class ScraperRepository {
             comments,
             shares,
             angry_count,
+            follow,
             posts_count,
             trend_score: scores.trend_score,
             hot_score: scores.hot_score,
@@ -611,7 +632,15 @@ class ScraperRepository {
                 {
                     model: this.scraperRunModel,
                     as: 'scraperRun',
-                    attributes: ['likes', 'comments', 'shares', 'angry_count', 'posted_at'],
+                    attributes: [
+                        'likes',
+                        'comments',
+                        'shares',
+                        'angry_count',
+                        'follow',
+                        'channel_id',
+                        'posted_at',
+                    ],
                     required: true,
                     where: postedAtWhere,
                 },
@@ -644,6 +673,20 @@ class ScraperRepository {
             serialized.linked_at = plainLink.created_at || null;
             return serialized;
         });
+
+        const commentSummaryMap = await this.commentRepository.getCommentSummaryForRuns(
+            posts.map((p) => p.id)
+        );
+        for (const post of posts) {
+            post.comment_summary = commentSummaryMap.get(Number(post.id)) || {
+                total: 0,
+                lone_count: 0,
+                thread_count: 0,
+                negative_count: 0,
+                debate_count: 0,
+                analyzed: false,
+            };
+        }
 
         return {
             subject: {
@@ -726,6 +769,7 @@ class ScraperRepository {
                     comments: normalized.comments,
                     shares: normalized.shares,
                     angry_count: normalized.angry_count,
+                    follow: toCount(normalized.follow),
                     posted_at: normalized.posted_at,
                     scraped_at: now,
                     source: 'apify',
@@ -873,6 +917,7 @@ class ScraperRepository {
                     comments: normalized.comments,
                     shares: 0,
                     angry_count: 0,
+                    follow: toCount(normalized.follow),
                     posted_at: normalized.posted_at,
                     scraped_at: now,
                     source: 'youtube_api',
@@ -959,6 +1004,10 @@ class ScraperRepository {
             },
             affected_subject_ids: [...affectedSubjectIds],
             items_saved: savedRuns.length,
+            saved_runs: savedRuns.map((run) => ({
+                id: run.id,
+                platform_post_id: run.platform_post_id,
+            })),
         };
     }
 
@@ -976,6 +1025,7 @@ class ScraperRepository {
         let shares = 0;
         let angry_count = 0;
         let postsInWindow = 0;
+        const followByChannel = new Map();
 
         for (const link of links) {
             const post = link.scraperRun;
@@ -987,6 +1037,17 @@ class ScraperRepository {
             shares += toCount(post.shares);
             angry_count += toCount(post.angry_count);
             postsInWindow += 1;
+
+            const channelKey =
+                post.channel_id != null ? `ch:${post.channel_id}` : `run:${post.id}`;
+            const follow = toCount(post.follow);
+            const prev = followByChannel.get(channelKey) || 0;
+            if (follow > prev) followByChannel.set(channelKey, follow);
+        }
+
+        let follow = 0;
+        for (const value of followByChannel.values()) {
+            follow += value;
         }
 
         const scores = calculateScores({ likes, comments, shares, angry_count });
@@ -996,6 +1057,7 @@ class ScraperRepository {
             comments,
             shares,
             angry_count,
+            follow,
             trend_score: scores.trend_score,
             hot_score: scores.hot_score,
             posts_count: postsInWindow,
@@ -1165,17 +1227,30 @@ class ScraperRepository {
 
         const aggRows = await sequelize.query(
             `SELECT
-                ssr.subject_id AS subject_id,
-                COALESCE(SUM(sr.likes), 0) AS likes,
-                COALESCE(SUM(sr.comments), 0) AS comments,
-                COALESCE(SUM(sr.shares), 0) AS shares,
-                COALESCE(SUM(sr.angry_count), 0) AS angry_count,
-                COUNT(*) AS posts_count
-             FROM subjects_scraper_runs ssr
-             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
-             WHERE sr.posted_at >= :start
-               AND sr.posted_at < :end
-             GROUP BY ssr.subject_id`,
+                per_channel.subject_id AS subject_id,
+                COALESCE(SUM(per_channel.likes), 0) AS likes,
+                COALESCE(SUM(per_channel.comments), 0) AS comments,
+                COALESCE(SUM(per_channel.shares), 0) AS shares,
+                COALESCE(SUM(per_channel.angry_count), 0) AS angry_count,
+                COALESCE(SUM(per_channel.channel_follow), 0) AS follow,
+                COALESCE(SUM(per_channel.posts_count), 0) AS posts_count
+             FROM (
+                SELECT
+                    ssr.subject_id AS subject_id,
+                    sr.channel_id AS channel_id,
+                    COALESCE(SUM(sr.likes), 0) AS likes,
+                    COALESCE(SUM(sr.comments), 0) AS comments,
+                    COALESCE(SUM(sr.shares), 0) AS shares,
+                    COALESCE(SUM(sr.angry_count), 0) AS angry_count,
+                    COALESCE(MAX(sr.follow), 0) AS channel_follow,
+                    COUNT(*) AS posts_count
+                FROM subjects_scraper_runs ssr
+                INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+                WHERE sr.posted_at >= :start
+                  AND sr.posted_at < :end
+                GROUP BY ssr.subject_id, sr.channel_id
+             ) per_channel
+             GROUP BY per_channel.subject_id`,
             {
                 replacements: { start: range.start, end: range.end },
                 type: sequelize.QueryTypes.SELECT,
@@ -1204,6 +1279,7 @@ class ScraperRepository {
             const comments = toCount(row.comments);
             const shares = toCount(row.shares);
             const angry_count = toCount(row.angry_count);
+            const follow = toCount(row.follow);
             const posts_count = toCount(row.posts_count);
             const scores = calculateScores({ likes, comments, shares, angry_count });
             const payload = {
@@ -1213,6 +1289,7 @@ class ScraperRepository {
                 comments,
                 shares,
                 angry_count,
+                follow,
                 posts_count,
                 hot_score: scores.hot_score,
                 trend_score: scores.trend_score,

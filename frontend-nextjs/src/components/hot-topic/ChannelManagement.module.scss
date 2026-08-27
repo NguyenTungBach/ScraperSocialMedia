@@ -140,7 +140,7 @@ $st-red: #dc2626;
     minmax(160px, 1fr)
     minmax(220px, 2fr)
     minmax(120px, 0.8fr)
-    120px;
+    156px;
   gap: 12px;
   align-items: center;
 }
@@ -232,6 +232,12 @@ $st-red: #dc2626;
 .deleteBtn:not(:disabled):hover {
   border-color: $st-red;
   color: $st-red;
+}
+
+.scrapeIconBtn:not(:disabled):hover {
+  border-color: $st-red;
+  color: $st-red;
+  background: #fef2f2;
 }
 
 .pagination {

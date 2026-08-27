@@ -1,8 +1,9 @@
 import { apiClient, type ApiResponse } from './client';
 import type { ChannelItem } from './channels';
+import type { CommentSummary } from './comments';
 import type { SocialPostItem, SocialPostsPagination, TrendDirection } from './socialPosts';
 
-export type { ChannelItem };
+export type { ChannelItem, CommentSummary };
 
 export interface SubjectInfo {
   id: number;
@@ -21,6 +22,7 @@ export interface SubjectAggregate {
   comments: number;
   shares: number;
   angry_count: number;
+  follow: number;
   posts_count: number;
   hot_score: number;
   trend_score: number;
@@ -80,6 +82,7 @@ export interface SubjectRelatedPost {
   comments: number;
   shares: number;
   angry_count: number;
+  follow: number;
   posted_at?: string | null;
   scraped_at?: string | null;
   source?: string;
@@ -94,6 +97,10 @@ export interface SubjectRelatedPost {
   linked_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  comment_summary?: CommentSummary;
+  content_brief?: string | null;
+  content_brief_status?: 'not_start' | 'pending' | 'done' | 'skipped';
+  content_brief_at?: string | null;
 }
 
 export type SubjectPostsSortBy =

@@ -30,8 +30,10 @@ function buildWatchUrl(videoId) {
 
 /**
  * Map item từ videos.list sang shape ingest (giống normalizeApifyItem).
+ * @param {object} video
+ * @param {{ follow?: number }} [extras]
  */
-function normalizeYoutubeVideo(video) {
+function normalizeYoutubeVideo(video, extras = {}) {
     const videoId = video?.id || video?.videoId || null;
     const snippet = video?.snippet || {};
     const statistics = video?.statistics || {};
@@ -54,6 +56,7 @@ function normalizeYoutubeVideo(video) {
         comments: toCount(Number(statistics.commentCount ?? video?.commentCount ?? 0)),
         shares: 0,
         angry_count: 0,
+        follow: toCount(Number(extras.follow ?? video?.follow ?? 0)),
         viewCount: toCount(Number(statistics.viewCount ?? video?.viewCount ?? 0)),
         raw_data: video,
     };
@@ -72,6 +75,7 @@ function toYoutubeVideoResponse(normalized) {
         viewCount: normalized.viewCount ?? 0,
         likeCount: normalized.likes,
         commentCount: normalized.comments,
+        follow: normalized.follow ?? 0,
         post_url: normalized.post_url,
     };
 }

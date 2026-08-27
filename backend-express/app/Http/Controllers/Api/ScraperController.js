@@ -5,6 +5,7 @@ const ApifyService = require('../../../Services/ApifyService');
 const YouTubeService = require('../../../Services/YouTubeService');
 const ScraperRepository = require('../../../Repositories/ScraperRepository');
 const ChannelRepository = require('../../../Repositories/ChannelRepository');
+const CommentRepository = require('../../../Repositories/CommentRepository');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
 const {
@@ -18,6 +19,7 @@ class ScraperController {
         this.youtubeService = new YouTubeService();
         this.repository = new ScraperRepository();
         this.channelRepository = new ChannelRepository();
+        this.commentRepository = new CommentRepository();
     }
 
     /**
@@ -305,11 +307,11 @@ class ScraperController {
      *       URL kênh phải dạng handle `@name` (vd. https://www.youtube.com/@taca).
      *
      *       Luồng YouTube Data API v3 (3 units quota / kênh):
-     *       1. channels.list (forHandle) → uploads playlist ID
+     *       1. channels.list (forHandle + statistics) → uploads playlist ID + subscriberCount (follow)
      *       2. playlistItems.list → 10 videoId mới nhất
      *       3. videos.list (batch) → title, publishedAt, viewCount, likeCount
      *
-     *       Upsert `scraper_runs` (platform=youtube) → link subjects qua `subject_channels` → recompute `social_posts`.
+     *       Upsert `scraper_runs` (platform=youtube, follow=subscriberCount) → link subjects qua `subject_channels` → recompute `social_posts`.
      *       Share count không có trên YouTube API → lưu `shares=0`.
      *
      *       Yêu cầu `YOUTUBE_API_KEY` trong `.env`.
@@ -379,9 +381,29 @@ class ScraperController {
                 links_created: 0,
                 unmatched_channel: 0,
             };
+            const commentTotals = {
+                inserted: 0,
+                updated: 0,
+                threads_upserted: 0,
+                videos_with_comments: 0,
+            };
+            const channelsSkipped = [];
             const affectedSubjectIds = new Set();
+            let channelsScraped = 0;
 
             for (const channel of youtubeChannels) {
+                const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
+                    channel.id
+                );
+                if (linkedSubjectIds.length === 0) {
+                    channelsSkipped.push({
+                        channel_id: channel.id,
+                        name: channel.name,
+                        reason: 'no_subject_link',
+                    });
+                    continue;
+                }
+
                 const handle = extractHandleFromUrl(channel.url);
                 if (!handle) {
                     throw createError(
@@ -413,17 +435,52 @@ class ScraperController {
                     affectedSubjectIds.add(sid);
                 }
 
+                const runByVideoId = new Map(
+                    (ingest.saved_runs || []).map((r) => [r.platform_post_id, r.id])
+                );
+
                 for (const video of videos) {
+                    const scraperRunId = runByVideoId.get(video.platform_post_id);
+                    if (!scraperRunId) continue;
+
+                    try {
+                        const { comments, quota_used: commentQuota } =
+                            await this.youtubeService.scrapeVideoComments(
+                                video.platform_post_id
+                            );
+                        quotaUsed += commentQuota || 0;
+
+                        if (comments.length === 0) continue;
+
+                        const commentIngest = await this.commentRepository.ingestAndRebuild(
+                            scraperRunId,
+                            comments
+                        );
+                        commentTotals.inserted += commentIngest.inserted || 0;
+                        commentTotals.updated += commentIngest.updated || 0;
+                        commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
+                        commentTotals.videos_with_comments += 1;
+                    } catch (commentErr) {
+                        // Comment disabled or API error — skip video comments, keep video ingest.
+                        if (commentErr.status !== 403) {
+                            throw commentErr;
+                        }
+                    }
+
                     allVideos.push(toYoutubeVideoResponse(video));
                 }
+
+                channelsScraped += 1;
             }
 
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, {
                 source: 'youtube_api',
-                channels_scraped: youtubeChannels.length,
+                channels_scraped: channelsScraped,
+                channels_skipped: channelsSkipped,
                 items_count: allVideos.length,
                 quota_used: quotaUsed,
                 upsert_stats: upsertTotals,
+                comment_stats: commentTotals,
                 affected_subject_ids: [...affectedSubjectIds],
                 videos: allVideos,
             });

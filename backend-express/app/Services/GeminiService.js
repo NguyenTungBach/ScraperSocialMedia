@@ -70,6 +70,79 @@ class GeminiService {
         };
     }
 
+    buildCommentAnalysisBody(prompt) {
+        const analysisItemSchema = {
+            type: 'OBJECT',
+            properties: {
+                comment_id: { type: 'STRING' },
+                sentiment: { type: 'STRING' },
+                category: { type: 'STRING' },
+                severity: { type: 'STRING' },
+                reason: { type: 'STRING' },
+            },
+            required: ['comment_id', 'sentiment', 'category', 'severity', 'reason'],
+        };
+
+        const threadSchema = {
+            type: 'OBJECT',
+            properties: {
+                thread_id: { type: 'STRING' },
+                classified_as: { type: 'STRING' },
+                has_negativity: { type: 'BOOLEAN' },
+                sentiment: { type: 'STRING' },
+                category: { type: 'STRING' },
+                severity: { type: 'STRING' },
+                reason: { type: 'STRING' },
+                comment_ids: { type: 'ARRAY', items: { type: 'STRING' } },
+            },
+            required: [
+                'thread_id',
+                'classified_as',
+                'has_negativity',
+                'sentiment',
+                'category',
+                'severity',
+                'reason',
+                'comment_ids',
+            ],
+        };
+
+        return {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+                temperature: 0.3,
+                topP: 0.9,
+                maxOutputTokens: 8192,
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: 'OBJECT',
+                    properties: {
+                        lone: {
+                            type: 'OBJECT',
+                            properties: {
+                                negative: { type: 'ARRAY', items: analysisItemSchema },
+                                normal: { type: 'ARRAY', items: analysisItemSchema },
+                            },
+                            required: ['negative', 'normal'],
+                        },
+                        threads: { type: 'ARRAY', items: threadSchema },
+                    },
+                    required: ['lone', 'threads'],
+                },
+            },
+        };
+    }
+
+    async callGenerateContentWithBody(modelName, body) {
+        const response = await fetch(this.buildUrl(modelName), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload, modelName };
+    }
+
     async callGenerateContent(modelName, prompt) {
         const response = await fetch(this.buildUrl(modelName), {
             method: 'POST',
@@ -306,6 +379,219 @@ class GeminiService {
                 const data = this.parseDataJson(rawText, { finishReason });
 
                 return { data, raw: payload, model: modelName };
+            }
+        }
+
+        throw createError(502, lastErrorMessage);
+    }
+
+    parseCommentAnalysisJson(rawText) {
+        let text = String(rawText || '').trim();
+        if (!text) {
+            throw createError(502, 'Empty Gemini comment analysis response');
+        }
+
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) text = fenced[1].trim();
+
+        const start = text.indexOf('{');
+        if (start === -1) {
+            throw createError(502, 'Gemini comment analysis response is not JSON');
+        }
+
+        const parsed = this.tryParseObject(text.slice(start));
+        if (!parsed || !parsed.lone) {
+            throw createError(502, 'Failed to parse Gemini comment analysis JSON');
+        }
+
+        return {
+            lone: {
+                negative: Array.isArray(parsed.lone.negative) ? parsed.lone.negative : [],
+                normal: Array.isArray(parsed.lone.normal) ? parsed.lone.normal : [],
+            },
+            threads: Array.isArray(parsed.threads) ? parsed.threads : [],
+        };
+    }
+
+    /**
+     * Phân tích comment 1 video qua Gemini.
+     */
+    async analyzeVideoComments(payload) {
+        this.ensureEnabled();
+
+        const prompt = `${geminiConfig.commentAnalysisPrompt}
+
+---
+DỮ LIỆU VIDEO CẦN PHÂN TÍCH (JSON):
+${JSON.stringify(payload)}`;
+
+        const models = this.modelCandidates();
+        const maxRetries = Math.max(0, geminiConfig.maxRetries || 0);
+        const baseDelay = Math.max(200, geminiConfig.retryDelayMs || 1200);
+        let lastErrorMessage = 'Gemini API error';
+
+        for (let mi = 0; mi < models.length; mi += 1) {
+            const modelName = models[mi];
+            const body = this.buildCommentAnalysisBody(prompt);
+
+            for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+                const { response, payload: apiPayload } =
+                    await this.callGenerateContentWithBody(modelName, body);
+
+                if (!response.ok) {
+                    lastErrorMessage =
+                        apiPayload?.error?.message || `Gemini API error (${response.status})`;
+                    const retryable = this.isRetryableGeminiError(response.status, lastErrorMessage);
+                    if (retryable && attempt < maxRetries) {
+                        await this.sleep(baseDelay * (attempt + 1));
+                        continue;
+                    }
+                    if (retryable && mi < models.length - 1) break;
+                    throw createError(502, lastErrorMessage);
+                }
+
+                const rawText = this.extractText(apiPayload);
+                const result = this.parseCommentAnalysisJson(rawText);
+                return { result, model: modelName };
+            }
+        }
+
+        throw createError(502, lastErrorMessage);
+    }
+
+    buildContentBriefBody(prompt) {
+        return {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+                temperature: 0.3,
+                topP: 0.9,
+                maxOutputTokens: 512,
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: 'OBJECT',
+                    properties: {
+                        brief: { type: 'STRING' },
+                    },
+                    required: ['brief'],
+                },
+            },
+        };
+    }
+
+    parseContentBriefJson(rawText) {
+        let text = String(rawText || '').trim();
+        if (!text) {
+            throw createError(502, 'Empty Gemini content brief response');
+        }
+
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) text = fenced[1].trim();
+
+        const start = text.indexOf('{');
+        if (start !== -1) {
+            const fragment = text.slice(start);
+            let parsed = this.tryParseObject(fragment);
+            if (!parsed?.brief) {
+                const repaired = this.closeTruncatedJson(fragment);
+                if (repaired) parsed = this.tryParseObject(repaired);
+            }
+            const brief = String(parsed?.brief || '').trim();
+            if (brief) return brief;
+        }
+
+        const regexBrief = text.match(/"brief"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+        if (regexBrief?.[1]) {
+            try {
+                return JSON.parse(`"${regexBrief[1]}"`).trim();
+            } catch {
+                return regexBrief[1].replace(/\\"/g, '"').trim();
+            }
+        }
+
+        // Một số model trả câu tóm tắt thuần (không bọc JSON)
+        const plain = text
+            .replace(/^["']|["']$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (plain && plain.length >= 8 && !plain.startsWith('{')) {
+            return plain.slice(0, 500);
+        }
+
+        throw createError(
+            502,
+            `Gemini content brief response is not JSON: ${this.snippet(text)}`
+        );
+    }
+
+    /**
+     * Tóm tắt ngắn nội dung video/bài (1–2 câu).
+     * @param {{ title?: string, text?: string, post_url?: string }} input
+     */
+    async summarizeVideoContent(input = {}) {
+        this.ensureEnabled();
+
+        const prompt = `${geminiConfig.contentBriefPrompt}
+
+---
+DỮ LIỆU VIDEO (JSON):
+${JSON.stringify({
+    title: input.title || '',
+    text: input.text || '',
+    post_url: input.post_url || '',
+})}
+
+Nhắc lại: chỉ trả về JSON object {"brief":"..."}, không có bất kỳ câu chữ nào khác.`;
+
+        const models = this.modelCandidates();
+        const maxRetries = Math.max(0, geminiConfig.maxRetries || 0);
+        const baseDelay = Math.max(200, geminiConfig.retryDelayMs || 1200);
+        let lastErrorMessage = 'Gemini API error';
+
+        for (let mi = 0; mi < models.length; mi += 1) {
+            const modelName = models[mi];
+            const body = this.buildContentBriefBody(prompt);
+
+            for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+                const { response, payload: apiPayload } =
+                    await this.callGenerateContentWithBody(modelName, body);
+
+                if (!response.ok) {
+                    lastErrorMessage =
+                        apiPayload?.error?.message || `Gemini API error (${response.status})`;
+                    const retryable = this.isRetryableGeminiError(response.status, lastErrorMessage);
+                    if (retryable && attempt < maxRetries) {
+                        await this.sleep(baseDelay * (attempt + 1));
+                        continue;
+                    }
+                    if (retryable && mi < models.length - 1) break;
+                    throw createError(502, lastErrorMessage);
+                }
+
+                const rawText = this.extractText(apiPayload);
+                if (!rawText) {
+                    lastErrorMessage = 'Empty Gemini content brief response';
+                    if (attempt < maxRetries) {
+                        await this.sleep(baseDelay * (attempt + 1));
+                        continue;
+                    }
+                    if (mi < models.length - 1) break;
+                    throw createError(502, lastErrorMessage);
+                }
+
+                try {
+                    const brief = this.parseContentBriefJson(rawText);
+                    return { brief, model: modelName };
+                } catch (parseErr) {
+                    lastErrorMessage = parseErr.message || 'Failed to parse content brief';
+                    if (attempt < maxRetries || mi < models.length - 1) {
+                        if (attempt < maxRetries) {
+                            await this.sleep(baseDelay * (attempt + 1));
+                            continue;
+                        }
+                        break;
+                    }
+                    throw parseErr;
+                }
             }
         }
 

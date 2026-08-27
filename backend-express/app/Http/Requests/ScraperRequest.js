@@ -123,6 +123,17 @@ const alertGmailSchema = z
     .object({
         subject_id: z.coerce.number().int().positive().optional(),
         to: z.string().email().optional(),
+        bcc: z
+            .union([z.array(z.string().email()), z.string().min(3)])
+            .optional()
+            .transform((value) => {
+                if (value == null || value === '') return undefined;
+                if (Array.isArray(value)) return value;
+                return value
+                    .split(/[,;]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+            }),
     })
     .optional();
 

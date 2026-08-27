@@ -19,6 +19,14 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'channel_id',
                 as: 'channel',
             });
+            ScraperRun.hasMany(models.PostComment, {
+                foreignKey: 'scraper_run_id',
+                as: 'postComments',
+            });
+            ScraperRun.hasMany(models.CommentThread, {
+                foreignKey: 'scraper_run_id',
+                as: 'commentThreads',
+            });
         }
     }
 
@@ -34,6 +42,7 @@ module.exports = (sequelize, DataTypes) => {
             comments: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             shares: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             angry_count: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+            follow: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
             posted_at: { type: DataTypes.DATE, allowNull: true },
             scraped_at: { type: DataTypes.DATE, allowNull: true },
             source: { type: DataTypes.STRING(255), allowNull: false, defaultValue: 'apify' },
@@ -41,6 +50,13 @@ module.exports = (sequelize, DataTypes) => {
             scraper_id: { type: DataTypes.STRING(255), allowNull: true },
             raw_data: { type: DataTypes.JSON, allowNull: false },
             channel_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+            content_brief: { type: DataTypes.TEXT, allowNull: true },
+            content_brief_status: {
+                type: DataTypes.ENUM('not_start', 'pending', 'done', 'skipped'),
+                allowNull: false,
+                defaultValue: 'not_start',
+            },
+            content_brief_at: { type: DataTypes.DATE, allowNull: true },
         },
         {
             sequelize,

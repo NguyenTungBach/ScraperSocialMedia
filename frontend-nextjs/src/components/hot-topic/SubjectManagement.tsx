@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart3,
-  Globe,
   Loader2,
   Pencil,
   Plus,
@@ -13,7 +11,6 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
-  Users,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
@@ -30,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { SubjectDetailModal } from './SubjectDetailModal';
+import { HotTopicHeader } from './HotTopicHeader';
 import { PlatformBadge } from './PlatformBadge';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './SubjectManagement.module.scss';
@@ -316,35 +314,7 @@ export function SubjectManagement() {
 
   return (
     <div className={dash.dashboard}>
-      <header className={dash.header}>
-        <div className={dash.headerInner}>
-          <Link href="/home" className={dash.logo}>
-            <span className={dash.logoSocial}>social</span>
-            <span className={dash.logoTrend}>trend</span>
-            <span className={dash.logoBy}>by Younet Media</span>
-          </Link>
-
-          <nav className={dash.mainNav} aria-label="Main navigation">
-            <Link href="/home" className={dash.navLink}>
-              <BarChart3 size={16} aria-hidden />
-              Xếp hạng
-            </Link>
-            <Link href="/subjects" className={cn(dash.navLink, dash.navLinkActive)}>
-              <Users size={16} aria-hidden />
-              Đối tượng
-            </Link>
-          </nav>
-
-          <div className={dash.headerActions}>
-            <button type="button" className={dash.loginBtn}>
-              Đăng nhập
-            </button>
-            <button type="button" className={dash.langBtn} aria-label="Ngôn ngữ">
-              <Globe size={18} aria-hidden />
-            </button>
-          </div>
-        </div>
-      </header>
+      <HotTopicHeader onScrapeSuccess={() => loadList({ page, q: query })} />
 
       <div className={styles.toolbar}>
         <div className={styles.toolbarInner}>
@@ -452,6 +422,12 @@ export function SubjectManagement() {
                         <span className={dash.metricLabel}>Tổng lượng tương tác</span>
                         <span className={dash.metricValue}>
                           {formatMetric(agg?.interaction ?? 0)}
+                        </span>
+                      </div>
+                      <div className={dash.metricItem}>
+                        <span className={dash.metricLabel}>Follow</span>
+                        <span className={dash.metricValue}>
+                          {formatMetric(agg?.follow ?? 0)}
                         </span>
                       </div>
                       <div className={dash.metricItem}>
