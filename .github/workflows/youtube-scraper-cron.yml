@@ -44,7 +44,7 @@ jobs:
           import urllib.request
 
           base = os.environ["API_BASE_URL"].rstrip("/")
-          timeout = 600  # scraper có thể mất thời gian khi nhiều kênh
+          timeout = 1800  # 30 phút — quét nhiều kênh + comment có thể rất lâu
 
 
           def request(method, path, body=None):

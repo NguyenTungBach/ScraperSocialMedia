@@ -53,6 +53,6 @@ export const scraperApi = {
   runYoutube: (payload: YoutubeScrapePayload) =>
     apiClient.post<YoutubeScrapeResult>('/scraper/youtube/run', payload, {
       skipAuth: true,
-      timeout: 180_000,
+      timeout: 1_800_000, // 30 phút — quét nhiều kênh + comment có thể rất lâu
     }) as Promise<ApiResponse<YoutubeScrapeResult>>,
 };
