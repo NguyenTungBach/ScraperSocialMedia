@@ -202,38 +202,17 @@ $st-red: #dc2626;
   height: 48px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
-}
-
-.rankBySelect {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.875rem;
-  position: relative;
-
-  select {
-    position: absolute;
-    left: 90px;
-    top: 50%;
-    transform: translateY(-50%);
-    opacity: 0;
-    width: 120px;
-    height: 28px;
-    cursor: pointer;
-  }
-}
-
-.rankByHighlight {
-  color: $st-orange;
-  font-weight: 700;
+  box-sizing: border-box;
 }
 
 .filterBarRight {
   display: flex;
   align-items: center;
   gap: 20px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .toggleLabel {
@@ -243,6 +222,7 @@ $st-red: #dc2626;
   font-size: 0.8125rem;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
 
   input {
     position: absolute;
@@ -258,6 +238,19 @@ $st-red: #dc2626;
       }
     }
   }
+}
+
+.toggleText {
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.toggleTextShort {
+  display: none;
+}
+
+.toggleTextFull {
+  display: inline;
 }
 
 .toggleSwitch {
@@ -292,12 +285,15 @@ $st-red: #dc2626;
   border-radius: 6px;
   color: $st-white;
   font-size: 0.8125rem;
+  box-sizing: border-box;
+  max-width: 100%;
 
   label {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     white-space: nowrap;
+    min-width: 0;
   }
 
   input[type='date'] {
@@ -308,6 +304,9 @@ $st-red: #dc2626;
     padding: 3px 6px;
     font-size: 0.75rem;
     color-scheme: dark;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   button {
@@ -318,6 +317,7 @@ $st-red: #dc2626;
     padding: 4px 8px;
     font-size: 0.75rem;
     cursor: pointer;
+    white-space: nowrap;
 
     &:hover {
       background: rgba(255, 255, 255, 0.25);
@@ -344,7 +344,7 @@ $st-red: #dc2626;
 // ── Promo cards ─────────────────────────────────────────
 .promoCards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -377,38 +377,6 @@ $st-red: #dc2626;
 .promoIcon {
   color: $st-orange;
   flex-shrink: 0;
-}
-
-.promoWelcome {
-  background: linear-gradient(135deg, #fff7ed 0%, $st-white 100%);
-}
-
-.videoThumb {
-  position: relative;
-  width: 80px;
-  height: 52px;
-  background: linear-gradient(135deg, $st-navy 0%, $st-navy-light 100%);
-  border-radius: 6px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.playBtn {
-  color: $st-white;
-  font-size: 1.1rem;
-}
-
-.videoDuration {
-  position: absolute;
-  bottom: 4px;
-  right: 6px;
-  font-size: 0.65rem;
-  color: $st-white;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 1px 4px;
-  border-radius: 3px;
 }
 
 // ── Chart section ───────────────────────────────────────
@@ -555,9 +523,7 @@ $st-red: #dc2626;
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   width: 100%;
   max-width: 72px;
 }
@@ -1048,12 +1014,92 @@ $st-red: #dc2626;
 }
 
 @media (max-width: 960px) {
+  .headerInner {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    padding: 10px 16px;
+    gap: 10px 12px;
+  }
+
   .mainNav {
+    order: 3;
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .navLinks {
+    width: 100%;
+    border-top: 1px solid $st-border;
+    padding-top: 4px;
+  }
+
+  .navLink {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 12px;
+  }
+
+  .navActions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .navActionBtn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .filterBarInner {
+    height: auto;
+    padding: 12px 16px;
+    justify-content: stretch;
+  }
+
+  .filterBarRight {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .toggleLabel {
+    width: 100%;
+    line-height: 1.35;
+  }
+
+  .toggleTextFull {
     display: none;
   }
 
-  .promoCards {
-    grid-template-columns: 1fr;
+  .toggleTextShort {
+    display: inline;
+  }
+
+  .datePicker {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .datePicker label {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+
+  .datePicker input[type='date'] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .datePicker button {
+    flex: 1 1 auto;
+    min-height: 32px;
   }
 
   .rankingHeader {
@@ -1078,31 +1124,73 @@ $st-red: #dc2626;
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
+
+  .chartSection {
+    padding: 16px 12px 20px;
+    overflow: hidden;
+  }
+
+  .chartHeader h2 {
+    font-size: 0.9375rem;
+    line-height: 1.35;
+  }
+
+  .yAxis {
+    min-width: 28px;
+    font-size: 0.65rem;
+  }
 }
 
 @media (max-width: 640px) {
   .headerInner {
-    padding: 0 12px;
-    gap: 12px;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .logoSocial,
+  .logoTrend {
+    font-size: 1.05rem;
   }
 
   .logoBy {
     display: none;
   }
 
+  .loginBtn {
+    padding: 7px 12px;
+    font-size: 0.8125rem;
+  }
+
+  .navActionBtn {
+    font-size: 0.75rem;
+    padding: 0 8px;
+    height: 36px;
+  }
+
   .filterBarInner {
-    flex-direction: column;
-    height: auto;
     padding: 10px 12px;
     gap: 10px;
-    align-items: flex-start;
+    align-items: stretch;
   }
 
   .mainContent {
     padding: 12px;
   }
 
+  .promoCard {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .promoCard p {
+    font-size: 0.75rem;
+  }
+
   .statsBar {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
     grid-template-columns: 1fr;
   }
 
@@ -1110,6 +1198,7 @@ $st-red: #dc2626;
     overflow-x: auto;
     gap: 8px;
     padding: 0 4px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .barColumn {
@@ -1117,9 +1206,33 @@ $st-red: #dc2626;
     width: 56px;
   }
 
+  .barLabel {
+    max-width: 56px;
+  }
+
+  .chartWrapper {
+    gap: 4px;
+  }
+
+  .yAxis {
+    height: 220px;
+    padding-bottom: 64px;
+  }
+
+  .barsContainer {
+    height: 220px;
+  }
+
   .supportWidget {
-    right: 12px;
-    bottom: 12px;
-    min-width: 180px;
+    right: 10px;
+    bottom: 10px;
+    left: auto;
+    min-width: 0;
+    max-width: min(220px, calc(100vw - 24px));
+    padding: 10px 12px;
+  }
+
+  .supportLink {
+    font-size: 0.75rem;
   }
 }

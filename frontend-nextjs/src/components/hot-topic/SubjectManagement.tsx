@@ -80,16 +80,16 @@ function ChannelChips({ channels = [] }: { channels?: ChannelItem[] }) {
   );
 }
 
-function ChannelChecklist({
+function ChannelRadioList({
   label,
   items,
-  selectedIds,
-  onToggle,
+  selectedId,
+  onSelect,
 }: {
   label: string;
   items: ChannelItem[];
-  selectedIds: number[];
-  onToggle: (id: number) => void;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
 }) {
   return (
     <div className={styles.channelPicker}>
@@ -99,20 +99,21 @@ function ChannelChecklist({
           Chưa có kênh trong danh mục. Mở “Quản lý kênh” để thêm.
         </p>
       ) : (
-        <div className={styles.channelPickerList}>
+        <div className={styles.channelPickerList} role="radiogroup" aria-label={label}>
           {items.map((item) => {
-            const checked = selectedIds.includes(item.id);
+            const checked = selectedId === item.id;
             return (
               <label key={item.id} className={styles.channelOption}>
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name="subject-channel"
                   checked={checked}
-                  onChange={() => onToggle(item.id)}
+                  onChange={() => onSelect(item.id)}
                 />
                 <span>
                   <PlatformBadge platform={item.type_channel} />
-                  <strong>{item.name}</strong>
-                  <em>{item.url}</em>
+                  <strong title={item.name}>{item.name}</strong>
+                  <em title={item.url}>{item.url}</em>
                 </span>
               </label>
             );
@@ -220,10 +221,11 @@ export function SubjectManagement() {
   const openEdit = (item: SubjectListItem) => {
     setFormMode('edit');
     setEditingId(item.id);
+    const firstChannelId = item.channels?.[0]?.id;
     setForm({
       name: item.name || '',
       normalized_name: item.normalized_name || '',
-      channel_ids: (item.channels || []).map((ch) => ch.id),
+      channel_ids: firstChannelId != null ? [firstChannelId] : [],
     });
     setFormOpen(true);
     void loadChannelOptions();
@@ -236,12 +238,10 @@ export function SubjectManagement() {
     setForm(EMPTY_FORM);
   };
 
-  const toggleChannel = (id: number) => {
+  const selectChannel = (id: number) => {
     setForm((prev) => ({
       ...prev,
-      channel_ids: prev.channel_ids.includes(id)
-        ? prev.channel_ids.filter((x) => x !== id)
-        : [...prev.channel_ids, id],
+      channel_ids: [id],
     }));
   };
 
@@ -523,13 +523,12 @@ export function SubjectManagement() {
       </main>
 
       {formOpen && (
-        <div className={styles.modalOverlay} role="presentation" onClick={closeForm}>
+        <div className={styles.modalOverlay} role="presentation">
           <div
             className={cn(styles.modal, styles.modalWide)}
             role="dialog"
             aria-modal="true"
             aria-labelledby="subject-form-title"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalHeader}>
               <h2 id="subject-form-title">
@@ -568,11 +567,11 @@ export function SubjectManagement() {
                 />
               </label>
 
-              <ChannelChecklist
+              <ChannelRadioList
                 label="Kênh theo dõi"
                 items={channelOptions}
-                selectedIds={form.channel_ids}
-                onToggle={toggleChannel}
+                selectedId={form.channel_ids[0] ?? null}
+                onSelect={selectChannel}
               />
 
               <div className={styles.modalFooter}>

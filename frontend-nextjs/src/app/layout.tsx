@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter, Josefin_Sans } from 'next/font/google';
 import './globals.scss';
 import { LanguageProvider } from '@/components/providers/LanguageProvider';
@@ -19,6 +19,12 @@ const josefin = Josefin_Sans({
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_APP_NAME || 'NetScope Trend',
   description: 'NetScope Trend - Xếp hạng chủ đề hot trên mạng xã hội',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

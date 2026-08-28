@@ -473,6 +473,32 @@ $st-red: #dc2626;
 }
 
 @media (max-width: 960px) {
+  .toolbarInner {
+    padding: 16px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbarActions {
+    width: 100%;
+  }
+
+  .searchBox {
+    min-width: 0;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .addBtn,
+  .secondaryBtn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .main {
+    padding: 16px;
+  }
+
   .tableHeader {
     display: none;
   }
@@ -485,5 +511,54 @@ $st-red: #dc2626;
 
   .rowActions {
     justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .nickname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modalOverlay {
+    padding: 8px;
+    align-items: flex-end;
+  }
+
+  .modal,
+  .modalWide {
+    width: 100%;
+    max-height: min(92vh, 720px);
+    overflow: auto;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .channelPickerList {
+    max-height: 140px;
+  }
+}
+
+@media (max-width: 640px) {
+  .toolbarActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .main {
+    padding: 12px;
+  }
+
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .paginationBtns {
+    width: 100%;
+  }
+
+  .pageBtn {
+    flex: 1;
   }
 }

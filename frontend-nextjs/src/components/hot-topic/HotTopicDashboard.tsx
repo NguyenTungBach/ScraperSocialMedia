@@ -11,7 +11,6 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
-  Trophy,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
@@ -317,7 +316,7 @@ function buildYAxisLabels(maxValue: number): string[] {
 
 export function HotTopicDashboard() {
   const initialRange = getCurrentMonthDateRange();
-  const [rankedBy, setRankedBy] = useState<RankedBy>('discussion');
+  const rankedBy: RankedBy = 'discussion';
   const [showNewOnly, setShowNewOnly] = useState(false);
   const [supportOpen, setSupportOpen] = useState(true);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
@@ -453,22 +452,6 @@ export function HotTopicDashboard() {
 
       <div className={styles.filterBar}>
         <div className={styles.filterBarInner}>
-          <div className={styles.rankBySelect}>
-            <span>Xếp hạng theo:</span>
-            <select
-              value={rankedBy}
-              onChange={(e) => setRankedBy(e.target.value as RankedBy)}
-              aria-label="Xếp hạng theo"
-            >
-              {Object.entries(RANKED_BY_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <strong className={styles.rankByHighlight}>{RANKED_BY_LABELS[rankedBy]}</strong>
-          </div>
-
           <div className={styles.filterBarRight}>
             <label className={styles.toggleLabel}>
               <input
@@ -477,7 +460,10 @@ export function HotTopicDashboard() {
                 onChange={(e) => setShowNewOnly(e.target.checked)}
               />
               <span className={styles.toggleSwitch} aria-hidden />
-              Chỉ hiện chủ đề mới xuất hiện
+              <span className={styles.toggleText}>
+                <span className={styles.toggleTextFull}>Chỉ hiện chủ đề mới xuất hiện</span>
+                <span className={styles.toggleTextShort}>Chỉ hiện chủ đề mới</span>
+              </span>
             </label>
             <div className={styles.datePicker}>
               <Calendar size={15} aria-hidden />
@@ -511,25 +497,6 @@ export function HotTopicDashboard() {
       <div className={styles.bodyLayout}>
         <main className={styles.mainContent}>
           <section className={styles.promoCards}>
-            <div className={cn(styles.promoCard, styles.promoWelcome)}>
-              <Trophy size={28} className={styles.promoIcon} aria-hidden />
-              <div>
-                <h2>Chào mừng bạn đến với NetScope Trend!</h2>
-                <p>Khám phá các chủ đề hot nhất trên mạng xã hội Việt Nam.</p>
-              </div>
-            </div>
-            <div className={cn(styles.promoCard, styles.promoGuide)}>
-              <div className={styles.videoThumb}>
-                <span className={styles.playBtn} aria-hidden>
-                  ▶
-                </span>
-                <span className={styles.videoDuration}>20:35</span>
-              </div>
-              <div>
-                <h3>Hướng dẫn sử dụng</h3>
-                <p>Xem video hướng dẫn chi tiết các tính năng.</p>
-              </div>
-            </div>
             <div className={cn(styles.promoCard, styles.promoMethod)}>
               <Sparkles size={28} className={styles.promoIcon} aria-hidden />
               <div>
@@ -605,7 +572,9 @@ export function HotTopicDashboard() {
                             </div>
                           </div>
                           <TopicThumbnail color={item.thumbnailColor} title={item.title} />
-                          <span className={styles.barLabel}>{item.title}</span>
+                          <span className={styles.barLabel} title={item.title}>
+                            {item.title}
+                          </span>
                         </div>
                       );
                     })}
