@@ -8,12 +8,14 @@ import {
   Crown,
   Loader2,
   Phone,
+  ScanLine,
   Sparkles,
   TrendingDown,
   TrendingUp,
   X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
+import { scraperApi } from '@/lib/api/scraper';
 import {
   socialPostsApi,
   type SocialPostItem,
@@ -31,6 +33,8 @@ import {
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
 import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
+import { normalizePlatform } from '@/lib/utils/socialPlatforms';
+import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
 import { HotTopicHeader } from './HotTopicHeader';
 import { SubjectDetailModal } from './SubjectDetailModal';
@@ -219,13 +223,25 @@ function ChartTooltip({ topic, rankedBy }: { topic: HotTopic; rankedBy: RankedBy
   );
 }
 
+function youtubeChannelIds(topic: HotTopic): number[] {
+  return (topic.channels || [])
+    .filter((ch) => normalizePlatform(ch.type_channel) === 'youtube')
+    .map((ch) => ch.id);
+}
+
 function RankingRow({
   topic,
+  scraping,
   onOpenDetail,
+  onScrapeYoutube,
 }: {
   topic: HotTopic;
+  scraping: boolean;
   onOpenDetail: (topic: HotTopic) => void;
+  onScrapeYoutube: (topic: HotTopic) => void;
 }) {
+  const hasYoutube = youtubeChannelIds(topic).length > 0;
+
   return (
     <article className={styles.rankingRow}>
       <div className={styles.rankNumber}>{topic.rank}</div>
@@ -296,14 +312,32 @@ function RankingRow({
         </div>
       </div>
 
-      <button
-        type="button"
-        className={styles.rowActionBtn}
-        onClick={() => onOpenDetail(topic)}
-        disabled={!topic.subjectId}
-      >
-        Chi tiết
-      </button>
+      <div className={styles.rowActions}>
+        {hasYoutube && (
+          <button
+            type="button"
+            className={cn(styles.scrapeIconBtn)}
+            onClick={() => onScrapeYoutube(topic)}
+            disabled={scraping}
+            aria-label={`Quét data YouTube ${topic.title}`}
+            title="Quét data YouTube"
+          >
+            {scraping ? (
+              <Loader2 size={15} className={styles.spin} aria-hidden />
+            ) : (
+              <ScanLine size={15} aria-hidden />
+            )}
+          </button>
+        )}
+        <button
+          type="button"
+          className={styles.rowActionBtn}
+          onClick={() => onOpenDetail(topic)}
+          disabled={!topic.subjectId}
+        >
+          Chi tiết
+        </button>
+      </div>
     </article>
   );
 }
@@ -338,6 +372,7 @@ export function HotTopicDashboard() {
   );
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [scrapingId, setScrapingId] = useState<string | null>(null);
 
   const openDetail = useCallback((topic: HotTopic) => {
     if (!topic.subjectId) return;
@@ -420,6 +455,39 @@ export function HotTopicDashboard() {
       }
     },
     [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]
+  );
+
+  const handleScrapeYoutube = useCallback(
+    async (topic: HotTopic) => {
+      const channelIds = youtubeChannelIds(topic);
+      if (channelIds.length === 0) {
+        MakeToast({
+          variant: 'warning',
+          content: 'Chủ đề chưa gắn kênh YouTube để quét',
+        });
+        return;
+      }
+
+      setScrapingId(topic.id);
+      try {
+        const res = await scraperApi.runYoutube({ channel_id: channelIds });
+        const data = res.data;
+        const count = data?.items_count ?? 0;
+        const inserted = data?.upsert_stats?.inserted ?? 0;
+        const updated = data?.upsert_stats?.updated ?? 0;
+        MakeToast({
+          variant: 'success',
+          content: `Đã quét ${count} video từ "${topic.title}" (${inserted} mới, ${updated} cập nhật)`,
+        });
+        // Reload ranking + chart sau khi quét xong
+        await loadDashboard({ page: 1, append: false });
+      } catch (err) {
+        MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+      } finally {
+        setScrapingId(null);
+      }
+    },
+    [loadDashboard]
   );
 
   useEffect(() => {
@@ -628,7 +696,13 @@ export function HotTopicDashboard() {
                 <div className={styles.emptyState}>Không có chủ đề phù hợp bộ lọc.</div>
               ) : (
                 topics.map((topic) => (
-                  <RankingRow key={topic.id} topic={topic} onOpenDetail={openDetail} />
+                  <RankingRow
+                    key={topic.id}
+                    topic={topic}
+                    scraping={scrapingId === topic.id}
+                    onOpenDetail={openDetail}
+                    onScrapeYoutube={(t) => void handleScrapeYoutube(t)}
+                  />
                 ))
               )}
             </div>

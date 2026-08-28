@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   Radio,
+  ScanLine,
   Search,
   Trash2,
   TrendingDown,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
+import { scraperApi } from '@/lib/api/scraper';
 import {
   subjectsApi,
   type SubjectListItem,
@@ -24,6 +26,7 @@ import {
   formatMetric,
   formatScore,
 } from '@/lib/mock/hotTopics';
+import { normalizePlatform } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { SubjectDetailModal } from './SubjectDetailModal';
@@ -157,6 +160,7 @@ export function SubjectManagement() {
   const [form, setForm] = useState<SubjectFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [scrapingId, setScrapingId] = useState<number | null>(null);
 
   const [channelOptions, setChannelOptions] = useState<ChannelItem[]>([]);
 
@@ -275,6 +279,41 @@ export function SubjectManagement() {
       MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const youtubeChannelIds = (item: SubjectListItem) =>
+    (item.channels || [])
+      .filter((ch) => normalizePlatform(ch.type_channel) === 'youtube')
+      .map((ch) => ch.id);
+
+  const handleScrapeYoutube = async (item: SubjectListItem) => {
+    const channelIds = youtubeChannelIds(item);
+    if (channelIds.length === 0) {
+      MakeToast({
+        variant: 'warning',
+        content: 'Đối tượng chưa gắn kênh YouTube để quét',
+      });
+      return;
+    }
+
+    setScrapingId(item.id);
+    try {
+      const res = await scraperApi.runYoutube({ channel_id: channelIds });
+      const data = res.data;
+      const count = data?.items_count ?? 0;
+      const inserted = data?.upsert_stats?.inserted ?? 0;
+      const updated = data?.upsert_stats?.updated ?? 0;
+      MakeToast({
+        variant: 'success',
+        content: `Đã quét ${count} video từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
+      });
+      // Reload list đối tượng (kèm chỉ số aggregate) sau khi quét xong
+      await loadList({ page, q: query });
+    } catch (err) {
+      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+    } finally {
+      setScrapingId(null);
     }
   };
 
@@ -457,6 +496,22 @@ export function SubjectManagement() {
                     </div>
 
                     <div className={styles.rowActions}>
+                      {youtubeChannelIds(item).length > 0 && (
+                        <button
+                          type="button"
+                          className={cn(styles.iconBtn, styles.scrapeIconBtn)}
+                          onClick={() => void handleScrapeYoutube(item)}
+                          disabled={scrapingId === item.id}
+                          aria-label={`Quét data YouTube ${title}`}
+                          title="Quét data YouTube"
+                        >
+                          {scrapingId === item.id ? (
+                            <Loader2 size={15} className={dash.spin} aria-hidden />
+                          ) : (
+                            <ScanLine size={15} aria-hidden />
+                          )}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className={dash.rowActionBtn}

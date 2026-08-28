@@ -191,6 +191,12 @@ $st-red: #dc2626;
   color: $st-red;
 }
 
+.scrapeIconBtn:not(:disabled):hover {
+  border-color: $st-red;
+  color: $st-red;
+  background: #fef2f2;
+}
+
 .pagination {
   display: flex;
   align-items: center;

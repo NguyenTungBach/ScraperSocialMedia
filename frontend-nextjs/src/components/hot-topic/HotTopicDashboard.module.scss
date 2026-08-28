@@ -689,7 +689,7 @@ $st-red: #dc2626;
 
 .rankingHeader {
   display: grid;
-  grid-template-columns: 64px 1fr 2fr 120px;
+  grid-template-columns: 64px 1fr 2fr 160px;
   gap: 12px;
   padding: 12px 20px;
   background: $st-bg;
@@ -708,7 +708,7 @@ $st-red: #dc2626;
 
 .rankingRow {
   display: grid;
-  grid-template-columns: 64px 1fr 2fr 120px;
+  grid-template-columns: 64px 1fr 2fr 160px;
   gap: 12px;
   align-items: center;
   padding: 16px 20px;
@@ -893,6 +893,13 @@ $st-red: #dc2626;
   white-space: nowrap;
 }
 
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .rowActionBtn {
   padding: 7px 12px;
   background: transparent;
@@ -905,9 +912,39 @@ $st-red: #dc2626;
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: $st-blue;
     color: $st-white;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.scrapeIconBtn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1.5px solid $st-border;
+  background: $st-white;
+  color: $st-navy;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    border-color: $st-red;
+    color: $st-red;
+    background: #fef2f2;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 }
 
@@ -1009,7 +1046,7 @@ $st-red: #dc2626;
 
   .rankingHeader,
   .rankingRow {
-    grid-template-columns: 48px 1fr 1.5fr 100px;
+    grid-template-columns: 48px 1fr 1.5fr 140px;
   }
 }
 
@@ -1116,8 +1153,12 @@ $st-red: #dc2626;
     font-size: 1.25rem;
   }
 
-  .rowActionBtn {
+  .rowActions {
     width: 100%;
+  }
+
+  .rowActionBtn {
+    flex: 1;
     text-align: center;
   }
 
