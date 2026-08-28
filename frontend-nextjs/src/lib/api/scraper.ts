@@ -16,6 +16,7 @@ export interface YoutubeScrapeUpsertStats {
 export interface YoutubeCommentStats {
   inserted: number;
   updated: number;
+  skipped?: number;
   threads_upserted: number;
   videos_with_comments: number;
 }
@@ -49,6 +50,39 @@ export interface YoutubeScrapeResult {
   videos: YoutubeScrapeVideo[];
 }
 
+export type TikTokScrapePayload = YoutubeScrapePayload & {
+  commentsPerPost?: number;
+  maxRepliesPerComment?: number;
+};
+
+export type TikTokScrapeResult = Omit<YoutubeScrapeResult, 'quota_used'> & {
+  platform?: string;
+  quota_used?: number;
+  video_run_id?: string | null;
+  comments_run_id?: string | null;
+};
+
+export type FacebookScrapePayload = TikTokScrapePayload;
+
+export type FacebookScrapeResult = Omit<TikTokScrapeResult, 'video_run_id' | 'videos'> & {
+  posts?: Array<{
+    postId: string;
+    title?: string | null;
+    publishedAt?: string | null;
+    likeCount?: number;
+    commentCount?: number;
+    shareCount?: number;
+    angryCount?: number;
+    viewCount?: number;
+    post_url?: string | null;
+  }>;
+  posts_run_id?: string | null;
+  comment_stats?: YoutubeCommentStats & {
+    posts_with_comments?: number;
+    videos_with_comments?: number;
+  };
+};
+
 export interface YoutubeTailRefreshPayload {
   batchSize?: number;
   headSize?: number;
@@ -75,6 +109,18 @@ export const scraperApi = {
       skipAuth: true,
       timeout: 1_800_000, // 30 phút — quét nhiều kênh + comment có thể rất lâu
     }) as Promise<ApiResponse<YoutubeScrapeResult>>,
+
+  runTikTok: (payload: TikTokScrapePayload) =>
+    apiClient.post<TikTokScrapeResult>('/scraper/tiktok/run', payload, {
+      skipAuth: true,
+      timeout: 1_800_000,
+    }) as Promise<ApiResponse<TikTokScrapeResult>>,
+
+  runFacebook: (payload: FacebookScrapePayload) =>
+    apiClient.post<FacebookScrapeResult>('/scraper/facebook/run', payload, {
+      skipAuth: true,
+      timeout: 1_800_000,
+    }) as Promise<ApiResponse<FacebookScrapeResult>>,
 
   refreshYoutubeTail: (payload: YoutubeTailRefreshPayload = {}) =>
     apiClient.post<YoutubeTailRefreshResult>('/scraper/youtube/refresh-tail', payload, {

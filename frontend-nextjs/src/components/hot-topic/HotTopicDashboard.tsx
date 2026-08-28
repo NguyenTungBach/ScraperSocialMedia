@@ -225,18 +225,33 @@ function youtubeChannelIds(topic: HotTopic): number[] {
     .map((ch) => ch.id);
 }
 
+function tiktokChannelIds(topic: HotTopic): number[] {
+  return (topic.channels || [])
+    .filter((ch) => normalizePlatform(ch.type_channel) === 'tiktok')
+    .map((ch) => ch.id);
+}
+
+function facebookChannelIds(topic: HotTopic): number[] {
+  return (topic.channels || [])
+    .filter((ch) => normalizePlatform(ch.type_channel) === 'facebook')
+    .map((ch) => ch.id);
+}
+
 function RankingRow({
   topic,
   scraping,
   onOpenDetail,
-  onScrapeYoutube,
+  onScrapeChannels,
 }: {
   topic: HotTopic;
   scraping: boolean;
   onOpenDetail: (topic: HotTopic) => void;
-  onScrapeYoutube: (topic: HotTopic) => void;
+  onScrapeChannels: (topic: HotTopic) => void;
 }) {
-  const hasYoutube = youtubeChannelIds(topic).length > 0;
+  const hasScrapeChannels =
+    youtubeChannelIds(topic).length > 0 ||
+    tiktokChannelIds(topic).length > 0 ||
+    facebookChannelIds(topic).length > 0;
 
   return (
     <article className={styles.rankingRow}>
@@ -309,14 +324,14 @@ function RankingRow({
       </div>
 
       <div className={styles.rowActions}>
-        {hasYoutube && (
+        {hasScrapeChannels && (
           <button
             type="button"
             className={cn(styles.scrapeIconBtn)}
-            onClick={() => onScrapeYoutube(topic)}
+            onClick={() => onScrapeChannels(topic)}
             disabled={scraping}
-            aria-label={`Quét data YouTube ${topic.title}`}
-            title="Quét data YouTube"
+            aria-label={`Quét data ${topic.title}`}
+            title="Quét YouTube/TikTok/Facebook"
           >
             {scraping ? (
               <Loader2 size={15} className={styles.spin} aria-hidden />
@@ -433,29 +448,46 @@ export function HotTopicDashboard() {
     }
   }, [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]);
 
-  const handleScrapeYoutube = useCallback(
+  const handleScrapeChannels = useCallback(
     async (topic: HotTopic) => {
-      const channelIds = youtubeChannelIds(topic);
-      if (channelIds.length === 0) {
+      const ytIds = youtubeChannelIds(topic);
+      const ttIds = tiktokChannelIds(topic);
+      const fbIds = facebookChannelIds(topic);
+      if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
         MakeToast({
           variant: 'warning',
-          content: 'Chủ đề chưa gắn kênh YouTube để quét',
+          content: 'Chủ đề chưa gắn kênh YouTube/TikTok/Facebook để quét',
         });
         return;
       }
 
       setScrapingId(topic.id);
       try {
-        const res = await scraperApi.runYoutube({ channel_id: channelIds });
-        const data = res.data;
-        const count = data?.items_count ?? 0;
-        const inserted = data?.upsert_stats?.inserted ?? 0;
-        const updated = data?.upsert_stats?.updated ?? 0;
+        let count = 0;
+        let inserted = 0;
+        let updated = 0;
+        if (ytIds.length > 0) {
+          const res = await scraperApi.runYoutube({ channel_id: ytIds });
+          count += res.data?.items_count ?? 0;
+          inserted += res.data?.upsert_stats?.inserted ?? 0;
+          updated += res.data?.upsert_stats?.updated ?? 0;
+        }
+        if (ttIds.length > 0) {
+          const res = await scraperApi.runTikTok({ channel_id: ttIds });
+          count += res.data?.items_count ?? 0;
+          inserted += res.data?.upsert_stats?.inserted ?? 0;
+          updated += res.data?.upsert_stats?.updated ?? 0;
+        }
+        if (fbIds.length > 0) {
+          const res = await scraperApi.runFacebook({ channel_id: fbIds });
+          count += res.data?.items_count ?? 0;
+          inserted += res.data?.upsert_stats?.inserted ?? 0;
+          updated += res.data?.upsert_stats?.updated ?? 0;
+        }
         MakeToast({
           variant: 'success',
-          content: `Đã quét ${count} video từ "${topic.title}" (${inserted} mới, ${updated} cập nhật)`,
+          content: `Đã quét ${count} bài từ "${topic.title}" (${inserted} mới, ${updated} cập nhật)`,
         });
-        // Reload ranking + chart sau khi quét xong
         await loadDashboard();
       } catch (err) {
         MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
@@ -676,7 +708,7 @@ export function HotTopicDashboard() {
                     topic={topic}
                     scraping={scrapingId === topic.id}
                     onOpenDetail={openDetail}
-                    onScrapeYoutube={(t) => void handleScrapeYoutube(t)}
+                    onScrapeChannels={(t) => void handleScrapeChannels(t)}
                   />
                 ))
               )}

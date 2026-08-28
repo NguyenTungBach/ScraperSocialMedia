@@ -16,7 +16,7 @@ import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { scraperApi } from '@/lib/api/scraper';
 import { Pagination } from '@/components/common/Pagination/Pagination';
-import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
+import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS, urlPlaceholderForPlatform } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { HotTopicHeader } from './HotTopicHeader';
@@ -54,7 +54,6 @@ export function ChannelManagement() {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>('create');
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [urlLocked, setUrlLocked] = useState(false);
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -105,7 +104,6 @@ export function ChannelManagement() {
   const openCreate = () => {
     setFormMode('create');
     setEditingId(null);
-    setUrlLocked(false);
     setForm(EMPTY_FORM);
     setFormOpen(true);
   };
@@ -113,7 +111,6 @@ export function ChannelManagement() {
   const openEdit = (item: ChannelItem) => {
     setFormMode('edit');
     setEditingId(item.id);
-    setUrlLocked(item.can_edit_url === false || Boolean(item.has_scraper_runs));
     setForm({
       name: item.name || '',
       url: item.url || '',
@@ -126,7 +123,6 @@ export function ChannelManagement() {
     if (saving) return;
     setFormOpen(false);
     setEditingId(null);
-    setUrlLocked(false);
     setForm(EMPTY_FORM);
   };
 
@@ -141,13 +137,24 @@ export function ChannelManagement() {
 
     setSaving(true);
     try {
+      const identityLocked = formMode === 'edit';
       const payload = {
         name,
-        type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
-        ...(urlLocked ? {} : { url }),
+        ...(identityLocked
+          ? {}
+          : {
+              url,
+              type_channel: isPlatformSelectable(form.type_channel)
+                ? form.type_channel
+                : 'youtube',
+            }),
       };
       if (formMode === 'create') {
-        await channelsApi.create({ ...payload, url });
+        await channelsApi.create({
+          ...payload,
+          url,
+          type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
+        });
         MakeToast({ variant: 'success', content: 'Đã thêm kênh' });
       } else if (editingId != null) {
         await channelsApi.update(editingId, payload);
@@ -166,22 +173,37 @@ export function ChannelManagement() {
     }
   };
 
-  const handleScrapeYoutube = async (item: ChannelItem) => {
-    if (normalizePlatform(item.type_channel) !== 'youtube') {
-      MakeToast({ variant: 'warning', content: 'Chỉ hỗ trợ quét dữ liệu kênh YouTube' });
+  const handleScrapeChannel = async (item: ChannelItem) => {
+    const platform = normalizePlatform(item.type_channel);
+    if (platform !== 'youtube' && platform !== 'tiktok' && platform !== 'facebook') {
+      MakeToast({
+        variant: 'warning',
+        content: 'Chỉ hỗ trợ quét YouTube, TikTok và Facebook',
+      });
       return;
     }
 
     setScrapingId(item.id);
     try {
-      const res = await scraperApi.runYoutube({ channel_id: [item.id] });
+      const res =
+        platform === 'tiktok'
+          ? await scraperApi.runTikTok({ channel_id: [item.id] })
+          : platform === 'facebook'
+            ? await scraperApi.runFacebook({ channel_id: [item.id] })
+            : await scraperApi.runYoutube({ channel_id: [item.id] });
       const data = res.data;
       const count = data?.items_count ?? 0;
       const inserted = data?.upsert_stats?.inserted ?? 0;
       const updated = data?.upsert_stats?.updated ?? 0;
+      const label =
+        platform === 'tiktok'
+          ? 'video TikTok'
+          : platform === 'facebook'
+            ? 'bài Facebook'
+            : 'video';
       MakeToast({
         variant: 'success',
-        content: `Đã quét ${count} video từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
+        content: `Đã quét ${count} ${label} từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
       });
     } catch (err) {
       MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
@@ -191,6 +213,14 @@ export function ChannelManagement() {
   };
 
   const handleDelete = async (item: ChannelItem) => {
+    if (item.can_delete === false || item.has_scraper_runs) {
+      MakeToast({
+        variant: 'warning',
+        content: 'Không thể xóa kênh đang có bài scrape (scraper_runs)',
+      });
+      return;
+    }
+
     const ok = window.confirm(`Xóa kênh "${item.name}"?`);
     if (!ok) return;
 
@@ -313,14 +343,22 @@ export function ChannelManagement() {
                     <PlatformBadge platform={item.type_channel} size="md" />
                   </div>
                   <div className={styles.rowActions}>
-                    {normalizePlatform(item.type_channel) === 'youtube' && (
+                    {(normalizePlatform(item.type_channel) === 'youtube' ||
+                      normalizePlatform(item.type_channel) === 'tiktok' ||
+                      normalizePlatform(item.type_channel) === 'facebook') && (
                       <button
                         type="button"
                         className={cn(styles.iconBtn, styles.scrapeIconBtn)}
-                        onClick={() => void handleScrapeYoutube(item)}
+                        onClick={() => void handleScrapeChannel(item)}
                         disabled={scrapingId === item.id}
-                        aria-label={`Quét data YouTube ${item.name}`}
-                        title="Quét data YouTube"
+                        aria-label={`Quét data ${item.name}`}
+                        title={
+                          normalizePlatform(item.type_channel) === 'tiktok'
+                            ? 'Quét data TikTok'
+                            : normalizePlatform(item.type_channel) === 'facebook'
+                              ? 'Quét data Facebook'
+                              : 'Quét data YouTube'
+                        }
                       >
                         {scrapingId === item.id ? (
                           <Loader2 size={15} className={dash.spin} aria-hidden />
@@ -342,9 +380,13 @@ export function ChannelManagement() {
                       type="button"
                       className={cn(styles.iconBtn, styles.deleteBtn)}
                       onClick={() => handleDelete(item)}
-                      disabled={deletingId === item.id}
+                      disabled={item.can_delete === false || deletingId === item.id}
                       aria-label={`Xóa ${item.name}`}
-                      title="Xóa"
+                      title={
+                        item.can_delete === false
+                          ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
+                          : 'Xóa'
+                      }
                     >
                       {deletingId === item.id ? (
                         <Loader2 size={15} className={dash.spin} aria-hidden />
@@ -414,19 +456,19 @@ export function ChannelManagement() {
                   type="url"
                   value={form.url}
                   onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://www.youtube.com/@..."
+                  placeholder={urlPlaceholderForPlatform(form.type_channel)}
                   required
-                  readOnly={urlLocked}
-                  disabled={urlLocked}
+                  readOnly={formMode === 'edit'}
+                  disabled={formMode === 'edit'}
                   title={
-                    urlLocked
-                      ? 'Không thể sửa URL vì kênh đã có bài scrape'
+                    formMode === 'edit'
+                      ? 'Không thể sửa URL sau khi kênh đã được lưu'
                       : undefined
                   }
                 />
-                {urlLocked && (
+                {formMode === 'edit' && (
                   <em className={styles.fieldHint}>
-                    Không thể sửa URL vì kênh đã có bài scrape
+                    Không thể sửa URL sau khi kênh đã được lưu
                   </em>
                 )}
               </label>
@@ -437,6 +479,12 @@ export function ChannelManagement() {
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, type_channel: e.target.value }))
                   }
+                  disabled={formMode === 'edit'}
+                  title={
+                    formMode === 'edit'
+                      ? 'Không thể sửa nền tảng sau khi kênh đã được lưu'
+                      : undefined
+                  }
                 >
                   {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id} disabled={!isPlatformSelectable(opt.id)}>
@@ -444,6 +492,11 @@ export function ChannelManagement() {
                     </option>
                   ))}
                 </select>
+                {formMode === 'edit' && (
+                  <em className={styles.fieldHint}>
+                    Không thể sửa nền tảng sau khi kênh đã được lưu
+                  </em>
+                )}
               </label>
               <div className={styles.modalFooter}>
                 <button type="button" className={styles.cancelBtn} onClick={closeForm} disabled={saving}>

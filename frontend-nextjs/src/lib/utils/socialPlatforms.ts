@@ -84,6 +84,10 @@ export const SOCIAL_PLATFORM_OPTIONS = [
   PLATFORMS.linkedin,
 ];
 
+/** Nền tảng được phép tạo/chọn trên UI (parity scrape). */
+export const SELECTABLE_PLATFORM_IDS = ['facebook', 'youtube', 'tiktok'] as const;
+
+/** @deprecated Dùng SELECTABLE_PLATFORM_IDS / isPlatformSelectable */
 export const SELECTABLE_PLATFORM_ID = 'youtube';
 
 export function normalizePlatform(value?: string | null): string {
@@ -91,7 +95,21 @@ export function normalizePlatform(value?: string | null): string {
 }
 
 export function isPlatformSelectable(value?: string | null): boolean {
-  return normalizePlatform(value) === SELECTABLE_PLATFORM_ID;
+  const key = normalizePlatform(value);
+  return (SELECTABLE_PLATFORM_IDS as readonly string[]).includes(key);
+}
+
+export function urlPlaceholderForPlatform(value?: string | null): string {
+  const key = normalizePlatform(value);
+  if (key === 'tiktok') return 'https://www.tiktok.com/@...';
+  if (key === 'youtube') return 'https://www.youtube.com/@...';
+  if (key === 'facebook') return 'https://www.facebook.com/...';
+  return 'https://...';
+}
+
+export function isCommentSupportedPlatform(value?: string | null): boolean {
+  const key = normalizePlatform(value);
+  return key === 'youtube' || key === 'tiktok' || key === 'facebook';
 }
 
 export function getPlatformMeta(value?: string | null): SocialPlatformMeta {

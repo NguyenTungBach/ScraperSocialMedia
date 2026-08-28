@@ -139,10 +139,11 @@ function normalizePlatform(platform) {
         .toLowerCase();
     if (p === 'youtube' || p === 'yt') return 'youtube';
     if (p === 'facebook' || p === 'fb') return 'facebook';
+    if (p === 'tiktok' || p === 'tt') return 'tiktok';
     return p || 'facebook';
 }
 
-/** Proxy lan tỏa YouTube thay shares. */
+/** Proxy lan tỏa YouTube / TikTok thay / kèm shares. */
 function youtubeViewWeight(views = 0) {
     return Math.floor(toCount(views) / 100);
 }
@@ -167,6 +168,15 @@ function calculateScores({
         return {
             trend_score: roundScore(l * 1 + c * 2 + viewW * 3),
             hot_score: roundScore(l * 1 + c * 3 + viewW * 3),
+        };
+    }
+
+    if (plat === 'tiktok') {
+        const viewW = youtubeViewWeight(views);
+        const s = toCount(shares);
+        return {
+            trend_score: roundScore(l * 1 + c * 2 + s * 3 + viewW * 2),
+            hot_score: roundScore(l * 1 + c * 3 + s * 3 + viewW * 2),
         };
     }
 
@@ -230,6 +240,7 @@ function resolveSubjectPlatform(subject) {
     if (types.length === 0) return null;
     if (types.every((t) => t === 'youtube')) return 'youtube';
     if (types.every((t) => t === 'facebook')) return 'facebook';
+    if (types.every((t) => t === 'tiktok')) return 'tiktok';
     return 'mixed';
 }
 
@@ -237,6 +248,7 @@ function resolveSubjectPlatform(subject) {
  * Thảo luận ≈ bình luận + số bài.
  * FB: tương tác = likes+comments+shares; cảm xúc từ likes vs angry.
  * YT: tương tác = likes+comments; cảm xúc = 0 (tạm, chưa có angry).
+ * TT: tương tác = likes+comments+shares.
  */
 function deriveEngagementMetrics(row = {}) {
     const likes = toCount(row.likes);
@@ -263,6 +275,9 @@ function deriveEngagementMetrics(row = {}) {
 
     if (platform === 'youtube') {
         interaction = likes + comments;
+        sentiment = 0;
+    } else if (platform === 'tiktok') {
+        interaction = likes + comments + shares;
         sentiment = 0;
     } else if (platform === 'mixed') {
         interaction = likes + comments + shares;

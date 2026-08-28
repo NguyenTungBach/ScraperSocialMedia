@@ -365,28 +365,55 @@ export function SubjectManagement() {
       .filter((ch) => normalizePlatform(ch.type_channel) === 'youtube')
       .map((ch) => ch.id);
 
-  const handleScrapeYoutube = async (item: SubjectListItem) => {
-    const channelIds = youtubeChannelIds(item);
-    if (channelIds.length === 0) {
+  const tiktokChannelIds = (item: SubjectListItem) =>
+    (item.channels || [])
+      .filter((ch) => normalizePlatform(ch.type_channel) === 'tiktok')
+      .map((ch) => ch.id);
+
+  const facebookChannelIds = (item: SubjectListItem) =>
+    (item.channels || [])
+      .filter((ch) => normalizePlatform(ch.type_channel) === 'facebook')
+      .map((ch) => ch.id);
+
+  const handleScrapeChannels = async (item: SubjectListItem) => {
+    const ytIds = youtubeChannelIds(item);
+    const ttIds = tiktokChannelIds(item);
+    const fbIds = facebookChannelIds(item);
+    if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
       MakeToast({
         variant: 'warning',
-        content: 'Đối tượng chưa gắn kênh YouTube để quét',
+        content: 'Đối tượng chưa gắn kênh YouTube/TikTok/Facebook để quét',
       });
       return;
     }
 
     setScrapingId(item.id);
     try {
-      const res = await scraperApi.runYoutube({ channel_id: channelIds });
-      const data = res.data;
-      const count = data?.items_count ?? 0;
-      const inserted = data?.upsert_stats?.inserted ?? 0;
-      const updated = data?.upsert_stats?.updated ?? 0;
+      let count = 0;
+      let inserted = 0;
+      let updated = 0;
+      if (ytIds.length > 0) {
+        const res = await scraperApi.runYoutube({ channel_id: ytIds });
+        count += res.data?.items_count ?? 0;
+        inserted += res.data?.upsert_stats?.inserted ?? 0;
+        updated += res.data?.upsert_stats?.updated ?? 0;
+      }
+      if (ttIds.length > 0) {
+        const res = await scraperApi.runTikTok({ channel_id: ttIds });
+        count += res.data?.items_count ?? 0;
+        inserted += res.data?.upsert_stats?.inserted ?? 0;
+        updated += res.data?.upsert_stats?.updated ?? 0;
+      }
+      if (fbIds.length > 0) {
+        const res = await scraperApi.runFacebook({ channel_id: fbIds });
+        count += res.data?.items_count ?? 0;
+        inserted += res.data?.upsert_stats?.inserted ?? 0;
+        updated += res.data?.upsert_stats?.updated ?? 0;
+      }
       MakeToast({
         variant: 'success',
-        content: `Đã quét ${count} video từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
+        content: `Đã quét ${count} bài từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
       });
-      // Reload list đối tượng (kèm chỉ số aggregate) sau khi quét xong
       await loadList({ page, q: query });
     } catch (err) {
       MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
@@ -691,14 +718,16 @@ export function SubjectManagement() {
                     </div>
 
                     <div className={styles.rowActions}>
-                      {youtubeChannelIds(item).length > 0 && (
+                      {(youtubeChannelIds(item).length > 0 ||
+                        tiktokChannelIds(item).length > 0 ||
+                        facebookChannelIds(item).length > 0) && (
                         <button
                           type="button"
                           className={cn(styles.iconBtn, styles.scrapeIconBtn)}
-                          onClick={() => void handleScrapeYoutube(item)}
+                          onClick={() => void handleScrapeChannels(item)}
                           disabled={scrapingId === item.id}
-                          aria-label={`Quét data YouTube ${title}`}
-                          title="Quét data YouTube"
+                          aria-label={`Quét data ${title}`}
+                          title="Quét YouTube/TikTok/Facebook"
                         >
                           {scrapingId === item.id ? (
                             <Loader2 size={15} className={dash.spin} aria-hidden />

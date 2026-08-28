@@ -41,8 +41,10 @@ npm run db:migrate
 DB_DATABASE=scraper_social_media
 
 APIFY_API_TOKEN=
-APIFY_FACEBOOK_ACTOR_ID=KoJrdxJCTtpon81KY
-APIFY_FACEBOOK_RESULTS_LIMIT=5
+
+SCRAPE_MAX_POSTS=10
+SCRAPE_MAX_TOP_COMMENTS=30
+SCRAPE_MAX_REPLIES=10
 
 GEMINI_ENABLED=true
 GEMINI_API_KEY=
@@ -86,11 +88,10 @@ npm run dev
 | POST | `/api/channels` | Tạo kênh |
 | PUT | `/api/channels/:id` | Cập nhật kênh |
 | DELETE | `/api/channels/:id` | Xóa kênh |
-| POST | `/api/scraper/apify/facebook/run` | Apify Actor mới; body `{ "channel_id": [2,3], "resultsLimit": 20 }` |
-| GET | `/api/scraper/apify/runs` | Lịch sử Actor runs trên Apify ([console](https://console.apify.com/actors/runs)) — dùng `result[].id` làm `runId` |
-| POST | `/api/scraper/apify/facebook/run-from-history` | Ingest lại từ run Apify đã có; body `{ "runId": "...", "channel_id": [2,3] }` |
-| GET | `/api/scraper/apify/facebook/runs` | Danh sách bài scrape trong DB local |
-| GET | `/api/scraper/apify/facebook/runs/:id` | Chi tiết 1 bài trong DB |
+| POST | `/api/scraper/facebook/run` | Apify posts + comments; body `{ "channel_id": [2,3], "maxResults": 10 }` |
+| POST | `/api/scraper/youtube/run` | YouTube Data API v3 — video + comments |
+| POST | `/api/scraper/tiktok/run` | Apify TikTok — video + comments |
+| POST | `/api/scraper/youtube/refresh-tail` | Refresh stats video YouTube cũ (không comment) |
 | GET | `/api/social-posts` | Tổng hợp, sort `hot_score` DESC |
 | POST | `/api/alerts/gmail` | Gửi mail nếu hot **và** trend vượt ngưỡng |
 
@@ -99,22 +100,26 @@ npm run dev
 ```http
 POST /api/subjects/discover
 
-GET /api/scraper/apify/runs?page=1&per_page=10
-
-POST /api/scraper/apify/facebook/run
+POST /api/scraper/facebook/run
 Content-Type: application/json
 
 {
   "channel_id": [2, 3],
-  "resultsLimit": 5
+  "maxResults": 5
 }
 
-POST /api/scraper/apify/facebook/run-from-history
+POST /api/scraper/youtube/run
 Content-Type: application/json
 
 {
-  "runId": "ApifyRunIdFromListAbove",
-  "channel_id": [2]
+  "channel_id": [5]
+}
+
+POST /api/scraper/tiktok/run
+Content-Type: application/json
+
+{
+  "channel_id": [8]
 }
 
 GET /api/social-posts

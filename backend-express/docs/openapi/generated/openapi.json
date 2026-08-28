@@ -3,7 +3,7 @@
   "info": {
     "title": "ScraperSocialMedia API (Express)",
     "version": "1.0.0",
-    "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).\n",
+    "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).\n\nScraper:\n- Facebook / TikTok qua Apify (`APIFY_API_TOKEN`)\n- YouTube qua Data API v3 (`YOUTUBE_API_KEY`) — video + comment; `refresh-tail` chỉ cập nhật stats\n\nEndpoints cào: `POST /scraper/facebook/run`, `POST /scraper/tiktok/run`, `POST /scraper/youtube/run`\n",
     "contact": {
       "name": "ScraperSocialMedia"
     },
@@ -22,6 +22,9 @@
       "name": "Auth"
     },
     {
+      "name": "Channels"
+    },
+    {
       "name": "Subjects"
     },
     {
@@ -29,6 +32,9 @@
     },
     {
       "name": "SocialPosts"
+    },
+    {
+      "name": "Comments"
     },
     {
       "name": "Alerts"
@@ -69,7 +75,13 @@
           },
           "type_channel": {
             "type": "string",
-            "example": "facebook"
+            "description": "Nền tảng kênh",
+            "enum": [
+              "facebook",
+              "youtube",
+              "tiktok"
+            ],
+            "example": "youtube"
           },
           "created_at": {
             "type": "string",
@@ -80,6 +92,135 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        }
+      },
+      "YoutubeScrapeRequest": {
+        "type": "object",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID kênh YouTube trong bảng `channels`",
+            "example": [
+              5
+            ]
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Số video tối đa mỗi kênh (mặc định SCRAPE_MAX_POSTS / 10)",
+            "example": 10
+          }
+        }
+      },
+      "TikTokScrapeRequest": {
+        "type": "object",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID kênh TikTok trong bảng `channels`",
+            "example": [
+              8
+            ]
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Số video tối đa mỗi kênh (mặc định 10)",
+            "example": 10
+          },
+          "commentsPerPost": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Số comment gốc mỗi video (mặc định 30)"
+          },
+          "maxRepliesPerComment": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Số reply mỗi comment gốc (mặc định 10)"
+          }
+        }
+      },
+      "YoutubeRefreshTailRequest": {
+        "type": "object",
+        "properties": {
+          "batchSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "headSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Top N video mới nhất mỗi kênh được bỏ qua (không refresh)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "FacebookScrapeRequest": {
+        "type": "object",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "ID kênh Facebook trong bảng `channels`",
+            "example": [
+              2,
+              3
+            ]
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Số bài tối đa mỗi kênh (mặc định 10)",
+            "example": 10
+          },
+          "commentsPerPost": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Số comment tối đa mỗi bài (mặc định 30)"
+          },
+          "maxRepliesPerComment": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Bật nested replies khi > 0 (mặc định 10)"
           }
         }
       },
@@ -113,24 +254,38 @@
           }
         }
       },
-      "ScraperRunFromHistory": {
+      "User": {
         "type": "object",
-        "required": [
-          "runId",
-          "channel_id"
-        ],
         "properties": {
-          "runId": {
-            "type": "string",
-            "description": "Apify Run ID (từ GET /scraper/apify/runs)"
+          "id": {
+            "type": "integer"
           },
-          "channel_id": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "integer",
-              "minimum": 1
-            }
+          "user_code": {
+            "type": "string"
+          },
+          "user_name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       }
@@ -151,7 +306,7 @@
           "Alerts"
         ],
         "summary": "Gửi Gmail khi hot_score và trend_score vượt ngưỡng",
-        "description": "Lọc `social_posts` có `hot_score >= ALERT_HOT_THRESHOLD` **và**\n`trend_score >= ALERT_TREND_THRESHOLD`, rồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).\n",
+        "description": "Lọc `social_posts` có `hot_score >= ALERT_HOT_THRESHOLD` **và**\n`trend_score >= ALERT_TREND_THRESHOLD`, phân tích comment AI (top video hot/subject),\nrồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).\nBCC: `MAIL_ALERT_BCC` trong `.env` và/hoặc `bcc` trong body (mảng email hoặc chuỗi phân cách bằng dấu phẩy).\n",
         "security": [],
         "requestBody": {
           "required": false,
@@ -168,6 +323,21 @@
                     "type": "string",
                     "format": "email",
                     "description": "Override người nhận (mặc định MAIL_MAIN)"
+                  },
+                  "bcc": {
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "email"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "description": "BCC thêm (gộp với MAIL_ALERT_BCC trong .env)"
                   }
                 }
               }
@@ -299,6 +469,60 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/auth/password-reset": {
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Reset password bằng token email",
+        "operationId": "password_reset",
+        "description": "Đặt mật khẩu mới sau khi nhận link/token từ `POST /auth/forget-password`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "mail_address",
+                  "new_password",
+                  "new_password_confirm"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "Token reset từ email"
+                  },
+                  "mail_address": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "new_password": {
+                    "type": "string"
+                  },
+                  "new_password_confirm": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Đặt mật khẩu mới thành công"
+          },
+          "403": {
+            "description": "Token không hợp lệ / hết hạn"
+          },
+          "404": {
+            "description": "User không tồn tại"
           }
         }
       }
@@ -528,7 +752,12 @@
             "name": "type_channel",
             "schema": {
               "type": "string",
-              "example": "facebook"
+              "enum": [
+                "facebook",
+                "youtube",
+                "tiktok"
+              ],
+              "example": "youtube"
             },
             "description": "Lọc theo nền tảng"
           }
@@ -563,12 +792,17 @@
                   "url": {
                     "type": "string",
                     "format": "uri",
-                    "example": "https://www.facebook.com/Theanh28"
+                    "example": "https://www.youtube.com/@taca"
                   },
                   "type_channel": {
                     "type": "string",
+                    "enum": [
+                      "facebook",
+                      "youtube",
+                      "tiktok"
+                    ],
                     "default": "facebook",
-                    "example": "facebook"
+                    "example": "youtube"
                   }
                 }
               }
@@ -630,6 +864,9 @@
           },
           "404": {
             "description": "Không tìm thấy"
+          },
+          "422": {
+            "description": "Không thể sửa URL/nền tảng sau khi kênh đã lưu"
           }
         }
       },
@@ -655,244 +892,169 @@
           },
           "404": {
             "description": "Không tìm thấy"
-          }
-        }
-      }
-    },
-    "/scraper/apify/facebook/run": {
-      "post": {
-        "tags": [
-          "Scraper"
-        ],
-        "summary": "Chạy Apify Facebook scraper theo channel_id[]",
-        "description": "Body nhận `channel_id[]` (ID bảng `channels` trong DB local).\nBackend lấy `url` từ DB → `startUrls` Apify → scrape mới.\nUpsert `scraper_runs` (kèm `channel_id`) → link subjects qua `subject_channels` → recompute `social_posts`.\n",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "channel_id"
-                ],
-                "properties": {
-                  "channel_id": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "description": "ID kênh trong bảng `channels`",
-                    "example": [
-                      2,
-                      3
-                    ]
-                  },
-                  "captionText": {
-                    "type": "boolean",
-                    "description": "Tuỳ chọn — truyền xuống input Apify Actor"
-                  },
-                  "resultsLimit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100,
-                    "description": "Số bài tối đa mỗi kênh",
-                    "example": 20
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Scrape + ingest thành công"
           },
           "422": {
-            "description": "channel_id không hợp lệ hoặc không có URL kênh"
+            "description": "Không thể xóa khi kênh đã có bài trong scraper_runs"
           }
         }
       }
     },
-    "/scraper/apify/runs": {
+    "/comments": {
       "get": {
         "tags": [
-          "Scraper"
+          "Comments"
         ],
-        "summary": "Lịch sử Actor runs trên Apify",
-        "description": "Danh sách run trên Apify Console ([actors/runs](https://console.apify.com/actors/runs)).\nDùng field `id` trong `result[]` làm `runId` cho POST `/scraper/apify/facebook/run-from-history`.\n",
+        "summary": "Danh sách comment theo scraper_run_id",
+        "description": "Trả về comment + reply đã lưu cho một bài (`scraper_runs.id`).\nDùng sau khi scrape YouTube / TikTok (hoặc khi xem chi tiết bài).\n",
         "security": [],
         "parameters": [
           {
             "in": "query",
-            "name": "page",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "in": "query",
-            "name": "per_page",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Lọc theo trạng thái Apify (vd. SUCCEEDED, FAILED, RUNNING)"
-          },
-          {
-            "in": "query",
-            "name": "desc",
-            "schema": {
-              "type": "boolean",
-              "default": true
-            },
-            "description": "Sắp xếp mới nhất trước"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK — `result[]` chứa Apify run (`id`, `status`, `console_url`, …)"
-          }
-        }
-      }
-    },
-    "/scraper/apify/facebook/run-from-history": {
-      "post": {
-        "tags": [
-          "Scraper"
-        ],
-        "summary": "Ingest dataset Apify run đã có theo channel_id[]",
-        "description": "**Không chạy Actor mới** — chỉ đọc dataset của run Apify đã có.\n\n1. `runId` — Apify Run ID (string), lấy từ GET `/scraper/apify/runs` → `result[].id`\n   hoặc từ URL console `.../actors/{actId}/runs/{runId}`.\n2. `channel_id[]` — ID kênh trong bảng `channels` (DB local).\n\nMỗi bài được gán `scraper_runs.channel_id`, sau đó map sang subjects qua bảng `subject_channels`.\n",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "runId",
-                  "channel_id"
-                ],
-                "properties": {
-                  "runId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Apify Run ID (không phải channel_id hay subject_id)",
-                    "example": "abc123XYZ"
-                  },
-                  "channel_id": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "description": "ID kênh trong bảng `channels`",
-                    "example": [
-                      2,
-                      3
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Ingest thành công"
-          },
-          "400": {
-            "description": "Run chưa có dataset"
-          },
-          "404": {
-            "description": "Apify run không tồn tại"
-          },
-          "422": {
-            "description": "channel_id không hợp lệ"
-          }
-        }
-      }
-    },
-    "/scraper/apify/facebook/runs": {
-      "get": {
-        "tags": [
-          "Scraper"
-        ],
-        "summary": "Danh sách scraper_runs (bài trong DB local)",
-        "security": [],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "page",
+            "name": "scraper_run_id",
+            "required": true,
             "schema": {
               "type": "integer",
               "minimum": 1
-            }
-          },
-          {
-            "in": "query",
-            "name": "per_page",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "schema": {
-              "type": "string"
             },
-            "description": "Tìm theo title/text/post_url"
+            "description": "ID bài trong bảng `scraper_runs`"
           }
         ],
         "responses": {
           "200": {
-            "description": "OK — mỗi bài có `channel_id`"
+            "description": "OK — threads / comments của bài"
+          },
+          "422": {
+            "description": "Thiếu scraper_run_id"
           }
         }
       }
     },
-    "/scraper/apify/facebook/runs/{id}": {
-      "get": {
+    "/scraper/facebook/run": {
+      "post": {
         "tags": [
           "Scraper"
         ],
-        "summary": "Chi tiết một scraper_run",
+        "summary": "Cào bài Facebook mới nhất + comments theo channel_id[]",
+        "description": "Body nhận `channel_id[]` (`type_channel=facebook`). Mỗi kênh cần có `url` page/profile.\n\nPha 1 — Actor `KoJrdxJCTtpon81KY` (Facebook Posts): bài mới nhất (`maxResults`) → upsert `scraper_runs`.\nPha 2 — Actor `apify/facebook-comments-scraper`: comment + reply theo post URLs → insert-only `post_comments`.\n\nYêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:facebook-scrape`.\n",
         "security": [],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            },
-            "description": "ID bài trong bảng `scraper_runs` (DB local)"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacebookScrapeRequest"
+              }
+            }
           }
-        ],
+        },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, posts_run_id, comments_run_id)"
+          },
+          "422": {
+            "description": "channel_id không phải facebook hoặc thiếu url"
+          },
+          "500": {
+            "description": "Thiếu APIFY_API_TOKEN"
+          }
+        }
+      }
+    },
+    "/scraper/youtube/run": {
+      "post": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Cào video mới nhất + comment YouTube theo channel_id[]",
+        "description": "Body nhận `channel_id[]` (ID bảng `channels`, `type_channel=youtube`).\nURL kênh hỗ trợ: `/@handle`, `/channel/UCxxx`, `/user/name`, `/c/CustomName`.\n\nLuồng YouTube Data API v3:\n1. `channels.list` → uploads playlist + subscriberCount (`follow`)\n2. `playlistItems.list` → videoId mới nhất (`maxResults`, mặc định 10)\n3. `videos.list` → title, publishedAt, views, likes, commentCount\n4. `commentThreads.list` (+ `comments.list` nếu cần thêm reply) → comment / reply\n\nUpsert `scraper_runs` → link subjects qua `subject_channels` → recompute `social_posts`.\nComment insert-only vào `post_comments`. Shares không có trên API → `shares=0`.\n\nYêu cầu `YOUTUBE_API_KEY` trong `.env`. CLI: `npm run app:youtube-scrape`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YoutubeScrapeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, quota_used)"
           },
           "404": {
-            "description": "Không tìm thấy"
+            "description": "Kênh YouTube không tồn tại"
+          },
+          "422": {
+            "description": "channel_id không hợp lệ hoặc URL không parse được"
+          },
+          "429": {
+            "description": "YouTube API quota exceeded"
+          },
+          "500": {
+            "description": "Thiếu hoặc sai YOUTUBE_API_KEY"
+          }
+        }
+      }
+    },
+    "/scraper/tiktok/run": {
+      "post": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Cào video TikTok mới nhất + comments theo channel_id[]",
+        "description": "Body nhận `channel_id[]` (`type_channel=tiktok`). Mỗi kênh cần có `url` profile.\n\nPha 1 — Actor `clockworks/free-tiktok-scraper`: video mới nhất (`resultsPerPage` / `maxResults`) → upsert `scraper_runs`.\nPha 2 — Actor `BDec00yAmCm1QbMEI`: comment + reply theo `postURLs` → insert-only `post_comments`.\n\nYêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:tiktok-scrape`.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TikTokScrapeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, video_run_id, comments_run_id)"
+          },
+          "422": {
+            "description": "channel_id không phải tiktok hoặc thiếu url"
+          },
+          "500": {
+            "description": "Thiếu APIFY_API_TOKEN"
+          }
+        }
+      }
+    },
+    "/scraper/youtube/refresh-tail": {
+      "post": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Refresh stats video YouTube tail (sau top N theo posted_at), không cào comment",
+        "description": "Lấy video rank > `headSize` (mặc định 10) theo `posted_at` mỗi kênh trong DB.\nGọi `videos.list` batch (tối đa 50 / `batchSize`) → cập nhật views/likes/commentCount.\nDùng `offset` để paginate khi cron quét toàn bộ tail.\nCron: workflow `youtube-stale-refresh-cron` / CLI `npm run app:youtube-refresh-tail`.\n",
+        "security": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YoutubeRefreshTailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch refresh thành công"
+          },
+          "429": {
+            "description": "YouTube API quota exceeded"
+          },
+          "500": {
+            "description": "Thiếu hoặc sai YOUTUBE_API_KEY"
           }
         }
       }
@@ -1094,6 +1256,35 @@
               "type": "string"
             },
             "description": "Alias của q"
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "nickname",
+                "discussion",
+                "interaction",
+                "follow",
+                "sentiment",
+                "hot_score",
+                "trend_score",
+                "id"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_dir",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1292,7 +1483,8 @@
                 "comments",
                 "shares",
                 "interaction",
-                "hot_score"
+                "hot_score",
+                "trend_score"
               ]
             }
           }

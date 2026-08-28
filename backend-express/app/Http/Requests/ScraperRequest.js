@@ -4,19 +4,13 @@ const { z } = require('zod');
 const ResponseService = require('../../Helpers/ResponseService');
 const { buildZodErrors } = require('./zodErrors');
 
-const runFromHistorySchema = z.object({
-    runId: z.string().min(1, 'runId is required'),
+const runFacebookSchema = z.object({
     channel_id: z
         .array(z.coerce.number().int().positive())
         .min(1, 'channel_id is required'),
-});
-
-const runScraperSchema = z.object({
-    captionText: z.boolean().optional(),
-    resultsLimit: z.number().int().min(1).max(100).optional(),
-    channel_id: z
-        .array(z.coerce.number().int().positive())
-        .min(1, 'channel_id is required'),
+    maxResults: z.number().int().min(1).max(50).optional(),
+    commentsPerPost: z.number().int().min(0).max(100).optional(),
+    maxRepliesPerComment: z.number().int().min(0).max(50).optional(),
 });
 
 const runYoutubeSchema = z.object({
@@ -24,6 +18,15 @@ const runYoutubeSchema = z.object({
         .array(z.coerce.number().int().positive())
         .min(1, 'channel_id is required'),
     maxResults: z.number().int().min(1).max(50).optional(),
+});
+
+const runTikTokSchema = z.object({
+    channel_id: z
+        .array(z.coerce.number().int().positive())
+        .min(1, 'channel_id is required'),
+    maxResults: z.number().int().min(1).max(50).optional(),
+    commentsPerPost: z.number().int().min(0).max(100).optional(),
+    maxRepliesPerComment: z.number().int().min(0).max(50).optional(),
 });
 
 const refreshYoutubeTailSchema = z.object({
@@ -178,23 +181,9 @@ const alertGmailSchema = z
     })
     .optional();
 
-const apifyRunsQuerySchema = z.object({
-    page: z.coerce.number().int().min(1).optional(),
-    per_page: z.coerce.number().int().min(1).max(100).optional(),
-    status: z.string().optional(),
-    desc: z
-        .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
-        .optional()
-        .transform((value) => {
-            if (value === undefined) return true;
-            if (typeof value === 'boolean') return value;
-            return value === 'true' || value === '1';
-        }),
-});
-
-const validateRunScraper = async (req, res, next) => {
+const validateRunFacebook = async (req, res, next) => {
     try {
-        const validated = runScraperSchema.parse(req.body ?? {});
+        const validated = runFacebookSchema.parse(req.body ?? {});
         req.validatedData = validated ?? {};
         next();
     } catch (error) {
@@ -208,6 +197,19 @@ const validateRunScraper = async (req, res, next) => {
 const validateRunYoutube = async (req, res, next) => {
     try {
         const validated = runYoutubeSchema.parse(req.body ?? {});
+        req.validatedData = validated ?? {};
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
+const validateRunTikTok = async (req, res, next) => {
+    try {
+        const validated = runTikTokSchema.parse(req.body ?? {});
         req.validatedData = validated ?? {};
         next();
     } catch (error) {
@@ -303,30 +305,6 @@ const validateSubjectUpdate = async (req, res, next) => {
     }
 };
 
-const validateApifyRunsQuery = async (req, res, next) => {
-    try {
-        req.validatedData = apifyRunsQuerySchema.parse(req.query ?? {});
-        next();
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
-        }
-        return next(error);
-    }
-};
-
-const validateRunFromHistory = async (req, res, next) => {
-    try {
-        req.validatedData = runFromHistorySchema.parse(req.body ?? {});
-        next();
-    } catch (error) {
-        if (error instanceof z.ZodError) {
-            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
-        }
-        return next(error);
-    }
-};
-
 const validateAlertGmail = async (req, res, next) => {
     try {
         const validated = alertGmailSchema.parse(req.body ?? {});
@@ -377,8 +355,9 @@ const validateSubjectChannel = async (req, res, next) => {
 };
 
 module.exports = {
-    validateRunScraper,
+    validateRunFacebook,
     validateRunYoutube,
+    validateRunTikTok,
     validateRefreshYoutubeTail,
     validateListQuery,
     validateSocialPostsDashboardQuery,
@@ -386,8 +365,6 @@ module.exports = {
     validateSubjectDetailQuery,
     validateSubjectCreate,
     validateSubjectUpdate,
-    validateApifyRunsQuery,
-    validateRunFromHistory,
     validateAlertGmail,
     validateChannelCreate,
     validateChannelUpdate,

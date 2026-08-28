@@ -10,6 +10,28 @@ class CommentController {
         this.commentRepository = new CommentRepository();
     }
 
+    /**
+     * @openapi
+     * /comments:
+     *   get:
+     *     tags: [Comments]
+     *     summary: Danh sách comment theo scraper_run_id
+     *     description: |
+     *       Trả về comment + reply đã lưu cho một bài (`scraper_runs.id`).
+     *       Dùng sau khi scrape YouTube / TikTok (hoặc khi xem chi tiết bài).
+     *     security: []
+     *     parameters:
+     *       - in: query
+     *         name: scraper_run_id
+     *         required: true
+     *         schema: { type: integer, minimum: 1 }
+     *         description: ID bài trong bảng `scraper_runs`
+     *     responses:
+     *       "200":
+     *         description: OK — threads / comments của bài
+     *       "422":
+     *         description: Thiếu scraper_run_id
+     */
     async listByScraperRun(req, res, next) {
         try {
             const scraperRunId = Number(req.query.scraper_run_id);

@@ -21,7 +21,7 @@ function parseChannelIds(raw) {
  * Cào video YouTube — chạy trực tiếp trên GitHub runner (không gọi API Render).
  * Chạy: npm run app:youtube-scrape
  * Env tuỳ chọn: YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube),
- *   YOUTUBE_MAX_RESULTS
+ *   SCRAPE_MAX_POSTS
  */
 class YoutubeScrapeCommand {
     static signature = 'app:youtube-scrape';
@@ -30,8 +30,7 @@ class YoutubeScrapeCommand {
 
     async handle() {
         const channel_id = parseChannelIds(process.env.YOUTUBE_CHANNEL_IDS);
-        const maxResults =
-            Number(process.env.YOUTUBE_MAX_RESULTS) || youtubeConfig.defaultMaxResults;
+        const maxResults = youtubeConfig.defaultMaxResults;
 
         const service = new YouTubeScrapeService();
         const result = await service.scrapeChannels({ channel_id, maxResults });

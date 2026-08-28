@@ -68,10 +68,15 @@ class CommentRepository {
         };
     }
 
-    async ingestCommentsForScraperRun(scraperRunId, comments = [], { transaction } = {}) {
+    async ingestCommentsForScraperRun(
+        scraperRunId,
+        comments = [],
+        { transaction, insertOnly = false } = {}
+    ) {
         const now = new Date();
         let inserted = 0;
         let updated = 0;
+        let skipped = 0;
 
         for (const item of comments) {
             if (!item?.platform_comment_id || !item.text) continue;
@@ -99,6 +104,10 @@ class CommentRepository {
             };
 
             if (existing) {
+                if (insertOnly) {
+                    skipped += 1;
+                    continue;
+                }
                 const textChanged = String(existing.text) !== String(item.text);
                 const updatePayload = { ...basePayload };
                 if (textChanged) {
@@ -126,7 +135,7 @@ class CommentRepository {
             }
         }
 
-        return { inserted, updated };
+        return { inserted, updated, skipped };
     }
 
     async rebuildThreadsForScraperRun(scraperRunId, { transaction } = {}) {
@@ -230,12 +239,16 @@ class CommentRepository {
         return { threads_upserted: threadsUpserted, thread_count: threadKeys.size };
     }
 
-    async ingestAndRebuild(scraperRunId, comments = {}) {
+    async ingestAndRebuild(scraperRunId, comments = [], { insertOnly = false } = {}) {
         return db.sequelize.transaction(async (transaction) => {
             const ingest = await this.ingestCommentsForScraperRun(scraperRunId, comments, {
                 transaction,
+                insertOnly,
             });
-            const threads = await this.rebuildThreadsForScraperRun(scraperRunId, { transaction });
+            const threads =
+                ingest.inserted > 0 || !insertOnly
+                    ? await this.rebuildThreadsForScraperRun(scraperRunId, { transaction })
+                    : { threads_upserted: 0, thread_count: 0 };
             return { ...ingest, ...threads };
         });
     }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
-import { isPlatformSelectable, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
+import { isPlatformSelectable, SOCIAL_PLATFORM_OPTIONS, urlPlaceholderForPlatform } from '@/lib/utils/socialPlatforms';
 import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
 import styles from './ChannelCatalogModal.module.scss';
@@ -32,7 +32,6 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [urlLocked, setUrlLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -53,16 +52,16 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
     if (!open) return;
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setUrlLocked(false);
     void load();
   }, [open, load]);
 
   if (!open) return null;
 
+  const isEditing = editingId != null;
+
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
-    setUrlLocked(false);
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -76,16 +75,15 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
 
     setSaving(true);
     try {
-      const payload = {
-        name,
-        type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
-        ...(urlLocked ? {} : { url }),
-      };
-      if (editingId != null) {
-        await channelsApi.update(editingId, payload);
+      if (isEditing) {
+        await channelsApi.update(editingId, { name });
         MakeToast({ variant: 'success', content: 'Đã cập nhật kênh' });
       } else {
-        await channelsApi.create({ ...payload, url });
+        await channelsApi.create({
+          name,
+          url,
+          type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
+        });
         MakeToast({ variant: 'success', content: 'Đã thêm kênh' });
       }
       resetForm();
@@ -100,7 +98,6 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
 
   const startEdit = (item: ChannelItem) => {
     setEditingId(item.id);
-    setUrlLocked(item.can_edit_url === false || Boolean(item.has_scraper_runs));
     setForm({
       name: item.name || '',
       url: item.url || '',
@@ -109,6 +106,14 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   };
 
   const handleDelete = async (item: ChannelItem) => {
+    if (item.can_delete === false || item.has_scraper_runs) {
+      MakeToast({
+        variant: 'warning',
+        content: 'Không thể xóa kênh đang có bài scrape (scraper_runs)',
+      });
+      return;
+    }
+
     const ok = window.confirm(`Xóa kênh "${item.name}"?`);
     if (!ok) return;
     setDeletingId(item.id);
@@ -159,17 +164,17 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
             <input
               value={form.url}
               onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
-              placeholder="https://www.youtube.com/@..."
+              placeholder={urlPlaceholderForPlatform(form.type_channel)}
               required
-              readOnly={urlLocked}
-              disabled={urlLocked}
+              readOnly={isEditing}
+              disabled={isEditing}
               title={
-                urlLocked ? 'Không thể sửa URL vì kênh đã có bài scrape' : undefined
+                isEditing ? 'Không thể sửa URL sau khi kênh đã được lưu' : undefined
               }
             />
-            {urlLocked && (
+            {isEditing && (
               <em className={styles.fieldHint}>
-                Không thể sửa URL vì kênh đã có bài scrape
+                Không thể sửa URL sau khi kênh đã được lưu
               </em>
             )}
           </label>
@@ -178,6 +183,10 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
             <select
               value={form.type_channel}
               onChange={(e) => setForm((prev) => ({ ...prev, type_channel: e.target.value }))}
+              disabled={isEditing}
+              title={
+                isEditing ? 'Không thể sửa nền tảng sau khi kênh đã được lưu' : undefined
+              }
             >
               {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
                 <option key={opt.id} value={opt.id} disabled={!isPlatformSelectable(opt.id)}>
@@ -185,16 +194,21 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
                 </option>
               ))}
             </select>
+            {isEditing && (
+              <em className={styles.fieldHint}>
+                Không thể sửa nền tảng sau khi kênh đã được lưu
+              </em>
+            )}
           </label>
           <div className={styles.formActions}>
-            {editingId != null && (
+            {isEditing && (
               <button type="button" className={styles.cancelBtn} onClick={resetForm} disabled={saving}>
                 Hủy sửa
               </button>
             )}
             <button type="submit" className={styles.saveBtn} disabled={saving}>
               <Plus size={14} aria-hidden />
-              {saving ? 'Đang lưu…' : editingId != null ? 'Lưu kênh' : 'Thêm kênh'}
+              {saving ? 'Đang lưu…' : isEditing ? 'Lưu kênh' : 'Thêm kênh'}
             </button>
           </div>
         </form>
@@ -224,8 +238,13 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
                     type="button"
                     className={styles.deleteBtn}
                     onClick={() => handleDelete(item)}
-                    disabled={deletingId === item.id}
+                    disabled={item.can_delete === false || deletingId === item.id}
                     aria-label="Xóa"
+                    title={
+                      item.can_delete === false
+                        ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
+                        : 'Xóa'
+                    }
                   >
                     {deletingId === item.id ? (
                       <Loader2 size={14} className={styles.spin} />

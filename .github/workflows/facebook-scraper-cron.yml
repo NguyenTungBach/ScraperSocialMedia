@@ -1,0 +1,84 @@
+# Cào bài Facebook mỗi 10 giờ — CHỈ 1 kênh (match theo URL trong DB).
+# Chạy TRỰC TIẾP trên GitHub runner (Apify + DB), không gọi Render.
+#
+# BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
+#   DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#   APIFY_API_TOKEN
+#
+# Tuỳ chọn Variables:
+#   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
+#   SCRAPE_MAX_POSTS / SCRAPE_MAX_TOP_COMMENTS / SCRAPE_MAX_REPLIES
+#   FACEBOOK_CHANNEL_URL (override URL cố định bên dưới)
+#
+# Chạy: Actions → "Facebook Scraper Cron" → Run workflow
+
+name: Facebook Scraper Cron
+
+on:
+  schedule:
+    # Mỗi 10 giờ (UTC: 00:00, 10:00, 20:00). GitHub có thể trễ vài phút.
+    - cron: '0 */10 * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape-facebook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend-express
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend-express/package-lock.json
+
+      - name: Check required variables
+        env:
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          APIFY_API_TOKEN: ${{ vars.APIFY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD APIFY_API_TOKEN; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository variables: ${missing[*]}"
+            echo "Add them at: Settings → Secrets and variables → Actions → Variables"
+            echo "Copy values from backend-express/.env (DB_* / APIFY_API_TOKEN)."
+            exit 1
+          fi
+          echo "All required variables are present."
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Facebook scraper (single channel by URL)
+        env:
+          NODE_ENV: production
+          DB_CONNECTION: mysql
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT || '19437' }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          DB_SSL: ${{ vars.DB_SSL || 'true' }}
+          APIFY_API_TOKEN: ${{ vars.APIFY_API_TOKEN }}
+          SCRAPE_MAX_POSTS: ${{ vars.SCRAPE_MAX_POSTS || '10' }}
+          SCRAPE_MAX_TOP_COMMENTS: ${{ vars.SCRAPE_MAX_TOP_COMMENTS || '30' }}
+          SCRAPE_MAX_REPLIES: ${{ vars.SCRAPE_MAX_REPLIES || '10' }}
+          # Chỉ kênh này — resolve id theo URL trong bảng channels (không cào kênh khác).
+          FACEBOOK_CHANNEL_URLS: ${{ vars.FACEBOOK_CHANNEL_URL || 'https://www.facebook.com/people/M%C3%B4-h%C3%ACnh-D%C3%A2n-v%E1%BA%ADn-kh%C3%A9o-Khoa-Nghi%E1%BB%87p-v%E1%BB%A5-%C4%90i%E1%BB%81u-tra-h%C3%ACnh-s%E1%BB%B1/61592260267197/' }}
+        run: npm run app:facebook-scrape

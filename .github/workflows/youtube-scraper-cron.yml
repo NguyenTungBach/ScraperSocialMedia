@@ -1,4 +1,4 @@
-# Cào video YouTube mỗi 2 giờ — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
+# Cào video YouTube mỗi 10 giờ — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
 # Lý do: tránh timeout / cold-start Render free khi scrape nhiều kênh + comment.
 #
 # BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
@@ -7,9 +7,8 @@
 #
 # Tuỳ chọn Variables:
 #   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
-#   YOUTUBE_MAX_RESULTS (mặc định 10)
+#   SCRAPE_MAX_POSTS / SCRAPE_MAX_TOP_COMMENTS / SCRAPE_MAX_REPLIES (chung mọi nền tảng)
 #   YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube trong DB)
-#   YOUTUBE_MAX_TOP_COMMENTS, YOUTUBE_MAX_REPLIES
 #
 # Chạy: Actions → "YouTube Scraper Cron" → Run workflow
 
@@ -17,8 +16,8 @@ name: YouTube Scraper Cron
 
 on:
   schedule:
-    # Mỗi 2 giờ (UTC). GitHub có thể trễ vài phút so với đúng giờ.
-    - cron: '0 */2 * * *'
+    # Mỗi 10 giờ (UTC: 00:00, 10:00, 20:00). GitHub có thể trễ vài phút so với đúng giờ.
+    - cron: '0 */10 * * *'
   workflow_dispatch:
     inputs:
       channel_ids:
@@ -82,9 +81,9 @@ jobs:
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
           DB_SSL: ${{ vars.DB_SSL || 'true' }}
           YOUTUBE_API_KEY: ${{ vars.YOUTUBE_API_KEY }}
-          YOUTUBE_MAX_RESULTS: ${{ vars.YOUTUBE_MAX_RESULTS || '10' }}
-          YOUTUBE_MAX_TOP_COMMENTS: ${{ vars.YOUTUBE_MAX_TOP_COMMENTS || '20' }}
-          YOUTUBE_MAX_REPLIES: ${{ vars.YOUTUBE_MAX_REPLIES || '10' }}
+          SCRAPE_MAX_POSTS: ${{ vars.SCRAPE_MAX_POSTS || '10' }}
+          SCRAPE_MAX_TOP_COMMENTS: ${{ vars.SCRAPE_MAX_TOP_COMMENTS || '30' }}
+          SCRAPE_MAX_REPLIES: ${{ vars.SCRAPE_MAX_REPLIES || '10' }}
           YOUTUBE_CHANNEL_IDS: ${{ inputs.channel_ids || vars.YOUTUBE_CHANNEL_IDS }}
         run: npm run app:youtube-scrape
 

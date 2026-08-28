@@ -29,28 +29,67 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
   const isSubjectsArea =
     pathname === '/subjects' || pathname.startsWith('/subjects/') || pathname === '/channels';
 
-  const handleScrapeYoutube = async () => {
+  const handleScrapeAll = async () => {
     setScraping(true);
     try {
-      const res = await channelsApi.list({ type_channel: 'youtube', per_page: 100 });
-      const youtubeChannels = res.data?.result || [];
-      const ids = youtubeChannels.map((ch) => ch.id);
+      const [ytRes, ttRes, fbRes] = await Promise.all([
+        channelsApi.list({ type_channel: 'youtube', per_page: 100 }),
+        channelsApi.list({ type_channel: 'tiktok', per_page: 100 }),
+        channelsApi.list({ type_channel: 'facebook', per_page: 100 }),
+      ]);
+      const ytIds = (ytRes.data?.result || []).map((ch) => ch.id);
+      const ttIds = (ttRes.data?.result || []).map((ch) => ch.id);
+      const fbIds = (fbRes.data?.result || []).map((ch) => ch.id);
 
-      if (ids.length === 0) {
-        MakeToast({ variant: 'warning', content: 'Chưa có kênh YouTube nào trong danh mục' });
+      if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
+        MakeToast({
+          variant: 'warning',
+          content: 'Chưa có kênh YouTube/TikTok/Facebook nào trong danh mục',
+        });
         return;
       }
 
-      const ok = window.confirm(`Quét dữ liệu ${ids.length} kênh YouTube?`);
+      const ok = window.confirm(
+        `Quét dữ liệu ${ytIds.length} kênh YouTube, ${ttIds.length} kênh TikTok và ${fbIds.length} kênh Facebook?`
+      );
       if (!ok) return;
 
-      const scrapeRes = await scraperApi.runYoutube({ channel_id: ids });
-      const data = scrapeRes.data;
-      const skipped = data?.channels_skipped?.length ?? 0;
-      const comments = data?.comment_stats?.videos_with_comments ?? 0;
+      let itemsCount = 0;
+      let channelsScraped = 0;
+      let comments = 0;
+      let skipped = 0;
+
+      if (ytIds.length > 0) {
+        const scrapeRes = await scraperApi.runYoutube({ channel_id: ytIds });
+        const data = scrapeRes.data;
+        itemsCount += data?.items_count ?? 0;
+        channelsScraped += data?.channels_scraped ?? 0;
+        comments += data?.comment_stats?.videos_with_comments ?? 0;
+        skipped += data?.channels_skipped?.length ?? 0;
+      }
+      if (ttIds.length > 0) {
+        const scrapeRes = await scraperApi.runTikTok({ channel_id: ttIds });
+        const data = scrapeRes.data;
+        itemsCount += data?.items_count ?? 0;
+        channelsScraped += data?.channels_scraped ?? 0;
+        comments += data?.comment_stats?.videos_with_comments ?? 0;
+        skipped += data?.channels_skipped?.length ?? 0;
+      }
+      if (fbIds.length > 0) {
+        const scrapeRes = await scraperApi.runFacebook({ channel_id: fbIds });
+        const data = scrapeRes.data;
+        itemsCount += data?.items_count ?? 0;
+        channelsScraped += data?.channels_scraped ?? 0;
+        comments +=
+          data?.comment_stats?.posts_with_comments ??
+          data?.comment_stats?.videos_with_comments ??
+          0;
+        skipped += data?.channels_skipped?.length ?? 0;
+      }
+
       MakeToast({
         variant: 'success',
-        content: `Đã quét ${data?.items_count ?? 0} video · ${data?.channels_scraped ?? 0} kênh${comments ? ` · ${comments} video có comment` : ''}${skipped ? ` · bỏ qua ${skipped} kênh chưa gắn subject` : ''}`,
+        content: `Đã quét ${itemsCount} bài · ${channelsScraped} kênh${comments ? ` · ${comments} bài có comment` : ''}${skipped ? ` · bỏ qua ${skipped} kênh chưa gắn subject` : ''}`,
       });
       await onScrapeSuccess?.();
     } catch (err) {
@@ -123,16 +162,16 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
               <button
                 type="button"
                 className={cn(styles.navActionBtn, styles.navActionScrape)}
-                onClick={() => void handleScrapeYoutube()}
+                onClick={() => void handleScrapeAll()}
                 disabled={scraping || checkingAlert}
-                title="Quét video mới nhất từ tất cả kênh YouTube"
+                title="Quét video mới nhất từ tất cả kênh YouTube/TikTok"
               >
                 {scraping ? (
                   <Loader2 size={16} className={styles.spin} aria-hidden />
                 ) : (
                   <ScanLine size={16} aria-hidden />
                 )}
-                {scraping ? 'Đang quét…' : 'Quét YouTube'}
+                {scraping ? 'Đang quét…' : 'Quét YT/TT'}
               </button>
               <button
                 type="button"

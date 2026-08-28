@@ -16,6 +16,8 @@
     "app:alert-gmail": "node scripts/run-command.js app:alert-gmail",
     "app:youtube-refresh-tail": "node scripts/run-command.js app:youtube-refresh-tail",
     "app:youtube-scrape": "node scripts/run-command.js app:youtube-scrape",
+    "app:tiktok-scrape": "node scripts/run-command.js app:tiktok-scrape",
+    "app:facebook-scrape": "node scripts/run-command.js app:facebook-scrape",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate-create": "sequelize-cli migration:generate --name",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",

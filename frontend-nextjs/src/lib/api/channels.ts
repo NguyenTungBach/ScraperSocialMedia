@@ -8,8 +8,12 @@ export interface ChannelItem {
   type_channel: string;
   scraper_runs_count?: number;
   has_scraper_runs?: boolean;
-  /** false khi kênh đã có bài scrape — không cho sửa URL */
+  /** Luôn false — URL cố định sau khi lưu (mọi nền tảng) */
   can_edit_url?: boolean;
+  /** Luôn false — nền tảng cố định sau khi lưu */
+  can_edit_type_channel?: boolean;
+  /** false khi đã có scraper_runs thuộc kênh này */
+  can_delete?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }

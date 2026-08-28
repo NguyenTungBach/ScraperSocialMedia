@@ -20,6 +20,7 @@ const {
     resolveSubjectPlatform,
 } = require('../Helpers/PostScoreHelper');
 const { normalizeYoutubeVideo } = require('../Helpers/YouTubeHelper');
+const { normalizeTikTokItem } = require('../Helpers/TikTokHelper');
 const {
     parsePersonName,
     personNameTokens,
@@ -270,7 +271,9 @@ class ScraperRepository {
             type_channel: plain.type_channel,
             scraper_runs_count,
             has_scraper_runs: scraper_runs_count > 0,
-            can_edit_url: scraper_runs_count === 0,
+            can_edit_url: false,
+            can_edit_type_channel: false,
+            can_delete: scraper_runs_count === 0,
             created_at: plain.created_at ?? null,
             updated_at: plain.updated_at ?? null,
         };
@@ -795,14 +798,17 @@ class ScraperRepository {
 
         const hotScoreExpr = `(CASE
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 3 + FLOOR(${views} / 100) * 3)
+            WHEN LOWER(${platform}) = 'tiktok' THEN (${likes} + ${comments} * 3 + ${shares} * 3 + FLOOR(${views} / 100) * 2)
             ELSE (${likes} + ${comments} * 2 + ${shares} * 3 + ${angry} * 4)
         END)`;
         const trendScoreExpr = `(CASE
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 2 + FLOOR(${views} / 100) * 3)
+            WHEN LOWER(${platform}) = 'tiktok' THEN (${likes} + ${comments} * 2 + ${shares} * 3 + FLOOR(${views} / 100) * 2)
             ELSE (${likes} + ${comments} * 2 + ${shares} * 3)
         END)`;
         const interactionExpr = `(CASE
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments})
+            WHEN LOWER(${platform}) = 'tiktok' THEN (${likes} + ${comments} + ${shares})
             ELSE (${likes} + ${comments} + ${shares})
         END)`;
 
@@ -1197,6 +1203,11 @@ class ScraperRepository {
             },
             affected_subject_ids: [...affectedSubjectIds],
             items_saved: savedRuns.length,
+            saved_runs: savedRuns.map((row) => ({
+                id: row.id,
+                platform_post_id: row.platform_post_id,
+                post_url: row.post_url,
+            })),
         };
     }
 
@@ -1356,6 +1367,143 @@ class ScraperRepository {
             saved_runs: savedRuns.map((run) => ({
                 id: run.id,
                 platform_post_id: run.platform_post_id,
+            })),
+        };
+    }
+
+    /**
+     * Lưu video TikTok vào scraper_runs (mirror YouTube ingest, source=apify).
+     * @param {{ videos: object[], channels?: Array, channel?: object, run?: object }} params
+     */
+    async ingestTikTokItems({ videos = [], channels = [], channel = null, run = null } = {}) {
+        const now = new Date();
+        const affectedSubjectIds = new Set();
+        const channelList = Array.isArray(channels) ? channels : [];
+        const preferredChannel = channel || (channelList.length === 1 ? channelList[0] : null);
+
+        let inserted = 0;
+        let updated = 0;
+        let skipped = 0;
+        let linksCreated = 0;
+        let unmatchedChannel = 0;
+
+        const savedRuns = [];
+
+        await db.sequelize.transaction(async (transaction) => {
+            for (const item of videos) {
+                const normalized =
+                    item && item.platform === 'tiktok' && item.platform_post_id
+                        ? item
+                        : normalizeTikTokItem(item);
+
+                if (!normalized?.platform_post_id) {
+                    skipped += 1;
+                    continue;
+                }
+
+                let matchedChannel = preferredChannel;
+                if (!matchedChannel && channelList.length > 1) {
+                    matchedChannel =
+                        matchChannelByPostUrl(normalized.post_url, channelList) || null;
+                }
+
+                if (!matchedChannel && channelList.length > 0 && !preferredChannel) {
+                    unmatchedChannel += 1;
+                }
+
+                const channelFk = {
+                    channel_id: matchedChannel ? matchedChannel.id : null,
+                };
+
+                const payload = {
+                    platform: 'tiktok',
+                    platform_post_id: normalized.platform_post_id,
+                    post_url: normalized.post_url,
+                    title: normalized.title,
+                    text: normalized.text,
+                    likes: normalized.likes,
+                    comments: normalized.comments,
+                    shares: normalized.shares,
+                    angry_count: 0,
+                    views: toCount(normalized.views),
+                    follow: toCount(normalized.follow),
+                    posted_at: normalized.posted_at,
+                    scraped_at: now,
+                    source: 'apify',
+                    external_run_id: run?.id || null,
+                    scraper_id: run?.actId || run?.actorId || 'tiktok_apify',
+                    raw_data: normalized.raw_data || item,
+                };
+
+                let scraperRun = await this.scraperRunModel.findOne({
+                    where: {
+                        platform: payload.platform,
+                        platform_post_id: payload.platform_post_id,
+                    },
+                    transaction,
+                });
+
+                if (scraperRun) {
+                    const updatePayload = { ...payload };
+                    if (matchedChannel) {
+                        Object.assign(updatePayload, channelFk);
+                    }
+                    await scraperRun.update(updatePayload, { transaction });
+                    updated += 1;
+                } else {
+                    scraperRun = await this.scraperRunModel.create(
+                        { ...payload, ...channelFk },
+                        { transaction }
+                    );
+                    inserted += 1;
+                }
+
+                savedRuns.push(scraperRun);
+
+                const subjectIdsToLink = new Set();
+                if (matchedChannel) {
+                    const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
+                        matchedChannel.id,
+                        { transaction }
+                    );
+                    for (const sid of linkedSubjectIds) {
+                        subjectIdsToLink.add(sid);
+                    }
+                }
+
+                const linkSync = await this.syncScraperRunSubjectLinks(
+                    scraperRun.id,
+                    subjectIdsToLink,
+                    { transaction }
+                );
+                linksCreated += linkSync.links_created;
+                for (const sid of linkSync.previous_subject_ids) {
+                    affectedSubjectIds.add(sid);
+                }
+                for (const sid of linkSync.subject_ids) {
+                    affectedSubjectIds.add(sid);
+                }
+            }
+
+            for (const subjectId of affectedSubjectIds) {
+                await this.recomputeSocialPost(subjectId, { transaction });
+            }
+        });
+
+        return {
+            upsert_stats: {
+                inserted,
+                updated,
+                skipped,
+                links_created: linksCreated,
+                unmatched_channel: unmatchedChannel,
+            },
+            affected_subject_ids: [...affectedSubjectIds],
+            items_saved: savedRuns.length,
+            saved_runs: savedRuns.map((row) => ({
+                id: row.id,
+                platform_post_id: row.platform_post_id,
+                post_url: row.post_url,
             })),
         };
     }

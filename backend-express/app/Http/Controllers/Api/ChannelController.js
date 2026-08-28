@@ -30,7 +30,10 @@ class ChannelController {
      *         description: Tìm theo name hoặc url
      *       - in: query
      *         name: type_channel
-     *         schema: { type: string, example: facebook }
+     *         schema:
+     *           type: string
+     *           enum: [facebook, youtube, tiktok]
+     *           example: youtube
      *         description: Lọc theo nền tảng
      *     responses:
      *       "200":
@@ -67,8 +70,12 @@ class ChannelController {
      *             required: [name, url]
      *             properties:
      *               name: { type: string, example: Theanh28 }
-     *               url: { type: string, format: uri, example: "https://www.facebook.com/Theanh28" }
-     *               type_channel: { type: string, default: facebook, example: facebook }
+     *               url: { type: string, format: uri, example: "https://www.youtube.com/@taca" }
+     *               type_channel:
+     *                 type: string
+     *                 enum: [facebook, youtube, tiktok]
+     *                 default: facebook
+     *                 example: youtube
      *     responses:
      *       "201":
      *         description: Created
@@ -112,7 +119,7 @@ class ChannelController {
      *       "404":
      *         description: Không tìm thấy
      *       "422":
-     *         description: Không thể sửa URL khi kênh đã có bài scrape
+     *         description: Không thể sửa URL/nền tảng sau khi kênh đã lưu
      */
     async update(req, res, next) {
         try {
@@ -141,6 +148,8 @@ class ChannelController {
      *         description: Deleted
      *       "404":
      *         description: Không tìm thấy
+     *       "422":
+     *         description: Không thể xóa khi kênh đã có bài trong scraper_runs
      */
     async destroy(req, res, next) {
         try {

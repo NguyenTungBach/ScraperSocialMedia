@@ -22,9 +22,99 @@ schemas:
       id: { type: integer }
       name: { type: string }
       url: { type: string, format: uri }
-      type_channel: { type: string, example: facebook }
+      type_channel:
+        type: string
+        description: Nền tảng kênh
+        enum: [facebook, youtube, tiktok]
+        example: youtube
       created_at: { type: string, format: date-time, nullable: true }
       updated_at: { type: string, format: date-time, nullable: true }
+  YoutubeScrapeRequest:
+    type: object
+    required: [channel_id]
+    properties:
+      channel_id:
+        type: array
+        minItems: 1
+        items: { type: integer, minimum: 1 }
+        description: ID kênh YouTube trong bảng `channels`
+        example: [5]
+      maxResults:
+        type: integer
+        minimum: 1
+        maximum: 50
+        description: Số video tối đa mỗi kênh (mặc định SCRAPE_MAX_POSTS / 10)
+        example: 10
+  TikTokScrapeRequest:
+    type: object
+    required: [channel_id]
+    properties:
+      channel_id:
+        type: array
+        minItems: 1
+        items: { type: integer, minimum: 1 }
+        description: ID kênh TikTok trong bảng `channels`
+        example: [8]
+      maxResults:
+        type: integer
+        minimum: 1
+        maximum: 50
+        description: Số video tối đa mỗi kênh (mặc định 10)
+        example: 10
+      commentsPerPost:
+        type: integer
+        minimum: 0
+        maximum: 100
+        description: Số comment gốc mỗi video (mặc định 30)
+      maxRepliesPerComment:
+        type: integer
+        minimum: 0
+        maximum: 50
+        description: Số reply mỗi comment gốc (mặc định 10)
+  YoutubeRefreshTailRequest:
+    type: object
+    properties:
+      batchSize:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 50
+      headSize:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+        description: Top N video mới nhất mỗi kênh được bỏ qua (không refresh)
+      offset:
+        type: integer
+        minimum: 0
+        default: 0
+  FacebookScrapeRequest:
+    type: object
+    required: [channel_id]
+    properties:
+      channel_id:
+        type: array
+        minItems: 1
+        items: { type: integer, minimum: 1 }
+        description: ID kênh Facebook trong bảng `channels`
+        example: [2, 3]
+      maxResults:
+        type: integer
+        minimum: 1
+        maximum: 50
+        description: Số bài tối đa mỗi kênh (mặc định 10)
+        example: 10
+      commentsPerPost:
+        type: integer
+        minimum: 0
+        maximum: 100
+        description: Số comment tối đa mỗi bài (mặc định 30)
+      maxRepliesPerComment:
+        type: integer
+        minimum: 0
+        maximum: 50
+        description: Bật nested replies khi > 0 (mặc định 10)
   SubjectChannelIds:
     type: object
     properties:
@@ -41,17 +131,6 @@ schemas:
         minItems: 1
         items: { type: integer, minimum: 1 }
         description: ID kênh trong bảng channels (DB local)
-  ScraperRunFromHistory:
-    type: object
-    required: [runId, channel_id]
-    properties:
-      runId:
-        type: string
-        description: Apify Run ID (từ GET /scraper/apify/runs)
-      channel_id:
-        type: array
-        minItems: 1
-        items: { type: integer, minimum: 1 }
   User:
     type: object
     properties:

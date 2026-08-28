@@ -3,6 +3,7 @@
 const createError = require('http-errors');
 const { Op } = require('sequelize');
 const db = require('../Models');
+const { normalizeChannelUrl } = require('../Helpers/ChannelUrlHelper');
 
 class ChannelRepository {
     constructor() {
@@ -26,7 +27,11 @@ class ChannelRepository {
             type_channel: plain.type_channel,
             scraper_runs_count: count,
             has_scraper_runs: count > 0,
-            can_edit_url: count === 0,
+            /** URL/nền tảng cố định sau khi tạo — mọi nền tảng */
+            can_edit_url: false,
+            can_edit_type_channel: false,
+            /** false khi đã có scraper_runs.channel_id trỏ tới kênh này */
+            can_delete: count === 0,
             created_at: plain.created_at ?? null,
             updated_at: plain.updated_at ?? null,
         };
@@ -108,18 +113,15 @@ class ChannelRepository {
             if (!trimmedUrl) throw createError(422, 'url is required');
             const currentUrl = String(row.url || '').trim();
             if (trimmedUrl !== currentUrl) {
-                const scraperRunsCount = await this.countScraperRuns(row.id);
-                if (scraperRunsCount > 0) {
-                    throw createError(
-                        422,
-                        `Không thể sửa URL kênh đã có ${scraperRunsCount} bài scrape`
-                    );
-                }
+                throw createError(422, 'Không thể sửa URL sau khi kênh đã được lưu');
             }
-            updates.url = trimmedUrl;
         }
         if (payload.type_channel !== undefined) {
-            updates.type_channel = payload.type_channel || 'facebook';
+            const nextType = String(payload.type_channel || '').trim() || 'facebook';
+            const currentType = String(row.type_channel || '').trim();
+            if (nextType !== currentType) {
+                throw createError(422, 'Không thể sửa nền tảng sau khi kênh đã được lưu');
+            }
         }
 
         if (Object.keys(updates).length > 0) {
@@ -133,6 +135,15 @@ class ChannelRepository {
     async deleteChannel(id) {
         const row = await this.channelModel.findByPk(id);
         if (!row) return null;
+
+        const scraperRunsCount = await this.countScraperRuns(row.id);
+        if (scraperRunsCount > 0) {
+            throw createError(
+                422,
+                `Không thể xóa kênh đang có ${scraperRunsCount} bài scrape (scraper_runs)`
+            );
+        }
+
         await row.destroy();
         return { id: Number(id), deleted: true };
     }
@@ -152,6 +163,49 @@ class ChannelRepository {
         }
 
         return rows.map((row) => row.toJSON());
+    }
+
+    /**
+     * Tìm kênh theo URL (normalize: bỏ www, trailing slash, query/hash).
+     * Fail nếu thiếu / không khớp — không fallback sang kênh khác.
+     */
+    async findChannelsByUrls({ urls = [], type_channel = null } = {}) {
+        const wanted = [
+            ...new Set(
+                (urls || [])
+                    .map((u) => normalizeChannelUrl(u))
+                    .filter(Boolean)
+            ),
+        ];
+        if (wanted.length === 0) return [];
+
+        const where = {};
+        if (type_channel) where.type_channel = type_channel;
+
+        const rows = await this.channelModel.findAll({ where });
+        const byNorm = new Map();
+        for (const row of rows) {
+            const plain = row.toJSON();
+            const key = normalizeChannelUrl(plain.url);
+            if (key) byNorm.set(key, plain);
+        }
+
+        const matched = [];
+        const missing = [];
+        for (const key of wanted) {
+            const hit = byNorm.get(key);
+            if (hit) matched.push(hit);
+            else missing.push(key);
+        }
+
+        if (missing.length > 0) {
+            throw createError(
+                422,
+                `Channel URL not found${type_channel ? ` (type=${type_channel})` : ''}: ${missing.join(', ')}`
+            );
+        }
+
+        return matched;
     }
 
     buildStartUrls(channels) {

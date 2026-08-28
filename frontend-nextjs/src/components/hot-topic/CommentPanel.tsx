@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/comments';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { classifyLabel, hasAnalysisData } from '@/lib/utils/commentAnalysis';
+import { isCommentSupportedPlatform } from '@/lib/utils/socialPlatforms';
 import { CommentAnalysisModal } from './CommentAnalysisModal';
 import styles from './SubjectDetailModal.module.scss';
 
@@ -184,7 +185,7 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
 
   // Tải comment + phân tích đã lưu DB ngay khi render (không cần mở panel trước)
   useEffect(() => {
-    if (total === 0 || platform !== 'youtube') return;
+    if (total === 0 || !isCommentSupportedPlatform(platform)) return;
     void load();
   }, [scraperRunId, total, platform, load]);
 
@@ -199,7 +200,7 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
     return Boolean(summary?.analyzed);
   }, [data, summary?.analyzed]);
 
-  if (platform !== 'youtube') return null;
+  if (!isCommentSupportedPlatform(platform)) return null;
   if (total === 0) return null;
 
   const replyCount = Math.max(

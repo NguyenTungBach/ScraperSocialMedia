@@ -143,6 +143,36 @@ class AuthController {
         }
     }
 
+    /**
+     * @openapi
+     * /auth/password-reset:
+     *   put:
+     *     tags: [Auth]
+     *     summary: Reset password bằng token email
+     *     operationId: password_reset
+     *     description: |
+     *       Đặt mật khẩu mới sau khi nhận link/token từ `POST /auth/forget-password`.
+     *     security: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [token, mail_address, new_password, new_password_confirm]
+     *             properties:
+     *               token: { type: string, description: Token reset từ email }
+     *               mail_address: { type: string, format: email }
+     *               new_password: { type: string }
+     *               new_password_confirm: { type: string }
+     *     responses:
+     *       "200":
+     *         description: Đặt mật khẩu mới thành công
+     *       "403":
+     *         description: Token không hợp lệ / hết hạn
+     *       "404":
+     *         description: User không tồn tại
+     */
     async resetPassword(req, res, next) {
         try {
             await authRepository.resetPassword(req.body || {});

@@ -6,8 +6,13 @@ const apifyConfig = require('../../config/apify');
 
 class ApifyService {
     constructor() {
-        this.actorId = apifyConfig.facebookActorId;
+        this.facebookActorId = apifyConfig.facebookActorId;
+        this.facebookCommentsActorId = apifyConfig.facebookCommentsActorId;
         this.defaultInput = apifyConfig.defaultInput;
+        this.tiktokActorId = apifyConfig.tiktokActorId;
+        this.tiktokCommentsActorId = apifyConfig.tiktokCommentsActorId;
+        /** @deprecated dùng facebookActorId */
+        this.actorId = this.facebookActorId;
     }
 
     getClient() {
@@ -36,74 +41,119 @@ class ApifyService {
     }
 
     /**
-     * Chạy Actor Facebook scraper trên Apify và chờ hoàn thành.
-     * @returns {{ run: object, items: object[] }}
+     * Chạy Actor Facebook Posts scraper trên Apify và chờ hoàn thành.
+     * @returns {{ run: object, items: object[], input: object }}
      */
     async runFacebookScraper(overrides = {}) {
         const client = this.getClient();
         const input = this.buildInput(overrides);
 
-        const run = await client.actor(this.actorId).call(input);
-        const { items } = await client.dataset(run.defaultDatasetId).listItems();
+        const run = await client.actor(this.facebookActorId).call(input);
+        const { items } = await client.dataset(run.defaultDatasetId).listItems({
+            limit: 1000,
+        });
 
         return { run, items, input };
     }
 
     /**
-     * Danh sách lịch sử Actor runs trên Apify (tương đương console.apify.com/actors/runs).
+     * Scrape comments (+ nested replies) cho danh sách post URLs Facebook.
+     * @param {{
+     *   postURLs?: string[],
+     *   commentsPerPost?: number,
+     *   maxRepliesPerComment?: number,
+     * }} overrides
      */
-    async listActorRuns({ limit = 20, offset = 0, status = null, desc = true } = {}) {
+    async runFacebookCommentsScraper(overrides = {}) {
         const client = this.getClient();
-        const options = {
-            limit: Math.min(Math.max(Number(limit) || 20, 1), 100),
-            offset: Math.max(Number(offset) || 0, 0),
-            desc: desc !== false,
-        };
-        if (status) {
-            options.status = status;
+        const postURLs = (overrides.postURLs || [])
+            .map((u) => (typeof u === 'string' ? u : u?.url))
+            .filter(Boolean);
+
+        if (postURLs.length === 0) {
+            return { run: null, items: [], input: null };
         }
 
-        const result = await client.actor(this.actorId).runs().list(options);
-        const items = (result.items || []).map((run) => ({
-            ...run,
-            console_url: `https://console.apify.com/actors/${run.actId || this.actorId}/runs/${run.id}`,
-            dataset_url: run.defaultDatasetId
-                ? `https://console.apify.com/storage/datasets/${run.defaultDatasetId}`
-                : null,
-        }));
+        const commentsPerPost =
+            overrides.commentsPerPost ?? apifyConfig.facebookCommentsPerPost;
+        const maxReplies =
+            overrides.maxRepliesPerComment ?? apifyConfig.facebookMaxRepliesPerComment;
 
-        return {
-            items,
-            total: result.total ?? items.length,
-            count: result.count ?? items.length,
-            offset: result.offset ?? options.offset,
-            limit: result.limit ?? options.limit,
-            actor_id: this.actorId,
+        const input = {
+            ...apifyConfig.facebookCommentsDefaultInput,
+            startUrls: postURLs.map((url) => ({ url })),
+            resultsLimit: Number(commentsPerPost) || apifyConfig.facebookCommentsPerPost,
+            includeNestedComments: Number(maxReplies) > 0,
         };
-    }
 
-    async getRun(runId) {
-        const client = this.getClient();
-        const run = await client.run(runId).get();
-        if (!run) {
-            throw createError(404, `Apify run not found: ${runId}`);
-        }
-        return run;
+        const run = await client.actor(this.facebookCommentsActorId).call(input);
+        const { items } = await client.dataset(run.defaultDatasetId).listItems({
+            limit: 10000,
+        });
+
+        return { run, items, input };
     }
 
     /**
-     * Lấy dataset items của một Apify run đã có (không chạy Actor mới → không tốn credit scrape).
+     * Scrape TikTok profile videos (latest N), không lấy comment.
+     * @param {{ profiles?: string[], resultsPerPage?: number }} overrides
      */
-    async getRunItems(runId) {
+    async runTikTokVideoScraper(overrides = {}) {
         const client = this.getClient();
-        const run = await this.getRun(runId);
-
-        if (!run.defaultDatasetId) {
-            throw createError(400, `Apify run ${runId} has no dataset yet (status: ${run.status})`);
+        const input = {
+            ...apifyConfig.tiktokVideoDefaultInput,
+            ...overrides,
+            commentsPerPost: 0,
+            topLevelCommentsPerPost: 0,
+            maxRepliesPerComment: 0,
+        };
+        if (overrides.resultsPerPage != null) {
+            input.resultsPerPage = Number(overrides.resultsPerPage);
+        }
+        if (Array.isArray(overrides.profiles)) {
+            input.profiles = overrides.profiles.map((p) =>
+                typeof p === 'string' ? p : p?.url || String(p)
+            );
         }
 
-        const { items } = await client.dataset(run.defaultDatasetId).listItems();
-        return { run, items };
+        const run = await client.actor(this.tiktokActorId).call(input);
+        const { items } = await client.dataset(run.defaultDatasetId).listItems({
+            limit: 1000,
+        });
+
+        return { run, items, input };
+    }
+
+    /**
+     * Scrape comments (+ replies) cho danh sách postURLs TikTok.
+     * @param {{ postURLs?: string[], commentsPerPost?: number, maxRepliesPerComment?: number }} overrides
+     */
+    async runTikTokCommentsScraper(overrides = {}) {
+        const client = this.getClient();
+        const postURLs = (overrides.postURLs || [])
+            .map((u) => (typeof u === 'string' ? u : u?.url))
+            .filter(Boolean);
+
+        if (postURLs.length === 0) {
+            return { run: null, items: [], input: null };
+        }
+
+        const input = {
+            ...apifyConfig.tiktokCommentsDefaultInput,
+            ...overrides,
+            postURLs,
+            commentsPerPost:
+                overrides.commentsPerPost ?? apifyConfig.tiktokCommentsPerPost,
+            maxRepliesPerComment:
+                overrides.maxRepliesPerComment ?? apifyConfig.tiktokMaxRepliesPerComment,
+        };
+
+        const run = await client.actor(this.tiktokCommentsActorId).call(input);
+        const { items } = await client.dataset(run.defaultDatasetId).listItems({
+            limit: 10000,
+        });
+
+        return { run, items, input };
     }
 }
 
