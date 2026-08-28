@@ -48,7 +48,20 @@ export interface SubjectListParams {
   per_page?: number;
   status?: string;
   q?: string;
+  sort_by?: SubjectListSortBy;
+  sort_dir?: 'asc' | 'desc';
 }
+
+export type SubjectListSortBy =
+  | 'name'
+  | 'nickname'
+  | 'discussion'
+  | 'interaction'
+  | 'follow'
+  | 'sentiment'
+  | 'hot_score'
+  | 'trend_score'
+  | 'id';
 
 export interface SubjectListData {
   result: SubjectListItem[];
@@ -111,7 +124,8 @@ export type SubjectPostsSortBy =
   | 'comments'
   | 'shares'
   | 'interaction'
-  | 'hot_score';
+  | 'hot_score'
+  | 'trend_score';
 
 export interface SubjectDetail {
   subject: SubjectInfo;
@@ -143,6 +157,8 @@ export const subjectsApi = {
         per_page: params.per_page ?? 20,
         status: params.status,
         q: params.q || undefined,
+        sort_by: params.sort_by,
+        sort_dir: params.sort_dir,
       },
     }) as Promise<ApiResponse<SubjectListData>>,
 

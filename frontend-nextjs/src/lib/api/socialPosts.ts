@@ -92,7 +92,7 @@ export const socialPostsApi = {
       skipAuth: true,
       params: {
         page: params.page ?? 1,
-        per_page: params.per_page ?? 20,
+        per_page: params.per_page ?? 10,
         sort_by: params.sort_by ?? 'discussion',
         new_only: params.new_only ? 'true' : 'false',
         chart_limit: params.chart_limit ?? 10,

@@ -357,7 +357,21 @@ $st-red: #dc2626;
     &:focus {
       border-color: $st-blue;
     }
+
+    &:disabled,
+    &[readonly] {
+      background: #f3f4f6;
+      color: $st-muted;
+      cursor: not-allowed;
+    }
   }
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 0.75rem;
+  font-style: normal;
+  color: $st-muted;
 }
 
 .modalFooter {

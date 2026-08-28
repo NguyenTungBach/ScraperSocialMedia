@@ -100,6 +100,13 @@ $st-red: #dc2626;
       &:focus {
         border-color: #93c5fd;
       }
+
+      &:disabled,
+      &[readonly] {
+        background: #f3f4f6;
+        color: $st-muted;
+        cursor: not-allowed;
+      }
     }
 
     select {
@@ -116,6 +123,13 @@ $st-red: #dc2626;
       }
     }
   }
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 0.75rem;
+  font-style: normal;
+  color: $st-muted;
 }
 
 .formActions {

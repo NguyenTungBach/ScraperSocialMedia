@@ -12,6 +12,9 @@ import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import styles from './HotTopicDashboard.module.scss';
 
+/** Tạm ẩn: Quét YouTube, Check alert, Đăng nhập, Ngôn ngữ — đổi `true` khi cần mở lại */
+const SHOW_HEADER_UTILITY_ACTIONS = false;
+
 interface HotTopicHeaderProps {
   /** Gọi sau khi quét YouTube thành công — dùng để reload dữ liệu trang hiện tại */
   onScrapeSuccess?: () => void | Promise<void>;
@@ -115,46 +118,50 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
             </Link>
           </div>
 
-          <div className={styles.navActions}>
-            <button
-              type="button"
-              className={cn(styles.navActionBtn, styles.navActionScrape)}
-              onClick={() => void handleScrapeYoutube()}
-              disabled={scraping || checkingAlert}
-              title="Quét video mới nhất từ tất cả kênh YouTube"
-            >
-              {scraping ? (
-                <Loader2 size={16} className={styles.spin} aria-hidden />
-              ) : (
-                <ScanLine size={16} aria-hidden />
-              )}
-              {scraping ? 'Đang quét…' : 'Quét YouTube'}
-            </button>
-            <button
-              type="button"
-              className={cn(styles.navActionBtn, styles.navActionAlert)}
-              onClick={() => void handleCheckAlert()}
-              disabled={checkingAlert || scraping}
-              title="Kiểm tra và gửi cảnh báo Gmail khi vượt ngưỡng hot/trend"
-            >
-              {checkingAlert ? (
-                <Loader2 size={16} className={styles.spin} aria-hidden />
-              ) : (
-                <BellRing size={16} aria-hidden />
-              )}
-              {checkingAlert ? 'Đang kiểm tra…' : 'Check alert'}
-            </button>
-          </div>
+          {SHOW_HEADER_UTILITY_ACTIONS && (
+            <div className={styles.navActions}>
+              <button
+                type="button"
+                className={cn(styles.navActionBtn, styles.navActionScrape)}
+                onClick={() => void handleScrapeYoutube()}
+                disabled={scraping || checkingAlert}
+                title="Quét video mới nhất từ tất cả kênh YouTube"
+              >
+                {scraping ? (
+                  <Loader2 size={16} className={styles.spin} aria-hidden />
+                ) : (
+                  <ScanLine size={16} aria-hidden />
+                )}
+                {scraping ? 'Đang quét…' : 'Quét YouTube'}
+              </button>
+              <button
+                type="button"
+                className={cn(styles.navActionBtn, styles.navActionAlert)}
+                onClick={() => void handleCheckAlert()}
+                disabled={checkingAlert || scraping}
+                title="Kiểm tra và gửi cảnh báo Gmail khi vượt ngưỡng hot/trend"
+              >
+                {checkingAlert ? (
+                  <Loader2 size={16} className={styles.spin} aria-hidden />
+                ) : (
+                  <BellRing size={16} aria-hidden />
+                )}
+                {checkingAlert ? 'Đang kiểm tra…' : 'Check alert'}
+              </button>
+            </div>
+          )}
         </nav>
 
-        <div className={styles.headerActions}>
-          <button type="button" className={styles.loginBtn}>
-            Đăng nhập
-          </button>
-          <button type="button" className={styles.langBtn} aria-label="Ngôn ngữ">
-            <Globe size={18} aria-hidden />
-          </button>
-        </div>
+        {SHOW_HEADER_UTILITY_ACTIONS && (
+          <div className={styles.headerActions}>
+            <button type="button" className={styles.loginBtn}>
+              Đăng nhập
+            </button>
+            <button type="button" className={styles.langBtn} aria-label="Ngôn ngữ">
+              <Globe size={18} aria-hidden />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

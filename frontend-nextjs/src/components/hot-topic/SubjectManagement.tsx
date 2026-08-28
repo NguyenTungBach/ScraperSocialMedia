@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Loader2,
   Pencil,
   Plus,
@@ -17,9 +20,11 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { scraperApi } from '@/lib/api/scraper';
+import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   subjectsApi,
   type SubjectListItem,
+  type SubjectListSortBy,
 } from '@/lib/api/subjects';
 import {
   colorForId,
@@ -36,6 +41,34 @@ import dash from './HotTopicDashboard.module.scss';
 import styles from './SubjectManagement.module.scss';
 
 const PAGE_SIZE = 20;
+
+type SortDir = 'asc' | 'desc';
+
+const METRIC_SORT_OPTIONS: { value: SubjectListSortBy; label: string }[] = [
+  { value: 'discussion', label: 'Tổng lượng thảo luận' },
+  { value: 'interaction', label: 'Tổng lượng tương tác' },
+  { value: 'follow', label: 'Follow' },
+  { value: 'sentiment', label: 'Chỉ số cảm xúc' },
+  { value: 'hot_score', label: 'Hot score' },
+  { value: 'trend_score', label: 'Trend score' },
+];
+
+const METRIC_SORT_KEYS = new Set(METRIC_SORT_OPTIONS.map((o) => o.value));
+
+function defaultSortDir(sortBy: SubjectListSortBy): SortDir {
+  return sortBy === 'name' || sortBy === 'nickname' ? 'asc' : 'desc';
+}
+
+function SortGlyph({
+  active,
+  dir,
+}: {
+  active: boolean;
+  dir: SortDir;
+}) {
+  if (!active) return <ArrowUpDown size={12} aria-hidden />;
+  return dir === 'asc' ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />;
+}
 
 function SentimentFace({ value }: { value: number }) {
   const tone =
@@ -150,6 +183,8 @@ export function SubjectManagement() {
   const [items, setItems] = useState<SubjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SubjectListSortBy>('id');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
@@ -173,34 +208,77 @@ export function SubjectManagement() {
     }
   }, []);
 
-  const loadList = useCallback(async (options?: { page?: number; q?: string }) => {
-    const nextPage = options?.page ?? 1;
-    const nextQ = options?.q ?? query;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await subjectsApi.list({
-        page: nextPage,
-        per_page: PAGE_SIZE,
-        q: nextQ || undefined,
-      });
-      const data = res.data;
-      if (!data) throw new Error('Empty subjects response');
-      setItems(data.result || []);
-      setPage(data.pagination?.current_page ?? nextPage);
-      setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
-      setTotalRecords(data.pagination?.total_records ?? 0);
-    } catch (err) {
-      setError(getApiErrorMessage(err));
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
+  const loadList = useCallback(
+    async (options?: {
+      page?: number;
+      q?: string;
+      sort_by?: SubjectListSortBy;
+      sort_dir?: SortDir;
+    }) => {
+      const nextPage = options?.page ?? 1;
+      const nextQ = options?.q ?? query;
+      const nextSortBy = options?.sort_by ?? sortBy;
+      const nextSortDir = options?.sort_dir ?? sortDir;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await subjectsApi.list({
+          page: nextPage,
+          per_page: PAGE_SIZE,
+          q: nextQ || undefined,
+          sort_by: nextSortBy,
+          sort_dir: nextSortDir,
+        });
+        const data = res.data;
+        if (!data) throw new Error('Empty subjects response');
+        setItems(data.result || []);
+        setPage(data.pagination?.current_page ?? nextPage);
+        setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
+        setTotalRecords(data.pagination?.total_records ?? 0);
+        setSortBy(nextSortBy);
+        setSortDir(nextSortDir);
+      } catch (err) {
+        setError(getApiErrorMessage(err));
+        setItems([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [query, sortBy, sortDir]
+  );
 
   useEffect(() => {
-    void loadList({ page: 1, q: query });
-  }, [loadList, query]);
+    void loadList({ page: 1, q: query, sort_by: sortBy, sort_dir: sortDir });
+    // Chỉ reload khi query đổi; sort đổi qua handler riêng
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const handleColumnSort = (nextSortBy: 'name' | 'nickname') => {
+    const nextDir =
+      sortBy === nextSortBy ? (sortDir === 'asc' ? 'desc' : 'asc') : defaultSortDir(nextSortBy);
+    void loadList({ page: 1, q: query, sort_by: nextSortBy, sort_dir: nextDir });
+  };
+
+  const handleMetricSortChange = (nextSortBy: SubjectListSortBy) => {
+    if (!METRIC_SORT_KEYS.has(nextSortBy)) return;
+    const nextDir =
+      sortBy === nextSortBy ? sortDir : defaultSortDir(nextSortBy);
+    void loadList({ page: 1, q: query, sort_by: nextSortBy, sort_dir: nextDir });
+  };
+
+  const toggleMetricSortDir = () => {
+    if (!METRIC_SORT_KEYS.has(sortBy)) {
+      void loadList({
+        page: 1,
+        q: query,
+        sort_by: 'discussion',
+        sort_dir: defaultSortDir('discussion'),
+      });
+      return;
+    }
+    const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+    void loadList({ page: 1, q: query, sort_by: sortBy, sort_dir: nextDir });
+  };
 
   useEffect(() => {
     void loadChannelOptions();
@@ -348,8 +426,8 @@ export function SubjectManagement() {
 
   const paginationLabel = useMemo(() => {
     if (totalRecords === 0) return '0 đối tượng';
-    return `Trang ${page}/${totalPages} · ${totalRecords} đối tượng`;
-  }, [page, totalPages, totalRecords]);
+    return undefined;
+  }, [totalRecords]);
 
   return (
     <div className={dash.dashboard}>
@@ -375,6 +453,64 @@ export function SubjectManagement() {
                 aria-label="Tìm kiếm đối tượng"
               />
             </label>
+            <div className={styles.sortToolbar}>
+              <label className={styles.sortToolbarField}>
+                <span>Sắp xếp</span>
+                <select
+                  value={sortBy === 'id' ? 'id' : sortBy}
+                  disabled={loading}
+                  onChange={(e) => {
+                    const value = e.target.value as SubjectListSortBy;
+                    if (value === 'id') {
+                      void loadList({
+                        page: 1,
+                        q: query,
+                        sort_by: 'id',
+                        sort_dir: 'desc',
+                      });
+                      return;
+                    }
+                    const nextDir =
+                      sortBy === value ? sortDir : defaultSortDir(value);
+                    void loadList({
+                      page: 1,
+                      q: query,
+                      sort_by: value,
+                      sort_dir: nextDir,
+                    });
+                  }}
+                  aria-label="Sắp xếp danh sách đối tượng"
+                >
+                  <option value="id">Mặc định</option>
+                  <option value="name">Tên</option>
+                  <option value="nickname">Biệt danh</option>
+                  {METRIC_SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className={cn(styles.sortDirBtn, sortBy !== 'id' && styles.sortHeadActive)}
+                onClick={() => {
+                  if (sortBy === 'id') return;
+                  const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+                  void loadList({
+                    page: 1,
+                    q: query,
+                    sort_by: sortBy,
+                    sort_dir: nextDir,
+                  });
+                }}
+                disabled={loading || sortBy === 'id'}
+                aria-label={`Đổi chiều sắp xếp, đang ${sortDir}`}
+                title={`Chiều: ${sortDir}`}
+              >
+                <SortGlyph active={sortBy !== 'id'} dir={sortDir} />
+              </button>
+            </div>
             <Link href="/channels" className={styles.secondaryBtn}>
               <Radio size={16} aria-hidden />
               Quản lý kênh
@@ -405,10 +541,69 @@ export function SubjectManagement() {
 
         <section className={styles.tableSection}>
           <div className={styles.tableHeader}>
-            <span>Tên</span>
-            <span>Biệt danh</span>
+            <button
+              type="button"
+              className={cn(styles.sortHeadBtn, sortBy === 'name' && styles.sortHeadActive)}
+              onClick={() => handleColumnSort('name')}
+              aria-label={`Sắp xếp theo tên${sortBy === 'name' ? `, đang ${sortDir}` : ''}`}
+            >
+              <span>Tên</span>
+              <SortGlyph active={sortBy === 'name'} dir={sortDir} />
+            </button>
+            <button
+              type="button"
+              className={cn(styles.sortHeadBtn, sortBy === 'nickname' && styles.sortHeadActive)}
+              onClick={() => handleColumnSort('nickname')}
+              aria-label={`Sắp xếp theo biệt danh${sortBy === 'nickname' ? `, đang ${sortDir}` : ''}`}
+            >
+              <span>Biệt danh</span>
+              <SortGlyph active={sortBy === 'nickname'} dir={sortDir} />
+            </button>
             <span>Kênh theo dõi</span>
-            <span>Chỉ số phân tích</span>
+            <div className={styles.metricSortHead}>
+              <span className={styles.metricSortLabel}>Chỉ số phân tích</span>
+              <div className={styles.metricSortControls}>
+                <label className={styles.metricSortSelect}>
+                  <span className={styles.srOnly}>Sắp xếp theo chỉ số</span>
+                  <select
+                    value={METRIC_SORT_KEYS.has(sortBy) ? sortBy : ''}
+                    disabled={loading}
+                    onChange={(e) => {
+                      const value = e.target.value as SubjectListSortBy;
+                      if (!value) return;
+                      handleMetricSortChange(value);
+                    }}
+                    aria-label="Chọn chỉ số để sắp xếp"
+                  >
+                    <option value="" disabled>
+                      Chọn chỉ số…
+                    </option>
+                    {METRIC_SORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className={cn(
+                    styles.sortDirBtn,
+                    METRIC_SORT_KEYS.has(sortBy) && styles.sortHeadActive
+                  )}
+                  onClick={toggleMetricSortDir}
+                  disabled={loading}
+                  aria-label={
+                    METRIC_SORT_KEYS.has(sortBy)
+                      ? `Đổi chiều sắp xếp chỉ số, đang ${sortDir}`
+                      : 'Sắp xếp theo tổng lượng thảo luận'
+                  }
+                  title={METRIC_SORT_KEYS.has(sortBy) ? `Chiều: ${sortDir}` : 'Sắp xếp theo chỉ số'}
+                >
+                  <SortGlyph active={METRIC_SORT_KEYS.has(sortBy)} dir={sortDir} />
+                </button>
+              </div>
+            </div>
             <span className={styles.actionsHead}>Thao tác</span>
           </div>
 
@@ -554,25 +749,15 @@ export function SubjectManagement() {
           </div>
 
           <div className={styles.pagination}>
-            <span>{paginationLabel}</span>
-            <div className={styles.paginationBtns}>
-              <button
-                type="button"
-                className={styles.pageBtn}
-                disabled={loading || page <= 1}
-                onClick={() => loadList({ page: page - 1, q: query })}
-              >
-                Trang trước
-              </button>
-              <button
-                type="button"
-                className={styles.pageBtn}
-                disabled={loading || page >= totalPages}
-                onClick={() => loadList({ page: page + 1, q: query })}
-              >
-                Trang sau
-              </button>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalRecords={totalRecords}
+              unitLabel="đối tượng"
+              info={paginationLabel}
+              disabled={loading}
+              onChange={(nextPage) => loadList({ page: nextPage, q: query })}
+            />
           </div>
         </section>
       </main>

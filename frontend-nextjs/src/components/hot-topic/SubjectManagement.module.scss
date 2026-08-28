@@ -44,6 +44,38 @@ $st-red: #dc2626;
   flex-wrap: wrap;
 }
 
+.sortToolbar {
+  display: none;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.sortToolbarField {
+  display: grid;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: $st-muted;
+
+  select {
+    height: 40px;
+    min-width: 180px;
+    padding: 0 10px;
+    border: 1px solid $st-border;
+    border-radius: 8px;
+    background: $st-bg;
+    color: $st-text;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+}
+
 .searchBox {
   display: inline-flex;
   align-items: center;
@@ -145,6 +177,112 @@ $st-red: #dc2626;
 
 .actionsHead {
   text-align: right;
+}
+
+.sortHeadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    color: $st-text;
+  }
+}
+
+.sortHeadActive {
+  color: $st-orange;
+}
+
+.metricSortHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.metricSortLabel {
+  line-height: 1.2;
+}
+
+.metricSortControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+}
+
+.metricSortSelect {
+  flex: 0 1 auto;
+  min-width: 0;
+
+  select {
+    width: auto;
+    max-width: min(220px, 100%);
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid $st-border;
+    border-radius: 6px;
+    background: $st-white;
+    color: $st-text;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.sortDirBtn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $st-border;
+  border-radius: 6px;
+  background: $st-white;
+  color: $st-muted;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: $st-orange;
+    color: $st-orange;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .nickname {
@@ -507,6 +645,20 @@ $st-red: #dc2626;
 
   .tableHeader {
     display: none;
+  }
+
+  .sortToolbar {
+    display: inline-flex;
+    flex: 1 1 100%;
+  }
+
+  .sortToolbarField {
+    flex: 1;
+
+    select {
+      width: 100%;
+      min-width: 0;
+    }
   }
 
   .tableRow {

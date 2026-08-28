@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   Loader2,
   MessageCircle,
@@ -22,6 +20,7 @@ import {
   type SubjectPostsSortBy,
   type SubjectRelatedPost,
 } from '@/lib/api/subjects';
+import { Pagination } from '@/components/common/Pagination/Pagination';
 import { formatMetric, formatScore, formatShortDate } from '@/lib/mock/hotTopics';
 import {
   buildPlatformTabs,
@@ -43,6 +42,7 @@ const DEFAULT_PER_PAGE: PostsPerPage = 5;
 const SORT_OPTIONS: { value: SubjectPostsSortBy; label: string }[] = [
   { value: 'posted_at', label: 'Mới nhất' },
   { value: 'hot_score', label: 'Hot score' },
+  { value: 'trend_score', label: 'Trend score' },
   { value: 'interaction', label: 'Tương tác' },
   { value: 'likes', label: 'Likes' },
   { value: 'comments', label: 'Comments' },
@@ -586,30 +586,19 @@ export function SubjectDetailModal({
             </div>
 
             <div className={styles.pagination}>
-              <span>
-                Trang {currentPage}/{totalPages} · {totalRecords} bài
-                {platformFilter
-                  ? ` · ${getPlatformMeta(platformFilter).label}`
-                  : ''}
-              </span>
-              <div className={styles.paginationBtns}>
-                <button
-                  type="button"
-                  className={styles.pageBtn}
-                  disabled={postsLoading || currentPage <= 1}
-                  onClick={() => goToPage(currentPage - 1)}
-                >
-                  <ChevronLeft size={16} aria-hidden /> Trang trước
-                </button>
-                <button
-                  type="button"
-                  className={styles.pageBtn}
-                  disabled={postsLoading || currentPage >= totalPages}
-                  onClick={() => goToPage(currentPage + 1)}
-                >
-                  Trang sau <ChevronRight size={16} aria-hidden />
-                </button>
-              </div>
+              <Pagination
+                page={currentPage}
+                totalPages={totalPages}
+                totalRecords={totalRecords}
+                unitLabel="bài"
+                info={
+                  platformFilter
+                    ? `Trang ${currentPage}/${totalPages} · ${totalRecords.toLocaleString('vi-VN')} bài · ${getPlatformMeta(platformFilter).label}`
+                    : undefined
+                }
+                disabled={postsLoading}
+                onChange={goToPage}
+              />
             </div>
           </>
         ) : null}

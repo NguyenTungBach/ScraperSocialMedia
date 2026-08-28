@@ -75,6 +75,16 @@ class SubjectController {
      *         name: key_search
      *         schema: { type: string }
      *         description: Alias của q
+     *       - in: query
+     *         name: sort_by
+     *         schema:
+     *           type: string
+     *           enum: [name, nickname, discussion, interaction, follow, sentiment, hot_score, trend_score, id]
+     *       - in: query
+     *         name: sort_dir
+     *         schema:
+     *           type: string
+     *           enum: [asc, desc]
      *     responses:
      *       "200":
      *         description: OK
@@ -229,7 +239,7 @@ class SubjectController {
      *         name: sort_by
      *         schema:
      *           type: string
-     *           enum: [posted_at, likes, comments, shares, interaction, hot_score]
+     *           enum: [posted_at, likes, comments, shares, interaction, hot_score, trend_score]
      *     responses:
      *       "200":
      *         description: OK

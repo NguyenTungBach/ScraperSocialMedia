@@ -111,6 +111,8 @@ class ChannelController {
      *         description: OK
      *       "404":
      *         description: Không tìm thấy
+     *       "422":
+     *         description: Không thể sửa URL khi kênh đã có bài scrape
      */
     async update(req, res, next) {
         try {

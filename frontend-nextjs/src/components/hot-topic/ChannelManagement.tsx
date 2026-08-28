@@ -15,6 +15,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { scraperApi } from '@/lib/api/scraper';
+import { Pagination } from '@/components/common/Pagination/Pagination';
 import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
@@ -53,6 +54,7 @@ export function ChannelManagement() {
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<FormMode>('create');
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [urlLocked, setUrlLocked] = useState(false);
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -103,6 +105,7 @@ export function ChannelManagement() {
   const openCreate = () => {
     setFormMode('create');
     setEditingId(null);
+    setUrlLocked(false);
     setForm(EMPTY_FORM);
     setFormOpen(true);
   };
@@ -110,6 +113,7 @@ export function ChannelManagement() {
   const openEdit = (item: ChannelItem) => {
     setFormMode('edit');
     setEditingId(item.id);
+    setUrlLocked(item.can_edit_url === false || Boolean(item.has_scraper_runs));
     setForm({
       name: item.name || '',
       url: item.url || '',
@@ -122,6 +126,7 @@ export function ChannelManagement() {
     if (saving) return;
     setFormOpen(false);
     setEditingId(null);
+    setUrlLocked(false);
     setForm(EMPTY_FORM);
   };
 
@@ -138,11 +143,11 @@ export function ChannelManagement() {
     try {
       const payload = {
         name,
-        url,
         type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
+        ...(urlLocked ? {} : { url }),
       };
       if (formMode === 'create') {
-        await channelsApi.create(payload);
+        await channelsApi.create({ ...payload, url });
         MakeToast({ variant: 'success', content: 'Đã thêm kênh' });
       } else if (editingId != null) {
         await channelsApi.update(editingId, payload);
@@ -204,8 +209,8 @@ export function ChannelManagement() {
 
   const paginationLabel = useMemo(() => {
     if (totalRecords === 0) return '0 kênh';
-    return `Trang ${page}/${totalPages} · ${totalRecords} kênh`;
-  }, [page, totalPages, totalRecords]);
+    return undefined;
+  }, [totalRecords]);
 
   return (
     <div className={dash.dashboard}>
@@ -354,25 +359,17 @@ export function ChannelManagement() {
           </div>
 
           <div className={styles.pagination}>
-            <span>{paginationLabel}</span>
-            <div className={styles.paginationBtns}>
-              <button
-                type="button"
-                className={styles.pageBtn}
-                disabled={loading || page <= 1}
-                onClick={() => loadList({ page: page - 1, q: query, type_channel: platformFilter })}
-              >
-                Trang trước
-              </button>
-              <button
-                type="button"
-                className={styles.pageBtn}
-                disabled={loading || page >= totalPages}
-                onClick={() => loadList({ page: page + 1, q: query, type_channel: platformFilter })}
-              >
-                Trang sau
-              </button>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalRecords={totalRecords}
+              unitLabel="kênh"
+              info={paginationLabel}
+              disabled={loading}
+              onChange={(nextPage) =>
+                loadList({ page: nextPage, q: query, type_channel: platformFilter })
+              }
+            />
           </div>
         </section>
       </main>
@@ -419,7 +416,19 @@ export function ChannelManagement() {
                   onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
                   placeholder="https://www.youtube.com/@..."
                   required
+                  readOnly={urlLocked}
+                  disabled={urlLocked}
+                  title={
+                    urlLocked
+                      ? 'Không thể sửa URL vì kênh đã có bài scrape'
+                      : undefined
+                  }
                 />
+                {urlLocked && (
+                  <em className={styles.fieldHint}>
+                    Không thể sửa URL vì kênh đã có bài scrape
+                  </em>
+                )}
               </label>
               <label className={styles.field}>
                 <span>Nền tảng</span>

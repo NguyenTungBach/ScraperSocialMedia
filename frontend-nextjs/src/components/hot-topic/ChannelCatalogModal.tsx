@@ -32,6 +32,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [urlLocked, setUrlLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -52,6 +53,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
     if (!open) return;
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setUrlLocked(false);
     void load();
   }, [open, load]);
 
@@ -60,6 +62,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setUrlLocked(false);
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -75,14 +78,14 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
     try {
       const payload = {
         name,
-        url,
         type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
+        ...(urlLocked ? {} : { url }),
       };
       if (editingId != null) {
         await channelsApi.update(editingId, payload);
         MakeToast({ variant: 'success', content: 'Đã cập nhật kênh' });
       } else {
-        await channelsApi.create(payload);
+        await channelsApi.create({ ...payload, url });
         MakeToast({ variant: 'success', content: 'Đã thêm kênh' });
       }
       resetForm();
@@ -97,6 +100,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
 
   const startEdit = (item: ChannelItem) => {
     setEditingId(item.id);
+    setUrlLocked(item.can_edit_url === false || Boolean(item.has_scraper_runs));
     setForm({
       name: item.name || '',
       url: item.url || '',
@@ -157,7 +161,17 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
               onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
               placeholder="https://www.youtube.com/@..."
               required
+              readOnly={urlLocked}
+              disabled={urlLocked}
+              title={
+                urlLocked ? 'Không thể sửa URL vì kênh đã có bài scrape' : undefined
+              }
             />
+            {urlLocked && (
+              <em className={styles.fieldHint}>
+                Không thể sửa URL vì kênh đã có bài scrape
+              </em>
+            )}
           </label>
           <label>
             <span>Nền tảng</span>

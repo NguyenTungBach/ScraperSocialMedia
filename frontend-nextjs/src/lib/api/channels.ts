@@ -6,6 +6,10 @@ export interface ChannelItem {
   name: string;
   url: string;
   type_channel: string;
+  scraper_runs_count?: number;
+  has_scraper_runs?: boolean;
+  /** false khi kênh đã có bài scrape — không cho sửa URL */
+  can_edit_url?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }

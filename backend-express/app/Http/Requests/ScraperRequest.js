@@ -118,12 +118,47 @@ const subjectDetailQuerySchema = z.object({
     page: z.coerce.number().int().min(1).optional(),
     per_page: z.coerce.number().int().min(1).max(100).optional(),
     sort_by: z
-        .enum(['posted_at', 'likes', 'comments', 'shares', 'interaction', 'hot_score'])
+        .enum([
+            'posted_at',
+            'likes',
+            'comments',
+            'shares',
+            'interaction',
+            'hot_score',
+            'trend_score',
+        ])
         .optional(),
     platform: z.string().trim().min(1).max(50).optional(),
     date_from: dateOnlySchema,
     date_to: dateOnlySchema,
 });
+
+const subjectListQuerySchema = z
+    .object({
+        page: z.coerce.number().int().min(1).optional(),
+        per_page: z.coerce.number().int().min(1).max(100).optional(),
+        status: z.string().optional(),
+        q: z.string().optional(),
+        key_search: z.string().optional(),
+        sort_by: z
+            .enum([
+                'name',
+                'nickname',
+                'discussion',
+                'interaction',
+                'follow',
+                'sentiment',
+                'hot_score',
+                'trend_score',
+                'id',
+            ])
+            .optional(),
+        sort_dir: z.enum(['asc', 'desc', 'ASC', 'DESC']).optional(),
+    })
+    .transform((data) => ({
+        ...withSearchAlias(data),
+        sort_dir: data.sort_dir ? String(data.sort_dir).toUpperCase() : undefined,
+    }));
 
 const alertGmailSchema = z
     .object({
@@ -223,6 +258,18 @@ const validateSocialPostsDashboardQuery = async (req, res, next) => {
 const validateSubjectDetailQuery = async (req, res, next) => {
     try {
         req.validatedData = subjectDetailQuerySchema.parse(req.query ?? {});
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
+const validateSubjectListQuery = async (req, res, next) => {
+    try {
+        req.validatedData = subjectListQuerySchema.parse(req.query ?? {});
         next();
     } catch (error) {
         if (error instanceof z.ZodError) {
@@ -335,6 +382,7 @@ module.exports = {
     validateRefreshYoutubeTail,
     validateListQuery,
     validateSocialPostsDashboardQuery,
+    validateSubjectListQuery,
     validateSubjectDetailQuery,
     validateSubjectCreate,
     validateSubjectUpdate,

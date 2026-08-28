@@ -119,7 +119,14 @@ class ScraperRepository {
         return { inserted, existing, all: [...inserted, ...existing] };
     }
 
-    async listSubjects({ page = 1, per_page = 20, status = null, q = null } = {}) {
+    async listSubjects({
+        page = 1,
+        per_page = 20,
+        status = null,
+        q = null,
+        sort_by = 'id',
+        sort_dir,
+    } = {}) {
         const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
         const currentPage = Math.max(Number(page) || 1, 1);
         const offset = (currentPage - 1) * limit;
@@ -138,7 +145,7 @@ class ScraperRepository {
 
         const { rows, count } = await this.subjectModel.findAndCountAll({
             where,
-            order: [['id', 'DESC']],
+            order: this.buildSubjectListOrder(sort_by, sort_dir),
             limit,
             offset,
             include: [
@@ -177,13 +184,93 @@ class ScraperRepository {
         return { rows: serialized, count, page: currentPage, per_page: limit };
     }
 
+    /**
+     * Sort list subjects: name / nickname (normalized_name) / metric trên social_posts.
+     * Metric mặc định DESC; name/nickname mặc định ASC.
+     * Dùng subquery để không phụ thuộc JOIN alias khi include channels.
+     */
+    buildSubjectListOrder(sortBy = 'id', sortDir) {
+        const sequelize = db.sequelize;
+        const key = String(sortBy || 'id').trim();
+        const textKeys = new Set(['name', 'nickname']);
+        const defaultDir = textKeys.has(key) ? 'ASC' : 'DESC';
+        const dir =
+            String(sortDir || defaultDir).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const tieBreak = [['id', 'DESC']];
+
+        const subjectId = qualifyCol(sequelize, 'Subject', 'id');
+        const sp = (column) => qualifyCol(sequelize, 'sp', column);
+        const metricSubquery = (expr) =>
+            `(SELECT ${expr} FROM social_posts AS sp WHERE sp.subject_id = ${subjectId} LIMIT 1)`;
+
+        // social_posts không có platform: heuristic YouTube = có views, shares=0, angry=0
+        const ytHeuristic = `(COALESCE(${sp('views')}, 0) > 0 AND COALESCE(${sp('shares')}, 0) = 0 AND COALESCE(${sp('angry_count')}, 0) = 0)`;
+        const discussionExpr = `COALESCE(${sp('comments')}, 0) + COALESCE(${sp('posts_count')}, 0)`;
+        const interactionExpr = `CASE WHEN ${ytHeuristic} THEN (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('comments')}, 0)) ELSE (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('comments')}, 0) + COALESCE(${sp('shares')}, 0)) END`;
+        const sentimentExpr = `CASE
+            WHEN ${ytHeuristic} THEN 0
+            WHEN (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('angry_count')}, 0)) = 0 THEN 0
+            ELSE (COALESCE(${sp('likes')}, 0) - COALESCE(${sp('angry_count')}, 0)) / (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('angry_count')}, 0))
+        END`;
+
+        switch (key) {
+            case 'name':
+                return [['name', dir], ...tieBreak];
+            case 'nickname':
+                return [['normalized_name', dir], ...tieBreak];
+            case 'discussion':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(discussionExpr)}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'interaction':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(interactionExpr)}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'follow':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('follow'))}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'sentiment':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(sentimentExpr)}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'hot_score':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('trend_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'trend_score':
+                return [
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('trend_score'))}, 0)`), dir],
+                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
+                    ...tieBreak,
+                ];
+            case 'id':
+            default:
+                return [['id', dir === 'ASC' ? 'ASC' : 'DESC']];
+        }
+    }
+
     serializeChannel(row) {
         const plain = typeof row?.toJSON === 'function' ? row.toJSON() : { ...row };
+        const scraper_runs_count = Number(plain.scraper_runs_count ?? 0) || 0;
         return {
             id: plain.id,
             name: plain.name,
             url: plain.url,
             type_channel: plain.type_channel,
+            scraper_runs_count,
+            has_scraper_runs: scraper_runs_count > 0,
+            can_edit_url: scraper_runs_count === 0,
             created_at: plain.created_at ?? null,
             updated_at: plain.updated_at ?? null,
         };
@@ -710,6 +797,10 @@ class ScraperRepository {
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 3 + FLOOR(${views} / 100) * 3)
             ELSE (${likes} + ${comments} * 2 + ${shares} * 3 + ${angry} * 4)
         END)`;
+        const trendScoreExpr = `(CASE
+            WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 2 + FLOOR(${views} / 100) * 3)
+            ELSE (${likes} + ${comments} * 2 + ${shares} * 3)
+        END)`;
         const interactionExpr = `(CASE
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments})
             ELSE (${likes} + ${comments} + ${shares})
@@ -731,6 +822,12 @@ class ScraperRepository {
             case 'hot_score':
                 return [
                     [sequelize.literal(hotScoreExpr), 'DESC'],
+                    [run, 'posted_at', 'DESC'],
+                    [run, 'id', 'DESC'],
+                ];
+            case 'trend_score':
+                return [
+                    [sequelize.literal(trendScoreExpr), 'DESC'],
                     [run, 'posted_at', 'DESC'],
                     [run, 'id', 'DESC'],
                 ];
@@ -1836,7 +1933,7 @@ class ScraperRepository {
 
     async getSocialPostsDashboard({
         page = 1,
-        per_page = 20,
+        per_page = 10,
         sort_by = 'discussion',
         new_only = false,
         chart_limit = 10,

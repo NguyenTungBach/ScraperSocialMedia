@@ -3,16 +3,12 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart3,
   Calendar,
-  Crown,
   Loader2,
-  Phone,
   ScanLine,
   Sparkles,
   TrendingDown,
   TrendingUp,
-  X,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { scraperApi } from '@/lib/api/scraper';
@@ -52,7 +48,7 @@ const RANKED_BY_TO_SORT: Record<RankedBy, SocialPostSortBy> = {
   sentiment: 'sentiment',
 };
 
-const PAGE_SIZE = 20;
+const TOP_LIMIT = 10;
 
 function mapToHotTopic(item: SocialPostItem): HotTopic {
   const title = item.subject?.name?.trim() || `Subject #${item.subject_id}`;
@@ -352,21 +348,17 @@ export function HotTopicDashboard() {
   const initialRange = getCurrentMonthDateRange();
   const rankedBy: RankedBy = 'discussion';
   const [showNewOnly, setShowNewOnly] = useState(false);
-  const [supportOpen, setSupportOpen] = useState(true);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
   const [dateFrom, setDateFrom] = useState(initialRange.date_from);
   const [dateTo, setDateTo] = useState(initialRange.date_to);
   const [appliedDateFrom, setAppliedDateFrom] = useState(initialRange.date_from);
   const [appliedDateTo, setAppliedDateTo] = useState(initialRange.date_to);
 
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<SocialPostStats | null>(null);
   const [chartTopics, setChartTopics] = useState<ChartTopic[]>([]);
   const [topics, setTopics] = useState<HotTopic[]>([]);
-  const [totalPages, setTotalPages] = useState(1);
   const [periodLabel, setPeriodLabel] = useState(
     formatMonthRangeLabel(initialRange.date_from, initialRange.date_to)
   );
@@ -402,60 +394,44 @@ export function HotTopicDashboard() {
     setAppliedDateTo(range.date_to);
   };
 
-  const loadDashboard = useCallback(
-    async (options?: { page?: number; append?: boolean }) => {
-      const nextPage = options?.page ?? 1;
-      const append = Boolean(options?.append);
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-      if (append) setLoadingMore(true);
-      else setLoading(true);
-      setError(null);
+    try {
+      const res = await socialPostsApi.getDashboard({
+        page: 1,
+        per_page: TOP_LIMIT,
+        sort_by: RANKED_BY_TO_SORT[rankedBy],
+        new_only: showNewOnly,
+        chart_limit: TOP_LIMIT,
+        date_from: appliedDateFrom,
+        date_to: appliedDateTo,
+      });
 
-      try {
-        const res = await socialPostsApi.getDashboard({
-          page: nextPage,
-          per_page: PAGE_SIZE,
-          sort_by: RANKED_BY_TO_SORT[rankedBy],
-          new_only: showNewOnly,
-          chart_limit: 10,
-          date_from: appliedDateFrom,
-          date_to: appliedDateTo,
-        });
-
-        const data = res.data;
-        if (!data) {
-          throw new Error('Empty dashboard response');
-        }
-
-        setStats(data.stats);
-        if (!append) {
-          setChartTopics((data.chart || []).map(mapToChartTopic));
-        }
-
-        const mapped = (data.ranking || []).map(mapToHotTopic);
-        setTopics((prev) => (append ? [...prev, ...mapped] : mapped));
-        setPage(data.pagination?.current_page ?? nextPage);
-        setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
-        setPeriodLabel(
-          formatMonthRangeLabel(
-            data.date_from || appliedDateFrom,
-            data.date_to || appliedDateTo
-          )
-        );
-      } catch (err) {
-        setError(getApiErrorMessage(err));
-        if (!append) {
-          setStats(null);
-          setChartTopics([]);
-          setTopics([]);
-        }
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
+      const data = res.data;
+      if (!data) {
+        throw new Error('Empty dashboard response');
       }
-    },
-    [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]
-  );
+
+      setStats(data.stats);
+      setChartTopics((data.chart || []).map(mapToChartTopic));
+      setTopics((data.ranking || []).map(mapToHotTopic));
+      setPeriodLabel(
+        formatMonthRangeLabel(
+          data.date_from || appliedDateFrom,
+          data.date_to || appliedDateTo
+        )
+      );
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+      setStats(null);
+      setChartTopics([]);
+      setTopics([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]);
 
   const handleScrapeYoutube = useCallback(
     async (topic: HotTopic) => {
@@ -480,7 +456,7 @@ export function HotTopicDashboard() {
           content: `Đã quét ${count} video từ "${topic.title}" (${inserted} mới, ${updated} cập nhật)`,
         });
         // Reload ranking + chart sau khi quét xong
-        await loadDashboard({ page: 1, append: false });
+        await loadDashboard();
       } catch (err) {
         MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
       } finally {
@@ -491,8 +467,7 @@ export function HotTopicDashboard() {
   );
 
   useEffect(() => {
-    setPage(1);
-    void loadDashboard({ page: 1, append: false });
+    void loadDashboard();
   }, [loadDashboard]);
 
   const maxChartValue = useMemo(() => {
@@ -510,12 +485,10 @@ export function HotTopicDashboard() {
     return chartMatch ? chartTopicToHotTopic(chartMatch) : null;
   }, [topics, chartTopics, hoveredChartId]);
 
-  const canLoadMore = page < totalPages;
-
   return (
     <div className={styles.dashboard}>
       <HotTopicHeader
-        onScrapeSuccess={() => loadDashboard({ page: 1, append: false })}
+        onScrapeSuccess={() => void loadDashboard()}
       />
 
       <div className={styles.filterBar}>
@@ -570,9 +543,11 @@ export function HotTopicDashboard() {
               <div>
                 <h3>Tóm tắt phương pháp luận</h3>
                 <p>
-                  YouTube: Trend = likes + comments×2 + ⌊views/100⌋×3 · Hot = likes +
-                  comments×3 + ⌊views/100⌋×3 · Cảm xúc tạm = 0. Facebook: Hot = likes +
-                  comments×2 + shares×3 + angry×4 · Trend = likes + comments×2 + shares×3.
+                  Thảo luận = comments + số bài. YouTube: Tương tác = likes + comments ·
+                  Trend = likes + comments×2 + ⌊views/100⌋×3 · Hot = likes + comments×3 +
+                  ⌊views/100⌋×3 · Cảm xúc tạm = 0. Facebook: Tương tác = likes + comments +
+                  shares · Hot = likes + comments×2 + shares×3 + angry×4 · Trend = likes +
+                  comments×2 + shares×3 · Cảm xúc = (likes − angry) / (likes + angry).
                 </p>
               </div>
             </div>
@@ -706,45 +681,9 @@ export function HotTopicDashboard() {
                 ))
               )}
             </div>
-
-            {canLoadMore && (
-              <button
-                type="button"
-                className={styles.loadMoreBtn}
-                disabled={loadingMore}
-                onClick={() => loadDashboard({ page: page + 1, append: true })}
-              >
-                {loadingMore ? 'Đang tải…' : 'Xem thêm'}
-              </button>
-            )}
           </section>
         </main>
       </div>
-
-      {supportOpen && (
-        <div className={styles.supportWidget}>
-          <button
-            type="button"
-            className={styles.supportClose}
-            onClick={() => setSupportOpen(false)}
-            aria-label="Đóng"
-          >
-            <X size={16} />
-          </button>
-          <a href="#" className={styles.supportLink}>
-            <Phone size={16} aria-hidden />
-            Hotline Tư vấn
-          </a>
-          <a href="#" className={styles.supportLink}>
-            <Crown size={16} aria-hidden />
-            Giới thiệu tính năng Premium
-          </a>
-          <a href="#" className={styles.supportLink}>
-            <BarChart3 size={16} aria-hidden />
-            Hướng dẫn sử dụng
-          </a>
-        </div>
-      )}
 
       <SubjectDetailModal
         open={detailOpen}

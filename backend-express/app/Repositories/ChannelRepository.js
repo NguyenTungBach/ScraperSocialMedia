@@ -9,6 +9,40 @@ class ChannelRepository {
         this.channelModel = db.Channel;
         this.subjectChannelModel = db.SubjectChannel;
         this.subjectModel = db.Subject;
+        this.scraperRunModel = db.ScraperRun;
+    }
+
+    serializeChannel(row, { scraper_runs_count = 0 } = {}) {
+        const plain = typeof row?.toJSON === 'function' ? row.toJSON() : { ...row };
+        const count =
+            scraper_runs_count > 0
+                ? scraper_runs_count
+                : Number(plain.scraper_runs_count ?? plain.scraperRunsCount ?? 0) || 0;
+
+        return {
+            id: plain.id,
+            name: plain.name,
+            url: plain.url,
+            type_channel: plain.type_channel,
+            scraper_runs_count: count,
+            has_scraper_runs: count > 0,
+            can_edit_url: count === 0,
+            created_at: plain.created_at ?? null,
+            updated_at: plain.updated_at ?? null,
+        };
+    }
+
+    scraperRunsCountLiteral() {
+        return db.sequelize.literal(
+            `(SELECT COUNT(*) FROM scraper_runs WHERE scraper_runs.channel_id = Channel.id)`
+        );
+    }
+
+    async countScraperRuns(channelId, { transaction } = {}) {
+        return this.scraperRunModel.count({
+            where: { channel_id: channelId },
+            transaction,
+        });
     }
 
     async listChannels({ page = 1, per_page = 20, q = null, type_channel = null } = {}) {
@@ -28,12 +62,20 @@ class ChannelRepository {
 
         const { rows, count } = await this.channelModel.findAndCountAll({
             where,
+            attributes: {
+                include: [[this.scraperRunsCountLiteral(), 'scraper_runs_count']],
+            },
             order: [['id', 'DESC']],
             limit,
             offset,
         });
 
-        return { rows, count, page: currentPage, per_page: limit };
+        return {
+            rows: rows.map((row) => this.serializeChannel(row)),
+            count,
+            page: currentPage,
+            per_page: limit,
+        };
     }
 
     async createChannel({ name, url, type_channel = 'facebook' } = {}) {
@@ -42,11 +84,13 @@ class ChannelRepository {
         if (!trimmedName) throw createError(422, 'name is required');
         if (!trimmedUrl) throw createError(422, 'url is required');
 
-        return this.channelModel.create({
+        const row = await this.channelModel.create({
             name: trimmedName,
             url: trimmedUrl,
             type_channel: type_channel || 'facebook',
         });
+
+        return this.serializeChannel(row, { scraper_runs_count: 0 });
     }
 
     async updateChannel(id, payload = {}) {
@@ -62,6 +106,16 @@ class ChannelRepository {
         if (payload.url !== undefined) {
             const trimmedUrl = String(payload.url || '').trim();
             if (!trimmedUrl) throw createError(422, 'url is required');
+            const currentUrl = String(row.url || '').trim();
+            if (trimmedUrl !== currentUrl) {
+                const scraperRunsCount = await this.countScraperRuns(row.id);
+                if (scraperRunsCount > 0) {
+                    throw createError(
+                        422,
+                        `Không thể sửa URL kênh đã có ${scraperRunsCount} bài scrape`
+                    );
+                }
+            }
             updates.url = trimmedUrl;
         }
         if (payload.type_channel !== undefined) {
@@ -71,7 +125,9 @@ class ChannelRepository {
         if (Object.keys(updates).length > 0) {
             await row.update(updates);
         }
-        return row;
+
+        const scraper_runs_count = await this.countScraperRuns(row.id);
+        return this.serializeChannel(row, { scraper_runs_count });
     }
 
     async deleteChannel(id) {

@@ -3,7 +3,7 @@
 const express = require('express');
 const SubjectController = require('../../app/Http/Controllers/Api/SubjectController');
 const {
-    validateListQuery,
+    validateSubjectListQuery,
     validateSubjectDetailQuery,
     validateSubjectCreate,
     validateSubjectUpdate,
@@ -17,7 +17,7 @@ const controller = new SubjectController();
 router.post('/discover', controller.discover.bind(controller));
 
 /** GET /api/subjects — list + search + paginate */
-router.get('/', validateListQuery, controller.list.bind(controller));
+router.get('/', validateSubjectListQuery, controller.list.bind(controller));
 
 /** POST /api/subjects */
 router.post('/', validateSubjectCreate, controller.store.bind(controller));

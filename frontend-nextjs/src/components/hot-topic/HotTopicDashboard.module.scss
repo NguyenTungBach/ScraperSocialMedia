@@ -689,7 +689,7 @@ $st-red: #dc2626;
 
 .rankingHeader {
   display: grid;
-  grid-template-columns: 64px 1fr 2fr 160px;
+  grid-template-columns: 96px 1fr 2fr 160px;
   gap: 12px;
   padding: 12px 20px;
   background: $st-bg;
@@ -701,6 +701,10 @@ $st-red: #dc2626;
   letter-spacing: 0.03em;
 }
 
+.colRank {
+  white-space: nowrap;
+}
+
 .rankingList {
   display: flex;
   flex-direction: column;
@@ -708,7 +712,7 @@ $st-red: #dc2626;
 
 .rankingRow {
   display: grid;
-  grid-template-columns: 64px 1fr 2fr 160px;
+  grid-template-columns: 96px 1fr 2fr 160px;
   gap: 12px;
   align-items: center;
   padding: 16px 20px;
@@ -988,55 +992,7 @@ $st-red: #dc2626;
 }
 
 // ── Support widget ──────────────────────────────────────
-.supportWidget {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: $st-navy;
-  border-radius: 10px;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  z-index: 200;
-  min-width: 220px;
-}
-
-.supportClose {
-  position: absolute;
-  top: -10px;
-  right: -10px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: $st-text;
-  border: none;
-  border-radius: 50%;
-  color: $st-white;
-  cursor: pointer;
-
-  &:hover {
-    background: #374151;
-  }
-}
-
-.supportLink {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: $st-white;
-  font-size: 0.8125rem;
-  text-decoration: none;
-  padding: 4px 0;
-  transition: opacity 0.15s;
-
-  &:hover {
-    opacity: 0.85;
-  }
-}
+// (removed)
 
 // ── Responsive ──────────────────────────────────────────
 @media (max-width: 1200px) {
@@ -1046,7 +1002,7 @@ $st-red: #dc2626;
 
   .rankingHeader,
   .rankingRow {
-    grid-template-columns: 48px 1fr 1.5fr 140px;
+    grid-template-columns: 88px 1fr 1.5fr 140px;
   }
 }
 
@@ -1262,18 +1218,5 @@ $st-red: #dc2626;
 
   .barsContainer {
     height: 220px;
-  }
-
-  .supportWidget {
-    right: 10px;
-    bottom: 10px;
-    left: auto;
-    min-width: 0;
-    max-width: min(220px, calc(100vw - 24px));
-    padding: 10px 12px;
-  }
-
-  .supportLink {
-    font-size: 0.75rem;
   }
 }
