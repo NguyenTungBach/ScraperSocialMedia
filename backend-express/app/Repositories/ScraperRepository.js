@@ -1263,6 +1263,137 @@ class ScraperRepository {
         };
     }
 
+    youtubeTailRankedCteSql() {
+        return `WITH ranked AS (
+            SELECT
+                id,
+                platform_post_id,
+                channel_id,
+                follow,
+                posted_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY channel_id
+                    ORDER BY posted_at DESC, id DESC
+                ) AS rank_in_channel
+            FROM scraper_runs
+            WHERE platform = 'youtube'
+              AND channel_id IS NOT NULL
+              AND posted_at IS NOT NULL
+        )`;
+    }
+
+    /**
+     * Đếm video YouTube tail: rank > headSize theo posted_at mỗi kênh.
+     */
+    async countYoutubeTailRuns({ headSize = 10 } = {}) {
+        const sequelize = db.sequelize;
+        const limit = Math.max(Number(headSize) || 10, 1);
+        const rows = await sequelize.query(
+            `${this.youtubeTailRankedCteSql()}
+             SELECT COUNT(*) AS total
+             FROM ranked
+             WHERE rank_in_channel > :headSize`,
+            {
+                replacements: { headSize: limit },
+                type: sequelize.QueryTypes.SELECT,
+            }
+        );
+        return Number(rows[0]?.total) || 0;
+    }
+
+    /**
+     * Lấy 1 batch video tail (rank > headSize) ORDER BY posted_at ASC.
+     */
+    async listYoutubeTailBatch({ headSize = 10, batchSize = 50, offset = 0 } = {}) {
+        const sequelize = db.sequelize;
+        const head = Math.max(Number(headSize) || 10, 1);
+        const limit = Math.min(Math.max(Number(batchSize) || 50, 1), 50);
+        const off = Math.max(Number(offset) || 0, 0);
+
+        return sequelize.query(
+            `${this.youtubeTailRankedCteSql()}
+             SELECT id, platform_post_id, channel_id, follow, posted_at
+             FROM ranked
+             WHERE rank_in_channel > :headSize
+             ORDER BY posted_at ASC, id ASC
+             LIMIT :batchSize OFFSET :offset`,
+            {
+                replacements: { headSize: head, batchSize: limit, offset: off },
+                type: sequelize.QueryTypes.SELECT,
+            }
+        );
+    }
+
+    /**
+     * Cập nhật stats tail từ videos.list — không cào comment, không insert mới.
+     * @param {{ rows: object[], rawVideos: object[] }} params
+     */
+    async updateYoutubeTailStats({ rows = [], rawVideos = [] } = {}) {
+        const now = new Date();
+        const affectedSubjectIds = new Set();
+        const byVideoId = new Map((rawVideos || []).map((v) => [String(v.id), v]));
+
+        let updated = 0;
+        let notFound = 0;
+        const processed = rows.length;
+
+        await db.sequelize.transaction(async (transaction) => {
+            for (const row of rows) {
+                const videoId = String(row.platform_post_id || '');
+                const raw = byVideoId.get(videoId);
+                if (!raw) {
+                    notFound += 1;
+                    continue;
+                }
+
+                const normalized = normalizeYoutubeVideo(raw, {
+                    follow: toCount(row.follow),
+                });
+
+                const scraperRun = await this.scraperRunModel.findByPk(row.id, { transaction });
+                if (!scraperRun) {
+                    notFound += 1;
+                    continue;
+                }
+
+                await scraperRun.update(
+                    {
+                        title: normalized.title,
+                        text: normalized.text,
+                        likes: normalized.likes,
+                        comments: normalized.comments,
+                        views: toCount(normalized.views),
+                        posted_at: normalized.posted_at ?? scraperRun.posted_at,
+                        scraped_at: now,
+                        raw_data: normalized.raw_data || raw,
+                    },
+                    { transaction }
+                );
+                updated += 1;
+
+                const links = await this.subjectScraperRunModel.findAll({
+                    where: { scraper_run_id: scraperRun.id },
+                    attributes: ['subject_id'],
+                    transaction,
+                });
+                for (const link of links) {
+                    affectedSubjectIds.add(Number(link.subject_id));
+                }
+            }
+
+            for (const subjectId of affectedSubjectIds) {
+                await this.recomputeSocialPost(subjectId, { transaction });
+            }
+        });
+
+        return {
+            processed,
+            updated,
+            not_found: notFound,
+            affected_subject_ids: [...affectedSubjectIds],
+        };
+    }
+
     async recomputeSocialPost(subjectId, { transaction } = {}) {
         const links = await this.subjectScraperRunModel.findAll({
             where: { subject_id: subjectId },

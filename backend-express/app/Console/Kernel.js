@@ -2,8 +2,9 @@
 
 const SamplePingCommand = require('./Commands/SamplePingCommand');
 const AlertGmailCommand = require('./Commands/AlertGmailCommand');
+const YoutubeTailRefreshCommand = require('./Commands/YoutubeTailRefreshCommand');
 
-const COMMANDS = [SamplePingCommand, AlertGmailCommand];
+const COMMANDS = [SamplePingCommand, AlertGmailCommand, YoutubeTailRefreshCommand];
 
 function listCommands() {
     return COMMANDS;

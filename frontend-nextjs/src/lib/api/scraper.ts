@@ -49,10 +49,36 @@ export interface YoutubeScrapeResult {
   videos: YoutubeScrapeVideo[];
 }
 
+export interface YoutubeTailRefreshPayload {
+  batchSize?: number;
+  headSize?: number;
+  offset?: number;
+}
+
+export interface YoutubeTailRefreshResult {
+  source: string;
+  batch_size: number;
+  offset: number;
+  processed: number;
+  updated: number;
+  not_found: number;
+  quota_used: number;
+  total_tail: number;
+  remaining: number;
+  next_offset: number;
+  affected_subject_ids: number[];
+}
+
 export const scraperApi = {
   runYoutube: (payload: YoutubeScrapePayload) =>
     apiClient.post<YoutubeScrapeResult>('/scraper/youtube/run', payload, {
       skipAuth: true,
       timeout: 1_800_000, // 30 phút — quét nhiều kênh + comment có thể rất lâu
     }) as Promise<ApiResponse<YoutubeScrapeResult>>,
+
+  refreshYoutubeTail: (payload: YoutubeTailRefreshPayload = {}) =>
+    apiClient.post<YoutubeTailRefreshResult>('/scraper/youtube/refresh-tail', payload, {
+      skipAuth: true,
+      timeout: 600_000, // 10 phút / batch
+    }) as Promise<ApiResponse<YoutubeTailRefreshResult>>,
 };

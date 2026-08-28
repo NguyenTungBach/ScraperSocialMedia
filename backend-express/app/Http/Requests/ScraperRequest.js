@@ -26,6 +26,12 @@ const runYoutubeSchema = z.object({
     maxResults: z.number().int().min(1).max(50).optional(),
 });
 
+const refreshYoutubeTailSchema = z.object({
+    batchSize: z.number().int().min(1).max(50).optional(),
+    headSize: z.number().int().min(1).max(50).optional(),
+    offset: z.number().int().min(0).optional(),
+});
+
 const channelCreateSchema = z.object({
     name: z.string().trim().min(1, 'name is required').max(255),
     url: z.string().trim().url('url must be a valid URL').max(512),
@@ -177,6 +183,19 @@ const validateRunYoutube = async (req, res, next) => {
     }
 };
 
+const validateRefreshYoutubeTail = async (req, res, next) => {
+    try {
+        const validated = refreshYoutubeTailSchema.parse(req.body ?? {});
+        req.validatedData = validated ?? {};
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
 const validateListQuery = async (req, res, next) => {
     try {
         req.validatedData = listQuerySchema.parse(req.query ?? {});
@@ -313,6 +332,7 @@ const validateSubjectChannel = async (req, res, next) => {
 module.exports = {
     validateRunScraper,
     validateRunYoutube,
+    validateRefreshYoutubeTail,
     validateListQuery,
     validateSocialPostsDashboardQuery,
     validateSubjectDetailQuery,

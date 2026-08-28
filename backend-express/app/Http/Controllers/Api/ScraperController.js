@@ -8,6 +8,8 @@ const ChannelRepository = require('../../../Repositories/ChannelRepository');
 const CommentRepository = require('../../../Repositories/CommentRepository');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
+const youtubeConfig = require('../../../../config/youtube');
+const YouTubeTailRefreshService = require('../../../Services/YouTubeTailRefreshService');
 const {
     parseYoutubeChannelRef,
     toYoutubeVideoResponse,
@@ -20,6 +22,7 @@ class ScraperController {
         this.repository = new ScraperRepository();
         this.channelRepository = new ChannelRepository();
         this.commentRepository = new CommentRepository();
+        this.youtubeTailRefreshService = new YouTubeTailRefreshService();
     }
 
     /**
@@ -484,6 +487,60 @@ class ScraperController {
                 affected_subject_ids: [...affectedSubjectIds],
                 videos: allVideos,
             });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /scraper/youtube/refresh-tail:
+     *   post:
+     *     tags: [Scraper]
+     *     summary: Refresh stats video YouTube tail (sau top N theo posted_at), không cào comment
+     *     description: |
+     *       Lấy video rank > headSize (mặc định 10) theo posted_at mỗi kênh trong DB.
+     *       Gọi videos.list batch (tối đa 50) → cập nhật views/likes/comments.
+     *       Dùng offset để paginate khi cron quét toàn bộ tail.
+     *     security: []
+     *     requestBody:
+     *       required: false
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               batchSize:
+     *                 type: integer
+     *                 minimum: 1
+     *                 maximum: 50
+     *                 default: 50
+     *               headSize:
+     *                 type: integer
+     *                 minimum: 1
+     *                 maximum: 50
+     *                 default: 10
+     *               offset:
+     *                 type: integer
+     *                 minimum: 0
+     *                 default: 0
+     *     responses:
+     *       "200":
+     *         description: Batch refresh thành công
+     *       "429":
+     *         description: YouTube API quota exceeded
+     */
+    async refreshYoutubeTail(req, res, next) {
+        try {
+            const data = req.validatedData || {};
+
+            const result = await this.youtubeTailRefreshService.refreshBatch({
+                headSize: data.headSize ?? youtubeConfig.headSize,
+                batchSize: data.batchSize ?? youtubeConfig.tailBatchSize,
+                offset: data.offset ?? 0,
+            });
+
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
         } catch (error) {
             return next(error);
         }

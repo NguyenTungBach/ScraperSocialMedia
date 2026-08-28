@@ -95,9 +95,9 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
     <header className={styles.header}>
       <div className={styles.headerInner}>
         <Link href="/home" className={styles.logo}>
-          <span className={styles.logoSocial}>social</span>
-          <span className={styles.logoTrend}>trend</span>
-          <span className={styles.logoBy}>by Younet Media</span>
+          <span className={styles.logoSocial}>NetScope</span>
+          <span className={styles.logoTrend}>Trend</span>
+          <span className={styles.logoBy}>base on Younet Media</span>
         </Link>
 
         <nav className={styles.mainNav} aria-label="Main navigation">

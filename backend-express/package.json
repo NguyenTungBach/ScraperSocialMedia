@@ -14,6 +14,7 @@
     "schedule:worker": "node scripts/scheduler.js",
     "app:sample-ping": "node scripts/run-command.js app:sample-ping",
     "app:alert-gmail": "node scripts/run-command.js app:alert-gmail",
+    "app:youtube-refresh-tail": "node scripts/run-command.js app:youtube-refresh-tail",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate-create": "sequelize-cli migration:generate --name",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",

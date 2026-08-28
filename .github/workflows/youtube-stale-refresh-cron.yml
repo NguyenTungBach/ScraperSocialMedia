@@ -1,0 +1,88 @@
+# Refresh stats video YouTube tail (sau top 10 theo posted_at) — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
+#
+# BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
+#   DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#   YOUTUBE_API_KEY
+#
+# Tuỳ chọn Variables:
+#   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
+#   YOUTUBE_HEAD_SIZE (mặc định 10), YOUTUBE_TAIL_BATCH_SIZE (mặc định 50)
+#   YOUTUBE_TAIL_START_OFFSET (mặc định 0), YOUTUBE_TAIL_SLEEP_MS (mặc định 3000)
+#
+# Chạy: Actions → "YouTube Tail Refresh" → Run workflow
+
+name: YouTube Tail Refresh
+
+on:
+  schedule:
+    # Mỗi 2 ngày lúc 03:00 UTC
+    - cron: '0 3 */2 * *'
+  workflow_dispatch:
+    inputs:
+      start_offset:
+        description: 'Offset batch bắt đầu (resume nếu job timeout)'
+        required: false
+        type: string
+
+jobs:
+  refresh-youtube-tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: backend-express
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend-express/package-lock.json
+
+      - name: Check required variables
+        env:
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          YOUTUBE_API_KEY: ${{ vars.YOUTUBE_API_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD YOUTUBE_API_KEY; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository variables: ${missing[*]}"
+            echo "Add them at: Settings → Secrets and variables → Actions → Variables"
+            echo "Copy values from backend-express/.env (DB_* / YOUTUBE_API_KEY)."
+            exit 1
+          fi
+          echo "All required variables are present."
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh YouTube tail stats
+        env:
+          NODE_ENV: production
+          DB_CONNECTION: mysql
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT || '19437' }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          DB_SSL: ${{ vars.DB_SSL || 'true' }}
+          YOUTUBE_API_KEY: ${{ vars.YOUTUBE_API_KEY }}
+          YOUTUBE_HEAD_SIZE: ${{ vars.YOUTUBE_HEAD_SIZE || '10' }}
+          YOUTUBE_TAIL_BATCH_SIZE: ${{ vars.YOUTUBE_TAIL_BATCH_SIZE || '50' }}
+          YOUTUBE_TAIL_START_OFFSET: ${{ inputs.start_offset || '0' }}
+          YOUTUBE_TAIL_MAX_ELAPSED_MS: '10200000'
+          YOUTUBE_TAIL_SLEEP_MS: ${{ vars.YOUTUBE_TAIL_SLEEP_MS || '3000' }}
+        run: npm run app:youtube-refresh-tail

@@ -5,17 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   Crown,
-  Film,
-  Grid3X3,
   Loader2,
-  MessageCircle,
-  Music,
-  Newspaper,
   Phone,
-  Plane,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -30,7 +22,6 @@ import {
   type SocialPostStats,
 } from '@/lib/api/socialPosts';
 import {
-  TOPIC_CATEGORIES,
   colorForId,
   formatMetric,
   formatScore,
@@ -38,7 +29,6 @@ import {
   type ChartTopic,
   type HotTopic,
   type RankedBy,
-  type TopicCategory,
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
 import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
@@ -46,15 +36,6 @@ import { PlatformBadge } from './PlatformBadge';
 import { HotTopicHeader } from './HotTopicHeader';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
-
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  grid: <Grid3X3 size={16} aria-hidden />,
-  film: <Film size={16} aria-hidden />,
-  music: <Music size={16} aria-hidden />,
-  news: <Newspaper size={16} aria-hidden />,
-  message: <MessageCircle size={16} aria-hidden />,
-  plane: <Plane size={16} aria-hidden />,
-};
 
 const RANKED_BY_LABELS: Record<RankedBy, string> = {
   discussion: 'Thảo Luận',
@@ -336,10 +317,8 @@ function buildYAxisLabels(maxValue: number): string[] {
 
 export function HotTopicDashboard() {
   const initialRange = getCurrentMonthDateRange();
-  const [selectedCategory, setSelectedCategory] = useState<TopicCategory>('all');
   const [rankedBy, setRankedBy] = useState<RankedBy>('discussion');
   const [showNewOnly, setShowNewOnly] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [supportOpen, setSupportOpen] = useState(true);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -456,12 +435,6 @@ export function HotTopicDashboard() {
 
   const yAxisLabels = useMemo(() => buildYAxisLabels(maxChartValue), [maxChartValue]);
 
-  const filteredTopics = useMemo(() => {
-    if (selectedCategory === 'all') return topics;
-    // API chưa có category thật — giữ UI nhóm chủ đề, lọc chỉ áp dụng khi chọn "Tất cả"
-    return topics;
-  }, [topics, selectedCategory]);
-
   const hoveredTopic = useMemo(() => {
     const fromRanking = topics.find((t) => t.id === hoveredChartId);
     if (fromRanking) return fromRanking;
@@ -536,41 +509,12 @@ export function HotTopicDashboard() {
       </div>
 
       <div className={styles.bodyLayout}>
-        <aside className={cn(styles.sidebar, sidebarCollapsed && styles.sidebarCollapsed)}>
-          <p className={styles.sidebarTitle}>Nhóm chủ đề</p>
-          <ul className={styles.sidebarList}>
-            {TOPIC_CATEGORIES.map((cat) => (
-              <li key={cat.id}>
-                <button
-                  type="button"
-                  className={cn(
-                    styles.sidebarItem,
-                    selectedCategory === cat.id && styles.sidebarItemActive
-                  )}
-                  onClick={() => setSelectedCategory(cat.id)}
-                >
-                  {CATEGORY_ICONS[cat.icon]}
-                  {!sidebarCollapsed && <span>{cat.label}</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            className={styles.sidebarToggle}
-            onClick={() => setSidebarCollapsed((v) => !v)}
-            aria-label={sidebarCollapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-          >
-            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
-        </aside>
-
         <main className={styles.mainContent}>
           <section className={styles.promoCards}>
             <div className={cn(styles.promoCard, styles.promoWelcome)}>
               <Trophy size={28} className={styles.promoIcon} aria-hidden />
               <div>
-                <h2>Chào mừng bạn đến với SocialTrend!</h2>
+                <h2>Chào mừng bạn đến với NetScope Trend!</h2>
                 <p>Khám phá các chủ đề hot nhất trên mạng xã hội Việt Nam.</p>
               </div>
             </div>
@@ -711,10 +655,10 @@ export function HotTopicDashboard() {
                 <div className={styles.emptyState}>
                   <Loader2 size={20} className={styles.spin} aria-hidden /> Đang tải bảng xếp hạng…
                 </div>
-              ) : filteredTopics.length === 0 ? (
+              ) : topics.length === 0 ? (
                 <div className={styles.emptyState}>Không có chủ đề phù hợp bộ lọc.</div>
               ) : (
-                filteredTopics.map((topic) => (
+                topics.map((topic) => (
                   <RankingRow key={topic.id} topic={topic} onOpenDetail={openDetail} />
                 ))
               )}

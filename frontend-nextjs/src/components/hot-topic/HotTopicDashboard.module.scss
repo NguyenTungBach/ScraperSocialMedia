@@ -334,99 +334,6 @@ $st-red: #dc2626;
   min-height: calc(100vh - 104px);
 }
 
-// ── Sidebar ─────────────────────────────────────────────
-.sidebar {
-  width: 220px;
-  flex-shrink: 0;
-  background: $st-white;
-  border-right: 1px solid $st-border;
-  padding: 20px 12px;
-  position: relative;
-  transition: width 0.2s;
-
-  &Collapsed {
-    width: 56px;
-
-    .sidebarTitle,
-    .sidebarItem span {
-      display: none;
-    }
-  }
-}
-
-.sidebarTitle {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: $st-muted;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 12px 8px;
-}
-
-.sidebarList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sidebarItem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: $st-muted;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s, color 0.15s;
-
-  &:hover {
-    background: $st-bg;
-    color: $st-text;
-  }
-
-  &Active {
-    background: $st-navy;
-    color: $st-white;
-
-    &:hover {
-      background: $st-navy-light;
-      color: $st-white;
-    }
-  }
-}
-
-.sidebarToggle {
-  position: absolute;
-  bottom: 16px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: $st-white;
-  border: 1px solid $st-border;
-  border-radius: 50%;
-  color: $st-muted;
-  cursor: pointer;
-  z-index: 10;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-
-  &:hover {
-    color: $st-text;
-    border-color: $st-navy;
-  }
-}
-
 // ── Main content ────────────────────────────────────────
 .mainContent {
   flex: 1;
@@ -1147,15 +1054,6 @@ $st-red: #dc2626;
 
   .promoCards {
     grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    width: 56px;
-
-    .sidebarTitle,
-    .sidebarItem span {
-      display: none;
-    }
   }
 
   .rankingHeader {

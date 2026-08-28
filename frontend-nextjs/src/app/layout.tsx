@@ -17,8 +17,8 @@ const josefin = Josefin_Sans({
 });
 
 export const metadata: Metadata = {
-  title: process.env.NEXT_PUBLIC_APP_NAME || 'SocialTrend',
-  description: 'SocialTrend - Xếp hạng chủ đề hot trên mạng xã hội',
+  title: process.env.NEXT_PUBLIC_APP_NAME || 'NetScope Trend',
+  description: 'NetScope Trend - Xếp hạng chủ đề hot trên mạng xã hội',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
