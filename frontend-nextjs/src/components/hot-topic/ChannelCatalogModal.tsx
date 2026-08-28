@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
-import { SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
+import { isPlatformSelectable, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
 import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
 import styles from './ChannelCatalogModal.module.scss';
@@ -24,7 +24,7 @@ interface ChannelFormState {
 const EMPTY_FORM: ChannelFormState = {
   name: '',
   url: '',
-  type_channel: 'facebook',
+  type_channel: 'youtube',
 };
 
 export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalogModalProps) {
@@ -76,7 +76,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
       const payload = {
         name,
         url,
-        type_channel: form.type_channel.trim() || 'facebook',
+        type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
       };
       if (editingId != null) {
         await channelsApi.update(editingId, payload);
@@ -100,7 +100,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
     setForm({
       name: item.name || '',
       url: item.url || '',
-      type_channel: item.type_channel || 'facebook',
+      type_channel: item.type_channel || 'youtube',
     });
   };
 
@@ -155,7 +155,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
             <input
               value={form.url}
               onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
-              placeholder="https://www.facebook.com/..."
+              placeholder="https://www.youtube.com/@..."
               required
             />
           </label>
@@ -166,7 +166,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
               onChange={(e) => setForm((prev) => ({ ...prev, type_channel: e.target.value }))}
             >
               {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
+                <option key={opt.id} value={opt.id} disabled={!isPlatformSelectable(opt.id)}>
                   {opt.label}
                 </option>
               ))}

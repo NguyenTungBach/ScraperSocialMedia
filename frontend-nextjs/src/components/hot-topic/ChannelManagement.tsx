@@ -15,7 +15,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { scraperApi } from '@/lib/api/scraper';
-import { normalizePlatform, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
+import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { HotTopicHeader } from './HotTopicHeader';
@@ -34,7 +34,7 @@ interface ChannelFormState {
 const EMPTY_FORM: ChannelFormState = {
   name: '',
   url: '',
-  type_channel: 'facebook',
+  type_channel: 'youtube',
 };
 
 type FormMode = 'create' | 'edit';
@@ -113,7 +113,7 @@ export function ChannelManagement() {
     setForm({
       name: item.name || '',
       url: item.url || '',
-      type_channel: item.type_channel || 'facebook',
+      type_channel: item.type_channel || 'youtube',
     });
     setFormOpen(true);
   };
@@ -139,7 +139,7 @@ export function ChannelManagement() {
       const payload = {
         name,
         url,
-        type_channel: form.type_channel.trim() || 'facebook',
+        type_channel: isPlatformSelectable(form.type_channel) ? form.type_channel : 'youtube',
       };
       if (formMode === 'create') {
         await channelsApi.create(payload);
@@ -246,7 +246,7 @@ export function ChannelManagement() {
             >
               <option value="">Tất cả nền tảng</option>
               {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
+                <option key={opt.id} value={opt.id} disabled={!isPlatformSelectable(opt.id)}>
                   {opt.label}
                 </option>
               ))}
@@ -417,7 +417,7 @@ export function ChannelManagement() {
                   type="url"
                   value={form.url}
                   onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="https://www.facebook.com/..."
+                  placeholder="https://www.youtube.com/@..."
                   required
                 />
               </label>
@@ -430,7 +430,7 @@ export function ChannelManagement() {
                   }
                 >
                   {SOCIAL_PLATFORM_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
+                    <option key={opt.id} value={opt.id} disabled={!isPlatformSelectable(opt.id)}>
                       {opt.label}
                     </option>
                   ))}

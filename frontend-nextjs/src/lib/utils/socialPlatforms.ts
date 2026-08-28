@@ -84,8 +84,14 @@ export const SOCIAL_PLATFORM_OPTIONS = [
   PLATFORMS.linkedin,
 ];
 
+export const SELECTABLE_PLATFORM_ID = 'youtube';
+
 export function normalizePlatform(value?: string | null): string {
   return (value || 'facebook').trim().toLowerCase();
+}
+
+export function isPlatformSelectable(value?: string | null): boolean {
+  return normalizePlatform(value) === SELECTABLE_PLATFORM_ID;
 }
 
 export function getPlatformMeta(value?: string | null): SocialPlatformMeta {
