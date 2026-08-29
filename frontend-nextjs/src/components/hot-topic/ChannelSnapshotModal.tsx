@@ -9,6 +9,7 @@ import {
   type ChannelTopPostRow,
 } from '@/lib/api/snapshots';
 import type { ChannelItem } from '@/lib/api/channels';
+import { formatDateInput } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelSnapshotModal.module.scss';
@@ -24,13 +25,17 @@ function deltaLabel(n: number | null | undefined) {
   return `${sign}${n.toLocaleString('vi-VN')}`;
 }
 
+function todayLocal() {
+  return formatDateInput(new Date());
+}
+
 interface ChannelSnapshotModalProps {
   channel: ChannelItem;
   onClose: () => void;
 }
 
 export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalProps) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal);
   const [loading, setLoading] = useState(true);
   const [snapshotting, setSnapshotting] = useState(false);
   const [snapshot, setSnapshot] = useState<ChannelDailySnapshotRow | null>(null);
@@ -38,6 +43,7 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
   const [previousDate, setPreviousDate] = useState<string | null>(null);
   const [topPosts, setTopPosts] = useState<ChannelTopPostRow[]>([]);
   const [sort, setSort] = useState<'hot_score' | 'trend_score'>('hot_score');
+  const isToday = date === todayLocal();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +68,13 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
   }, [load]);
 
   const handleSnapshot = async () => {
+    if (!isToday) {
+      MakeToast({
+        variant: 'warning',
+        content: 'Chỉ được snapshot ngày hôm nay.',
+      });
+      return;
+    }
     setSnapshotting(true);
     try {
       let res = await snapshotsApi.run({ force: false, channel_id: channel.id });
@@ -84,9 +97,7 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
         variant: 'success',
         content: `Đã snapshot kênh: ${d?.posts ?? 0} bài · ${d?.top_comments ?? 0} top comment`,
       });
-      const today = new Date().toISOString().slice(0, 10);
-      if (date !== today) setDate(today);
-      else await load();
+      await load();
     } catch (err) {
       MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
     } finally {
@@ -103,20 +114,22 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
             <p className={styles.sub}>Snapshot theo ngày (metrics đã đóng băng)</p>
           </div>
           <div className={styles.headerActions}>
-            <button
-              type="button"
-              className={styles.snapshotBtn}
-              onClick={() => void handleSnapshot()}
-              disabled={snapshotting}
-              title="Chụp metrics kênh này (và các bài thuộc kênh)"
-            >
-              {snapshotting ? (
-                <Loader2 size={15} className={dash.spin} aria-hidden />
-              ) : (
-                <Camera size={15} aria-hidden />
-              )}
-              Snapshot
-            </button>
+            {isToday ? (
+              <button
+                type="button"
+                className={styles.snapshotBtn}
+                onClick={() => void handleSnapshot()}
+                disabled={snapshotting}
+                title="Chụp metrics kênh này (chỉ ngày hôm nay)"
+              >
+                {snapshotting ? (
+                  <Loader2 size={15} className={dash.spin} aria-hidden />
+                ) : (
+                  <Camera size={15} aria-hidden />
+                )}
+                Snapshot
+              </button>
+            ) : null}
             <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Đóng">
               <X size={18} />
             </button>
@@ -150,7 +163,9 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
           </div>
         ) : !snapshot ? (
           <div className={dash.emptyState}>
-            Chưa có snapshot ngày {date}. Bấm Snapshot ở góc phải để chụp kênh này.
+            {isToday
+              ? `Chưa có snapshot ngày ${date}. Bấm Snapshot ở góc phải để chụp kênh này.`
+              : `Chưa có snapshot ngày ${date}. Chỉ được chụp snapshot ngày hôm nay.`}
           </div>
         ) : (
           <>

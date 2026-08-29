@@ -13,19 +13,27 @@ class MetricSnapshotService {
     }
 
     /**
+     * Tạm thời chỉ cho phép snapshot đúng ngày hôm nay (APP_TIMEZONE).
      * @param {{ force?: boolean, snapshot_date?: string, channel_id?: number, scraper_run_id?: number }} [input]
      */
     async run(input = {}) {
         const force = Boolean(input.force);
+        const today = todaySnapshotDate();
         const snapshotDate = input.snapshot_date
             ? normalizeSnapshotDate(input.snapshot_date)
-            : todaySnapshotDate();
+            : today;
         if (!snapshotDate) {
             throw createError(422, 'Invalid snapshot_date');
         }
+        if (snapshotDate !== today) {
+            throw createError(
+                422,
+                `Chỉ được snapshot ngày hôm nay (${today}). Không hỗ trợ ngày ${snapshotDate}.`
+            );
+        }
         return this.repository.runSnapshot({
             force,
-            snapshotDate,
+            snapshotDate: today,
             channelId: input.channel_id != null ? Number(input.channel_id) : null,
             scraperRunId: input.scraper_run_id != null ? Number(input.scraper_run_id) : null,
         });
