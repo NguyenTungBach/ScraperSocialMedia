@@ -73,5 +73,4 @@ jobs:
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
           DB_SSL: ${{ vars.DB_SSL || 'true' }}
           APP_TIMEZONE: ${{ vars.APP_TIMEZONE || 'Asia/Ho_Chi_Minh' }}
-          SNAPSHOT_FORCE: 'true'
         run: npm run app:metric-snapshot
