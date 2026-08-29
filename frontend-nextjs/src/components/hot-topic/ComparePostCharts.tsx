@@ -79,8 +79,10 @@ interface ComparePostChartsProps {
   /** Mốc A / B cho Δ (vd. Từ ngày / Đến ngày). Thiếu snapshot → fallback 2 mốc gần nhất. */
   compareDateFrom?: string;
   compareDateTo?: string;
-  /** Chỉ hiện Δ Ngày A vs B (modal so sánh theo ngày) */
+  /** Chỉ hiện Δ kỳ A vs B (modal so sánh theo kỳ) */
   hideOverviewTab?: boolean;
+  /** Kiểu kỳ — chỉnh copy tiêu đề Δ */
+  periodMode?: 'day' | 'month' | 'year';
 }
 
 export function ComparePostCharts({
@@ -90,6 +92,7 @@ export function ComparePostCharts({
   compareDateFrom,
   compareDateTo,
   hideOverviewTab = false,
+  periodMode = 'day',
 }: ComparePostChartsProps) {
   const { dates, byIdMetric, radarData, latestLabel, dayOverDay } = useMemo(() => {
     const dateSet = new Set<string>();
@@ -340,10 +343,30 @@ export function ComparePostCharts({
         </>
       ) : (
         <div className={styles.chartBlock}>
-          <h4 className={styles.chartTitle}>Δ giữa 2 mốc ngày của cùng bài</h4>
+          <h4 className={styles.chartTitle}>
+            {periodMode === 'month'
+              ? 'Δ giữa 2 mốc tháng của cùng bài'
+              : periodMode === 'year'
+                ? 'Δ giữa 2 mốc năm của cùng bài'
+                : 'Δ giữa 2 mốc ngày của cùng bài'}
+          </h4>
           <p className={styles.chartSub}>
-            Dùng <b>Từ ngày</b> → <b>Đến ngày</b> làm 2 mốc snapshot (nếu có dữ liệu). Thiếu mốc
-            thì fallback 2 ngày snapshot gần nhất trong khoảng.
+            {periodMode === 'day' ? (
+              <>
+                Dùng <b>Ngày A</b> → <b>Ngày B</b> làm 2 mốc snapshot (nếu có dữ liệu). Thiếu mốc
+                thì fallback 2 ngày snapshot gần nhất trong khoảng.
+              </>
+            ) : periodMode === 'month' ? (
+              <>
+                Dùng snapshot <b>cuối tháng A</b> → <b>cuối tháng B</b> làm 2 mốc. Thiếu mốc thì
+                fallback 2 ngày snapshot gần nhất trong khoảng.
+              </>
+            ) : (
+              <>
+                Dùng snapshot <b>cuối năm A</b> → <b>cuối năm B</b> làm 2 mốc. Thiếu mốc thì
+                fallback 2 ngày snapshot gần nhất trong khoảng.
+              </>
+            )}
             {readyDodCount < postIds.length
               ? ` · ${readyDodCount}/${postIds.length} bài có đủ ≥ 2 mốc.`
               : null}
@@ -351,8 +374,8 @@ export function ComparePostCharts({
 
           {readyDodCount === 0 ? (
             <p className={styles.muted}>
-              Chưa đủ snapshot (cần ≥ 2 ngày/bài). Mở thống kê bài → Snapshot, hoặc đổi khoảng ngày
-              rồi chạy lại so sánh.
+              Chưa đủ snapshot (cần ≥ 2 mốc/bài). Mở thống kê bài → Snapshot, hoặc đổi khoảng kỳ rồi
+              chạy lại so sánh.
             </p>
           ) : (
             <>

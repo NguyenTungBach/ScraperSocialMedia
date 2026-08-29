@@ -539,6 +539,39 @@ $st-accent: #1d4ed8;
   width: min(960px, 100%);
 }
 
+.periodTabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 10px 20px 0;
+  padding: 4px;
+  border-radius: 10px;
+  background: $st-bg;
+  border: 1px solid $st-border;
+}
+
+.periodTab,
+.periodTabActive {
+  border: none;
+  background: transparent;
+  color: $st-muted;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.periodTab:hover {
+  color: $st-text;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.periodTabActive {
+  background: $st-white;
+  color: #c2410c;
+  box-shadow: 0 1px 2px rgba(15, 35, 65, 0.08);
+}
+
 .dayPostBanner {
   display: flex;
   align-items: flex-start;

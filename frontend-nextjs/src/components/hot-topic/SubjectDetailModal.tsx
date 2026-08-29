@@ -143,10 +143,10 @@ function PostCard({
             type="button"
             className={styles.postCompareByDayBtn}
             onClick={() => onCompareByDay(post)}
-            title="So sánh snapshot Ngày A vs Ngày B của bài này"
+            title="So sánh snapshot theo ngày / tháng / năm của bài này"
           >
             <CalendarRange size={14} aria-hidden />
-            So sánh theo ngày
+            So sánh theo kỳ
           </button>
           <span className={styles.postDate}>{formatDateTime(post.posted_at)}</span>
         </div>
