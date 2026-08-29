@@ -544,11 +544,9 @@ $st-red: #dc2626;
 
 .tooltipAnchor {
   position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
   z-index: 20;
   pointer-events: none;
+  width: 240px;
 }
 
 .chartTooltip {
@@ -558,7 +556,8 @@ $st-red: #dc2626;
   padding: 14px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   width: 240px;
-  pointer-events: auto;
+  max-width: 100%;
+  pointer-events: none;
 }
 
 .chartTooltipHeader {

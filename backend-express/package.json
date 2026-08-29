@@ -18,6 +18,7 @@
     "app:youtube-scrape": "node scripts/run-command.js app:youtube-scrape",
     "app:tiktok-scrape": "node scripts/run-command.js app:tiktok-scrape",
     "app:facebook-scrape": "node scripts/run-command.js app:facebook-scrape",
+    "app:metric-snapshot": "node scripts/run-command.js app:metric-snapshot",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate-create": "sequelize-cli migration:generate --name",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",

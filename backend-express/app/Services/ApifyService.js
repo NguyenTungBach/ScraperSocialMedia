@@ -7,6 +7,7 @@ const apifyConfig = require('../../config/apify');
 class ApifyService {
     constructor() {
         this.facebookActorId = apifyConfig.facebookActorId;
+        this.facebookPagesActorId = apifyConfig.facebookPagesActorId;
         this.facebookCommentsActorId = apifyConfig.facebookCommentsActorId;
         this.defaultInput = apifyConfig.defaultInput;
         this.tiktokActorId = apifyConfig.tiktokActorId;
@@ -51,6 +52,33 @@ class ApifyService {
         const run = await client.actor(this.facebookActorId).call(input);
         const { items } = await client.dataset(run.defaultDatasetId).listItems({
             limit: 1000,
+        });
+
+        return { run, items, input };
+    }
+
+    /**
+     * Facebook Pages Scraper — metadata page (followers, likes, intro…).
+     * @param {{ startUrls?: Array<string|{url:string}> }} overrides
+     */
+    async runFacebookPagesScraper(overrides = {}) {
+        const client = this.getClient();
+        const startUrls = (overrides.startUrls || [])
+            .map((item) => (typeof item === 'string' ? { url: item } : item))
+            .filter((item) => item?.url);
+
+        if (startUrls.length === 0) {
+            return { run: null, items: [], input: null };
+        }
+
+        const input = {
+            startUrls,
+            maxPages: startUrls.length,
+        };
+
+        const run = await client.actor(this.facebookPagesActorId).call(input);
+        const { items } = await client.dataset(run.defaultDatasetId).listItems({
+            limit: 100,
         });
 
         return { run, items, input };

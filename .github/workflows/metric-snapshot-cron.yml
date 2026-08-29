@@ -1,0 +1,77 @@
+# Snapshot metrics (channel + post + top comments) mỗi 5 giờ.
+# Chỉ đọc DB hiện có — không scrape, không cần Apify/Gemini.
+#
+# BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
+#   DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#
+# Tuỳ chọn Variables:
+#   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
+#   APP_TIMEZONE (mặc định Asia/Ho_Chi_Minh) — quyết định snapshot_date
+#
+# Chạy: Actions → "Metric Snapshot Cron" → Run workflow
+
+name: Metric Snapshot Cron
+
+on:
+  schedule:
+    # Mỗi 5 giờ UTC (00, 05, 10, 15, 20). GitHub có thể trễ vài phút.
+    - cron: '0 */5 * * *'
+  workflow_dispatch:
+
+jobs:
+  metric-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend-express
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend-express/package-lock.json
+
+      - name: Check required variables
+        env:
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository variables: ${missing[*]}"
+            echo "Add them at: Settings → Secrets and variables → Actions → Variables"
+            echo "Copy values from backend-express/.env (DB_*)."
+            exit 1
+          fi
+          echo "All required variables are present."
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run metric snapshot
+        env:
+          NODE_ENV: production
+          DB_CONNECTION: mysql
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_PORT: ${{ vars.DB_PORT || '19437' }}
+          DB_DATABASE: ${{ vars.DB_DATABASE }}
+          DB_USERNAME: ${{ vars.DB_USERNAME }}
+          DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          DB_SSL: ${{ vars.DB_SSL || 'true' }}
+          APP_TIMEZONE: ${{ vars.APP_TIMEZONE || 'Asia/Ho_Chi_Minh' }}
+          SNAPSHOT_FORCE: 'true'
+        run: npm run app:metric-snapshot

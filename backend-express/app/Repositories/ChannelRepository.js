@@ -4,6 +4,7 @@ const createError = require('http-errors');
 const { Op } = require('sequelize');
 const db = require('../Models');
 const { normalizeChannelUrl } = require('../Helpers/ChannelUrlHelper');
+const { toCount } = require('../Helpers/PostScoreHelper');
 
 class ChannelRepository {
     constructor() {
@@ -25,6 +26,10 @@ class ChannelRepository {
             name: plain.name,
             url: plain.url,
             type_channel: plain.type_channel,
+            followers: Number(plain.followers ?? 0) || 0,
+            post_count:
+                Number(plain.post_count ?? plain.postCount ?? plain.video_count ?? plain.videoCount ?? 0) ||
+                0,
             scraper_runs_count: count,
             has_scraper_runs: count > 0,
             /** URL/nền tảng cố định sau khi tạo — mọi nền tảng */
@@ -68,6 +73,7 @@ class ChannelRepository {
         const { rows, count } = await this.channelModel.findAndCountAll({
             where,
             attributes: {
+                exclude: ['raw_data'],
                 include: [[this.scraperRunsCountLiteral(), 'scraper_runs_count']],
             },
             order: [['id', 'DESC']],
@@ -130,6 +136,36 @@ class ChannelRepository {
 
         const scraper_runs_count = await this.countScraperRuns(row.id);
         return this.serializeChannel(row, { scraper_runs_count });
+    }
+
+    /**
+     * Cập nhật followers / post_count / raw_data sau scrape (không qua PUT name).
+     * @param {number} channelId
+     * @param {{ followers?: number, post_count?: number, raw_data?: object|null }} stats
+     */
+    async updateChannelStats(channelId, stats = {}, { transaction } = {}) {
+        const id = Number(channelId);
+        if (!id) return null;
+
+        const row = await this.channelModel.findByPk(id, { transaction });
+        if (!row) return null;
+
+        const updates = {};
+        if (stats.followers !== undefined) {
+            updates.followers = toCount(stats.followers);
+        }
+        if (stats.post_count !== undefined) {
+            updates.post_count = toCount(stats.post_count);
+        }
+        if (stats.raw_data !== undefined) {
+            updates.raw_data = stats.raw_data;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await row.update(updates, { transaction });
+        }
+
+        return row;
     }
 
     async deleteChannel(id) {

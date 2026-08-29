@@ -269,6 +269,10 @@ class ScraperRepository {
             name: plain.name,
             url: plain.url,
             type_channel: plain.type_channel,
+            followers: Number(plain.followers ?? 0) || 0,
+            post_count:
+                Number(plain.post_count ?? plain.postCount ?? plain.video_count ?? plain.videoCount ?? 0) ||
+                0,
             scraper_runs_count,
             has_scraper_runs: scraper_runs_count > 0,
             can_edit_url: false,
@@ -878,16 +882,53 @@ class ScraperRepository {
     }
 
     /**
-     * Aggregate engagement của 1 subject trong cửa sổ posted_at.
+     * Tổng followers các kênh gắn subject qua subject_channels.
+     * Follow không lấy từ scraper_runs (cột follow trên bài luôn = 0).
      */
-    buildAggregateFromRuns(runs = []) {
+    async sumSubjectChannelFollowers(subjectId, { transaction } = {}) {
+        const rows = await db.SubjectChannel.findAll({
+            where: { subject_id: subjectId },
+            include: [
+                {
+                    model: db.Channel,
+                    as: 'channel',
+                    attributes: ['id', 'followers'],
+                    required: true,
+                },
+            ],
+            transaction,
+        });
+        let total = 0;
+        for (const row of rows) {
+            const ch = row.channel || row.Channel;
+            total += toCount(ch?.followers);
+        }
+        return total;
+    }
+
+    /**
+     * Tổng followers từ mảng channel đã serialize / plain (tránh query thêm).
+     */
+    sumFollowersFromChannels(channels = []) {
+        let total = 0;
+        for (const ch of channels) {
+            total += toCount(ch?.followers);
+        }
+        return total;
+    }
+
+    /**
+     * Aggregate engagement của 1 subject trong cửa sổ posted_at.
+     * @param {object[]} runs
+     * @param {{ follow?: number }} [extras] — follow lấy từ channels.followers (không từ runs)
+     */
+    buildAggregateFromRuns(runs = [], { follow = 0 } = {}) {
         let likes = 0;
         let comments = 0;
         let shares = 0;
         let angry_count = 0;
         let views = 0;
         let posts_count = 0;
-        const followByChannel = new Map();
         const scoreInputs = [];
 
         for (const post of runs) {
@@ -906,17 +947,6 @@ class ScraperRepository {
                 angry_count: post.angry_count,
                 views: post.views,
             });
-
-            const channelKey =
-                post.channel_id != null ? `ch:${post.channel_id}` : `run:${post.id}`;
-            const follow = toCount(post.follow);
-            const prev = followByChannel.get(channelKey) || 0;
-            if (follow > prev) followByChannel.set(channelKey, follow);
-        }
-
-        let follow = 0;
-        for (const value of followByChannel.values()) {
-            follow += value;
         }
 
         const scores = calculateScoresFromRuns(scoreInputs);
@@ -926,7 +956,7 @@ class ScraperRepository {
             shares,
             angry_count,
             views,
-            follow,
+            follow: toCount(follow),
             posts_count,
             trend_score: scores.trend_score,
             hot_score: scores.hot_score,
@@ -994,7 +1024,6 @@ class ScraperRepository {
                         'shares',
                         'angry_count',
                         'views',
-                        'follow',
                         'channel_id',
                         'posted_at',
                     ],
@@ -1003,8 +1032,12 @@ class ScraperRepository {
                 },
             ],
         });
+        const channelFollowers = this.sumFollowersFromChannels(
+            (typeof subject.toJSON === 'function' ? subject.toJSON() : subject).channels || []
+        );
         const aggregatePayload = this.buildAggregateFromRuns(
-            allLinksInRange.map((link) => link.scraperRun)
+            allLinksInRange.map((link) => link.scraperRun),
+            { follow: channelFollowers }
         );
         const aggregate = this.serializeSocialPost({
             ...aggregatePayload,
@@ -1128,7 +1161,7 @@ class ScraperRepository {
                     shares: normalized.shares,
                     angry_count: normalized.angry_count,
                     views: toCount(normalized.views),
-                    follow: toCount(normalized.follow),
+                    follow: 0,
                     posted_at: normalized.posted_at,
                     scraped_at: now,
                     source: 'apify',
@@ -1271,7 +1304,7 @@ class ScraperRepository {
                     shares: 0,
                     angry_count: 0,
                     views: toCount(normalized.views),
-                    follow: toCount(normalized.follow),
+                    follow: 0,
                     posted_at: normalized.posted_at,
                     scraped_at: now,
                     source: 'youtube_api',
@@ -1426,7 +1459,7 @@ class ScraperRepository {
                     shares: normalized.shares,
                     angry_count: 0,
                     views: toCount(normalized.views),
-                    follow: toCount(normalized.follow),
+                    follow: 0,
                     posted_at: normalized.posted_at,
                     scraped_at: now,
                     source: 'apify',
@@ -1514,7 +1547,6 @@ class ScraperRepository {
                 id,
                 platform_post_id,
                 channel_id,
-                follow,
                 posted_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY channel_id
@@ -1557,7 +1589,7 @@ class ScraperRepository {
 
         return sequelize.query(
             `${this.youtubeTailRankedCteSql()}
-             SELECT id, platform_post_id, channel_id, follow, posted_at
+             SELECT id, platform_post_id, channel_id, posted_at
              FROM ranked
              WHERE rank_in_channel > :headSize
              ORDER BY posted_at ASC, id ASC
@@ -1591,9 +1623,7 @@ class ScraperRepository {
                     continue;
                 }
 
-                const normalized = normalizeYoutubeVideo(raw, {
-                    follow: toCount(row.follow),
-                });
+                const normalized = normalizeYoutubeVideo(raw);
 
                 const scraperRun = await this.scraperRunModel.findByPk(row.id, { transaction });
                 if (!scraperRun) {
@@ -1657,7 +1687,9 @@ class ScraperRepository {
             runsInWindow.push(post);
         }
 
-        const aggregate = this.buildAggregateFromRuns(runsInWindow);
+        const aggregate = this.buildAggregateFromRuns(runsInWindow, {
+            follow: await this.sumSubjectChannelFollowers(subjectId, { transaction }),
+        });
         const payload = {
             subject_id: subjectId,
             likes: aggregate.likes,
@@ -1863,7 +1895,6 @@ class ScraperRepository {
                 COALESCE(SUM(per_channel.shares), 0) AS shares,
                 COALESCE(SUM(per_channel.angry_count), 0) AS angry_count,
                 COALESCE(SUM(per_channel.views), 0) AS views,
-                COALESCE(SUM(per_channel.channel_follow), 0) AS follow,
                 COALESCE(SUM(per_channel.posts_count), 0) AS posts_count
              FROM (
                 SELECT
@@ -1875,7 +1906,6 @@ class ScraperRepository {
                     COALESCE(SUM(sr.shares), 0) AS shares,
                     COALESCE(SUM(sr.angry_count), 0) AS angry_count,
                     COALESCE(SUM(sr.views), 0) AS views,
-                    COALESCE(MAX(sr.follow), 0) AS channel_follow,
                     COUNT(*) AS posts_count
                 FROM subjects_scraper_runs ssr
                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
@@ -1917,7 +1947,6 @@ class ScraperRepository {
                 shares: 0,
                 angry_count: 0,
                 views: 0,
-                follow: 0,
                 posts_count: 0,
                 scoreInputs: [],
             };
@@ -1927,7 +1956,6 @@ class ScraperRepository {
             const shares = toCount(row.shares);
             const angry_count = toCount(row.angry_count);
             const views = toCount(row.views);
-            const follow = toCount(row.follow);
             const posts_count = toCount(row.posts_count);
             const platform = normalizePlatform(row.platform);
 
@@ -1936,7 +1964,6 @@ class ScraperRepository {
             bucket.shares += shares;
             bucket.angry_count += angry_count;
             bucket.views += views;
-            bucket.follow += follow;
             bucket.posts_count += posts_count;
             bucket.scoreInputs.push({
                 platform,
@@ -1952,6 +1979,7 @@ class ScraperRepository {
         let items = [];
         for (const [subjectId, bucket] of bySubject) {
             const scores = calculateScoresFromRuns(bucket.scoreInputs);
+            const follow = this.sumFollowersFromChannels(bucket.subject.channels || []);
             const payload = {
                 id: subjectId,
                 subject_id: subjectId,
@@ -1960,7 +1988,7 @@ class ScraperRepository {
                 shares: bucket.shares,
                 angry_count: bucket.angry_count,
                 views: bucket.views,
-                follow: bucket.follow,
+                follow,
                 posts_count: bucket.posts_count,
                 hot_score: scores.hot_score,
                 trend_score: scores.trend_score,

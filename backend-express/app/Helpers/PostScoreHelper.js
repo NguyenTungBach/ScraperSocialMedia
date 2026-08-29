@@ -428,7 +428,13 @@ function normalizeApifyItem(item) {
     const shares = pickCount(item, ['shares', 'shareCount', 'sharesCount']) ?? 0;
     const angry_count = pickAngryCount(item);
     const views =
-        pickCount(item, ['views', 'viewCount', 'videoViewCount', 'playCount']) ?? 0;
+        pickCount(item, [
+            'viewsCount',
+            'views',
+            'viewCount',
+            'videoViewCount',
+            'playCount',
+        ]) ?? 0;
 
     return {
         platform: 'facebook',

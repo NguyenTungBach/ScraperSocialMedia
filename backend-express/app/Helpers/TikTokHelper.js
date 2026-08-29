@@ -90,12 +90,6 @@ function normalizeTikTokItem(item) {
 
     if (!videoId && !post_url) return null;
 
-    const followers =
-        pickNested(item, 'authorMeta.fans') ||
-        item.authorMeta?.fans ||
-        item.authorMeta?.followers ||
-        0;
-
     return {
         platform: 'tiktok',
         platform_post_id: videoId ? String(videoId) : extractVideoIdFromUrl(post_url),
@@ -110,7 +104,8 @@ function normalizeTikTokItem(item) {
         shares: toCount(item.shareCount ?? item.shares ?? pickNested(item, 'shareCount') ?? 0),
         angry_count: 0,
         views: toCount(item.playCount ?? item.views ?? pickNested(item, 'playCount') ?? 0),
-        follow: toCount(followers),
+        // Followers thuộc kênh (channels.followers), không stamp lên bài
+        follow: 0,
         author_name: authorName ? String(authorName).replace(/^@/, '') : null,
         raw_data: item,
     };

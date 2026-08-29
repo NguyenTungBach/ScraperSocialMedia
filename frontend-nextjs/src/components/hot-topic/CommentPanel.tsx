@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Loader2, Sparkles } from 'lucide-react';
 import {
   commentsApi,
@@ -11,6 +11,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { classifyLabel, hasAnalysisData } from '@/lib/utils/commentAnalysis';
 import { isCommentSupportedPlatform } from '@/lib/utils/socialPlatforms';
+import { MakeToast } from '@/lib/utils/toast';
 import { CommentAnalysisModal } from './CommentAnalysisModal';
 import styles from './SubjectDetailModal.module.scss';
 
@@ -54,7 +55,7 @@ function CommentBadges({
   sentiment?: string | null;
   category?: string | null;
   severity?: string | null;
-  extra?: ReactNode;
+  extra?: React.ReactNode;
 }) {
   if (!classifiedAs && !sentiment && !category && !severity && !extra) return null;
 
@@ -159,14 +160,31 @@ interface CommentPanelProps {
     debate_count: number;
     analyzed: boolean;
   };
+  onAnalyzed?: () => void;
 }
 
-export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief, contentBriefStatus, summary }: CommentPanelProps) {
+export function CommentPanel({
+  scraperRunId,
+  platform,
+  videoTitle,
+  contentBrief,
+  contentBriefStatus,
+  summary,
+  onAnalyzed,
+}: CommentPanelProps) {
   const [open, setOpen] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScraperRunComments | null>(null);
+  const [localBrief, setLocalBrief] = useState(contentBrief);
+  const [localBriefStatus, setLocalBriefStatus] = useState(contentBriefStatus);
+
+  useEffect(() => {
+    setLocalBrief(contentBrief);
+    setLocalBriefStatus(contentBriefStatus);
+  }, [contentBrief, contentBriefStatus]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -183,7 +201,6 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
 
   const total = summary?.total ?? 0;
 
-  // Tải comment + phân tích đã lưu DB ngay khi render (không cần mở panel trước)
   useEffect(() => {
     if (total === 0 || !isCommentSupportedPlatform(platform)) return;
     void load();
@@ -199,6 +216,45 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
     if (data && hasAnalysisData(data)) return true;
     return Boolean(summary?.analyzed);
   }, [data, summary?.analyzed]);
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    try {
+      const res = await commentsApi.analyze(scraperRunId);
+      const result = res.data;
+      if (result?.comments) {
+        setData(result.comments);
+      } else {
+        await load();
+      }
+      if (result?.content_brief?.content_brief) {
+        setLocalBrief(result.content_brief.content_brief);
+        setLocalBriefStatus('done');
+      }
+      const reason = result?.comments_analysis?.reason;
+      if (result?.comments_analysis?.analyzed) {
+        MakeToast({ variant: 'success', content: 'Đã phân tích comment bằng AI' });
+        setAnalysisOpen(true);
+      } else if (reason === 'already_done') {
+        MakeToast({ variant: 'success', content: 'Bài này đã phân tích trước đó' });
+        setAnalysisOpen(true);
+      } else if (reason === 'no_comments') {
+        MakeToast({ variant: 'warning', content: 'Chưa có comment để phân tích' });
+      } else if (reason === 'gemini_disabled') {
+        MakeToast({ variant: 'warning', content: 'Gemini chưa bật — kiểm tra GEMINI_ENABLED / API key' });
+      } else {
+        MakeToast({
+          variant: 'warning',
+          content: reason ? `Bỏ qua: ${reason}` : 'Không có comment pending để phân tích',
+        });
+      }
+      onAnalyzed?.();
+    } catch (err) {
+      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   if (!isCommentSupportedPlatform(platform)) return null;
   if (total === 0) return null;
@@ -230,16 +286,36 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
 
-        {hasAnalysisFromDb ? (
+        <div className={styles.commentActionRow}>
           <button
             type="button"
             className={styles.commentAnalysisBtn}
-            onClick={() => setAnalysisOpen(true)}
+            onClick={() => void handleAnalyze()}
+            disabled={analyzing}
+            title="Chạy Gemini trên comment pending (FB / YouTube / TikTok)"
           >
-            <Sparkles size={14} aria-hidden />
-            Xem bảng phân tích chi tiết
+            {analyzing ? (
+              <Loader2 size={14} className={styles.spin} aria-hidden />
+            ) : (
+              <Sparkles size={14} aria-hidden />
+            )}
+            {analyzing
+              ? 'Đang phân tích…'
+              : hasAnalysisFromDb
+                ? 'Phân tích lại (nếu còn pending)'
+                : 'Phân tích comment'}
           </button>
-        ) : null}
+
+          {hasAnalysisFromDb ? (
+            <button
+              type="button"
+              className={styles.commentAnalysisBtnSecondary}
+              onClick={() => setAnalysisOpen(true)}
+            >
+              Xem bảng phân tích chi tiết
+            </button>
+          ) : null}
+        </div>
 
         <p className={styles.commentScopeHint}>
           Mỗi lần chạy cào dữ liệu chỉ lấy 20 comment gốc mới nhất · tối đa 10 reply/comment gốc
@@ -267,7 +343,7 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
 
                 {!hasAnalysisFromDb ? (
                   <p className={styles.commentHint}>
-                    Phân tích AI sẽ chạy khi gọi Check alert (POST /alerts/gmail).
+                    Bấm «Phân tích comment» để chạy Gemini trên bài này (mọi MXH đã scrape).
                   </p>
                 ) : null}
               </>
@@ -281,8 +357,8 @@ export function CommentPanel({ scraperRunId, platform, videoTitle, contentBrief,
         onClose={() => setAnalysisOpen(false)}
         scraperRunId={scraperRunId}
         videoTitle={videoTitle}
-        contentBrief={contentBrief}
-        contentBriefStatus={contentBriefStatus}
+        contentBrief={localBrief}
+        contentBriefStatus={localBriefStatus}
         initialData={data}
       />
     </>

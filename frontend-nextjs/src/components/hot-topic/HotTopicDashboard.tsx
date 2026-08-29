@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
   Loader2,
@@ -30,6 +30,13 @@ import {
 import { cn } from '@/lib/utils';
 import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { normalizePlatform } from '@/lib/utils/socialPlatforms';
+import {
+  getAggregateHotScoreFormulaTooltip,
+  getAggregateInteractionFormulaTooltip,
+  getAggregateSentimentFormulaTooltip,
+  getAggregateTrendScoreFormulaTooltip,
+  getDiscussionFormulaTooltip,
+} from '@/lib/utils/metricFormulas';
 import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
 import { HotTopicHeader } from './HotTopicHeader';
@@ -41,6 +48,9 @@ const RANKED_BY_LABELS: Record<RankedBy, string> = {
   interaction: 'Tương Tác',
   sentiment: 'Cảm Xúc',
 };
+
+const CHART_TOOLTIP_WIDTH = 240;
+const CHART_TOOLTIP_GAP = 8;
 
 const RANKED_BY_TO_SORT: Record<RankedBy, SocialPostSortBy> = {
   discussion: 'discussion',
@@ -187,19 +197,46 @@ function ChartTooltip({ topic, rankedBy }: { topic: HotTopic; rankedBy: RankedBy
       </div>
       <div className={styles.chartTooltipStats}>
         <div>
-          <span>Thảo luận</span>
+          <span
+            title={getDiscussionFormulaTooltip({
+              comments: topic.comments,
+              posts_count: topic.postsCount,
+              discussion: topic.discussion,
+            })}
+          >
+            Thảo luận
+          </span>
           <strong>{formatMetric(topic.discussion)}</strong>
         </div>
         <div>
-          <span>Tương tác</span>
+          <span
+            title={getAggregateInteractionFormulaTooltip({
+              channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+              likes: topic.likes,
+              comments: topic.comments,
+              shares: topic.shares,
+              interaction: topic.interaction,
+            })}
+          >
+            Tương tác
+          </span>
           <strong>{formatMetric(topic.interaction)}</strong>
         </div>
         <div>
-          <span>Follow</span>
+          <span>Followers</span>
           <strong>{formatMetric(topic.follow)}</strong>
         </div>
         <div>
-          <span>Cảm xúc</span>
+          <span
+            title={getAggregateSentimentFormulaTooltip({
+              channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+              likes: topic.likes,
+              angry_count: topic.angryCount,
+              sentiment: topic.sentiment,
+            })}
+          >
+            Cảm xúc
+          </span>
           <strong className={topic.sentiment >= 0 ? styles.positive : styles.negative}>
             {topic.sentiment.toFixed(2).replace('.', ',')}
           </strong>
@@ -207,11 +244,32 @@ function ChartTooltip({ topic, rankedBy }: { topic: HotTopic; rankedBy: RankedBy
       </div>
       <div className={styles.chartTooltipStats}>
         <div>
-          <span>Hot score</span>
+          <span
+            title={getAggregateHotScoreFormulaTooltip({
+              channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+              likes: topic.likes,
+              comments: topic.comments,
+              shares: topic.shares,
+              angry_count: topic.angryCount,
+              hot_score: topic.hotScore,
+            })}
+          >
+            Hot score
+          </span>
           <strong>{formatScore(topic.hotScore)}</strong>
         </div>
         <div>
-          <span>Trend score</span>
+          <span
+            title={getAggregateTrendScoreFormulaTooltip({
+              channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+              likes: topic.likes,
+              comments: topic.comments,
+              shares: topic.shares,
+              trend_score: topic.trendScore,
+            })}
+          >
+            Trend score
+          </span>
           <strong>{formatScore(topic.trendScore)}</strong>
         </div>
       </div>
@@ -283,7 +341,14 @@ function RankingRow({
       </div>
 
       <div className={styles.metrics}>
-        <div className={styles.metricItem}>
+        <div
+          className={styles.metricItem}
+          title={getDiscussionFormulaTooltip({
+            comments: topic.comments,
+            posts_count: topic.postsCount,
+            discussion: topic.discussion,
+          })}
+        >
           <span className={styles.metricLabel}>Tổng lượng thảo luận</span>
           <span className={styles.metricValue}>
             {formatMetric(topic.discussion)}
@@ -295,15 +360,32 @@ function RankingRow({
             )}
           </span>
         </div>
-        <div className={styles.metricItem}>
+        <div
+          className={styles.metricItem}
+          title={getAggregateInteractionFormulaTooltip({
+            channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+            likes: topic.likes,
+            comments: topic.comments,
+            shares: topic.shares,
+            interaction: topic.interaction,
+          })}
+        >
           <span className={styles.metricLabel}>Tổng lượng tương tác</span>
           <span className={styles.metricValue}>{formatMetric(topic.interaction)}</span>
         </div>
-        <div className={styles.metricItem}>
-          <span className={styles.metricLabel}>Follow</span>
+        <div className={styles.metricItem} title="Tổng followers các kênh gắn đối tượng">
+          <span className={styles.metricLabel}>Followers</span>
           <span className={styles.metricValue}>{formatMetric(topic.follow)}</span>
         </div>
-        <div className={styles.metricItem}>
+        <div
+          className={styles.metricItem}
+          title={getAggregateSentimentFormulaTooltip({
+            channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+            likes: topic.likes,
+            angry_count: topic.angryCount,
+            sentiment: topic.sentiment,
+          })}
+        >
           <span className={styles.metricLabel}>Chỉ số cảm xúc</span>
           <span className={styles.metricValue}>
             {topic.sentiment.toFixed(2).replace('.', ',')}
@@ -313,10 +395,29 @@ function RankingRow({
         <div className={styles.metricItem}>
           <span className={styles.metricLabel}>Hot / Trend score</span>
           <div className={styles.brandList}>
-            <span className={styles.brandChip} title={`Hot score: ${formatScore(topic.hotScore)}`}>
+            <span
+              className={styles.brandChip}
+              title={getAggregateHotScoreFormulaTooltip({
+                channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+                likes: topic.likes,
+                comments: topic.comments,
+                shares: topic.shares,
+                angry_count: topic.angryCount,
+                hot_score: topic.hotScore,
+              })}
+            >
               H {formatScore(topic.hotScore)}
             </span>
-            <span className={styles.brandChip} title={`Trend score: ${formatScore(topic.trendScore)}`}>
+            <span
+              className={styles.brandChip}
+              title={getAggregateTrendScoreFormulaTooltip({
+                channelTypes: (topic.channels || []).map((ch) => ch.type_channel),
+                likes: topic.likes,
+                comments: topic.comments,
+                shares: topic.shares,
+                trend_score: topic.trendScore,
+              })}
+            >
               T {formatScore(topic.trendScore)}
             </span>
           </div>
@@ -364,6 +465,8 @@ export function HotTopicDashboard() {
   const rankedBy: RankedBy = 'discussion';
   const [showNewOnly, setShowNewOnly] = useState(false);
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
+  const chartAreaRef = useRef<HTMLDivElement | null>(null);
   const [dateFrom, setDateFrom] = useState(initialRange.date_from);
   const [dateTo, setDateTo] = useState(initialRange.date_to);
   const [appliedDateFrom, setAppliedDateFrom] = useState(initialRange.date_from);
@@ -517,6 +620,20 @@ export function HotTopicDashboard() {
     return chartMatch ? chartTopicToHotTopic(chartMatch) : null;
   }, [topics, chartTopics, hoveredChartId]);
 
+  const placeChartTooltip = useCallback((columnEl: HTMLElement) => {
+    const area = chartAreaRef.current;
+    if (!area) return;
+    const areaRect = area.getBoundingClientRect();
+    const colRect = columnEl.getBoundingClientRect();
+    const spaceRight = areaRect.right - colRect.right;
+    const placeLeft = spaceRight < CHART_TOOLTIP_WIDTH + CHART_TOOLTIP_GAP;
+    const left = placeLeft
+      ? colRect.left - areaRect.left - CHART_TOOLTIP_WIDTH - CHART_TOOLTIP_GAP
+      : colRect.right - areaRect.left + CHART_TOOLTIP_GAP;
+    const top = Math.max(0, colRect.top - areaRect.top);
+    setTooltipPos({ top, left: Math.max(0, left) });
+  }, []);
+
   return (
     <div className={styles.dashboard}>
       <HotTopicHeader
@@ -618,7 +735,7 @@ export function HotTopicDashboard() {
                   ))}
                 </div>
 
-                <div className={styles.chartArea}>
+                <div className={styles.chartArea} ref={chartAreaRef}>
                   <div className={styles.chartGrid}>
                     {yAxisLabels.map((_, idx) => (
                       <div key={`g-${idx}`} className={styles.gridLine} />
@@ -634,8 +751,14 @@ export function HotTopicDashboard() {
                         <div
                           key={item.id}
                           className={styles.barColumn}
-                          onMouseEnter={() => setHoveredChartId(item.id)}
-                          onMouseLeave={() => setHoveredChartId(null)}
+                          onMouseEnter={(e) => {
+                            setHoveredChartId(item.id);
+                            placeChartTooltip(e.currentTarget);
+                          }}
+                          onMouseLeave={() => {
+                            setHoveredChartId(null);
+                            setTooltipPos(null);
+                          }}
                         >
                           <div className={styles.barTrack}>
                             <div className={styles.barGrow}>
@@ -655,8 +778,11 @@ export function HotTopicDashboard() {
                     })}
                   </div>
 
-                  {hoveredChartId && hoveredTopic && (
-                    <div className={styles.tooltipAnchor}>
+                  {hoveredChartId && hoveredTopic && tooltipPos && (
+                    <div
+                      className={styles.tooltipAnchor}
+                      style={{ top: tooltipPos.top, left: tooltipPos.left }}
+                    >
                       <ChartTooltip topic={hoveredTopic} rankedBy={rankedBy} />
                     </div>
                   )}

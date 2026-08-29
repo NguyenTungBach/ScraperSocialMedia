@@ -6,6 +6,8 @@ export interface ChannelItem {
   name: string;
   url: string;
   type_channel: string;
+  followers?: number;
+  post_count?: number;
   scraper_runs_count?: number;
   has_scraper_runs?: boolean;
   /** Luôn false — URL cố định sau khi lưu (mọi nền tảng) */

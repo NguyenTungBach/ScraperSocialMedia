@@ -6,6 +6,7 @@ const YoutubeTailRefreshCommand = require('./Commands/YoutubeTailRefreshCommand'
 const YoutubeScrapeCommand = require('./Commands/YoutubeScrapeCommand');
 const TikTokScrapeCommand = require('./Commands/TikTokScrapeCommand');
 const FacebookScrapeCommand = require('./Commands/FacebookScrapeCommand');
+const MetricSnapshotCommand = require('./Commands/MetricSnapshotCommand');
 
 const COMMANDS = [
     SamplePingCommand,
@@ -14,6 +15,7 @@ const COMMANDS = [
     YoutubeScrapeCommand,
     TikTokScrapeCommand,
     FacebookScrapeCommand,
+    MetricSnapshotCommand,
 ];
 
 function listCommands() {

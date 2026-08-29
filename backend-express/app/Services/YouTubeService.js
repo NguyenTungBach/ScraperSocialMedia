@@ -76,6 +76,7 @@ class YouTubeService {
         }
 
         const subscriberCount = Number(channel?.statistics?.subscriberCount ?? 0);
+        const videoCount = Number(channel?.statistics?.videoCount ?? 0);
 
         return {
             channelId: channel.id,
@@ -83,6 +84,10 @@ class YouTubeService {
             follow: Number.isFinite(subscriberCount)
                 ? Math.max(0, Math.floor(subscriberCount))
                 : 0,
+            videoCount: Number.isFinite(videoCount)
+                ? Math.max(0, Math.floor(videoCount))
+                : 0,
+            channelRaw: channel,
         };
     }
 
@@ -278,8 +283,14 @@ class YouTubeService {
                 ? Math.min(Math.max(Number(maxResults) || 10, 1), 50)
                 : youtubeConfig.defaultMaxResults;
 
-        const { channelId, uploadsPlaylistId, follow, quota_used: resolveQuota } =
-            await this.getUploadsPlaylistFromRef(ref);
+        const {
+            channelId,
+            uploadsPlaylistId,
+            follow,
+            videoCount,
+            channelRaw,
+            quota_used: resolveQuota,
+        } = await this.getUploadsPlaylistFromRef(ref);
         const videoIds = await this.getPlaylistVideoIds(uploadsPlaylistId, limit);
         const rawVideos = await this.getVideoDetails(videoIds);
 
@@ -296,6 +307,8 @@ class YouTubeService {
             channelId,
             uploadsPlaylistId,
             follow: follow || 0,
+            videoCount: videoCount || 0,
+            channelRaw: channelRaw || null,
         };
     }
 

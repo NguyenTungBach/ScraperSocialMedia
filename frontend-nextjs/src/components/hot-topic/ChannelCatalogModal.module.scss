@@ -203,6 +203,13 @@ $st-red: #dc2626;
   }
 }
 
+.meta {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: $st-muted;
+  font-variant-numeric: tabular-nums;
+}
+
 .rowActions {
   display: inline-flex;
   gap: 6px;

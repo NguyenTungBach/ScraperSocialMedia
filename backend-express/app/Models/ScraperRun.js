@@ -27,6 +27,14 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'scraper_run_id',
                 as: 'commentThreads',
             });
+            ScraperRun.hasMany(models.PostDailySnapshot, {
+                foreignKey: 'scraper_run_id',
+                as: 'dailySnapshots',
+            });
+            ScraperRun.hasMany(models.PostTopCommentDaily, {
+                foreignKey: 'scraper_run_id',
+                as: 'topCommentsDaily',
+            });
         }
     }
 

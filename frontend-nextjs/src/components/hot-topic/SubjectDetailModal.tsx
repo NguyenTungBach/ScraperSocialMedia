@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BarChart3,
+  CalendarRange,
   ExternalLink,
+  Eye,
+  GitCompareArrows,
   Loader2,
   MessageCircle,
   Share2,
   ThumbsUp,
   TrendingDown,
   TrendingUp,
-  Users,
   X,
   Angry,
 } from 'lucide-react';
@@ -25,14 +28,29 @@ import { formatMetric, formatScore, formatShortDate } from '@/lib/mock/hotTopics
 import {
   buildPlatformTabs,
   getPlatformMeta,
+  normalizePlatform,
   resolvePostPlatform,
   sortPlatformKeys,
 } from '@/lib/utils/socialPlatforms';
+import {
+  getAggregateHotScoreFormulaTooltip,
+  getAggregateInteractionFormulaTooltip,
+  getAggregateSentimentFormulaTooltip,
+  getAggregateTrendScoreFormulaTooltip,
+  getDiscussionFormulaTooltip,
+  getHotScoreFormulaTooltip,
+  getInteractionFormulaTooltip,
+  getSentimentFormulaTooltip,
+  getTrendScoreFormulaTooltip,
+} from '@/lib/utils/metricFormulas';
 import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { cn } from '@/lib/utils';
 import type { ChannelItem } from '@/lib/api/channels';
 import { PlatformBadge } from './PlatformBadge';
 import { CommentPanel } from './CommentPanel';
+import { CompareModal, subjectPostsToCandidates } from './CompareModal';
+import { ComparePostByDayModal } from './ComparePostByDayModal';
+import { PostSnapshotModal } from './PostSnapshotModal';
 import styles from './SubjectDetailModal.module.scss';
 
 const PER_PAGE_OPTIONS = [5, 10, 20] as const;
@@ -71,9 +89,17 @@ function formatDateTime(iso?: string | null): string {
 function PostCard({
   post,
   channelMap,
+  onCompare,
+  onCompareByDay,
+  onStats,
+  onCommentAnalyzed,
 }: {
   post: SubjectRelatedPost;
   channelMap: Map<number, ChannelItem>;
+  onCompare: (post: SubjectRelatedPost) => void;
+  onCompareByDay: (post: SubjectRelatedPost) => void;
+  onStats: (post: SubjectRelatedPost) => void;
+  onCommentAnalyzed?: () => void;
 }) {
   const preview = post.title?.trim() || post.text?.trim() || '(Không có nội dung)';
   const channel = post.channel_id ? channelMap.get(post.channel_id) : null;
@@ -94,7 +120,36 @@ function PostCard({
             </span>
           ) : null}
         </div>
-        <span className={styles.postDate}>{formatDateTime(post.posted_at)}</span>
+        <div className={styles.postHeaderRight}>
+          <button
+            type="button"
+            className={styles.postCompareBtn}
+            onClick={() => onStats(post)}
+            title="Xem thống kê / Snapshot bài"
+          >
+            <BarChart3 size={14} aria-hidden />
+            Thống kê
+          </button>
+          <button
+            type="button"
+            className={styles.postCompareBtn}
+            onClick={() => onCompare(post)}
+            title="So sánh với bài viết khác"
+          >
+            <GitCompareArrows size={14} aria-hidden />
+            So sánh bài viết
+          </button>
+          <button
+            type="button"
+            className={styles.postCompareByDayBtn}
+            onClick={() => onCompareByDay(post)}
+            title="So sánh snapshot Ngày A vs Ngày B của bài này"
+          >
+            <CalendarRange size={14} aria-hidden />
+            So sánh theo ngày
+          </button>
+          <span className={styles.postDate}>{formatDateTime(post.posted_at)}</span>
+        </div>
       </div>
       <p className={styles.postText}>{truncate(preview)}</p>
       {post.content_brief && post.content_brief_status === 'done' ? (
@@ -104,25 +159,67 @@ function PostCard({
         </div>
       ) : null}
       <div className={styles.postMetrics}>
-        <span title="Likes">
+        <span title="Likes (scraped)">
           <ThumbsUp size={14} aria-hidden /> {formatMetric(post.likes)}
         </span>
-        <span title="Comments">
+        <span title="Comments (scraped)">
           <MessageCircle size={14} aria-hidden /> {formatMetric(post.comments)}
         </span>
-        <span title="Shares">
+        <span title="Shares (scraped)">
           <Share2 size={14} aria-hidden /> {formatMetric(post.shares)}
         </span>
-        <span title="Follow">
-          <Users size={14} aria-hidden /> {formatMetric(post.follow ?? 0)}
+        <span title="Views / lượt xem (scraped)">
+          <Eye size={14} aria-hidden /> {formatMetric(post.views ?? 0)}
         </span>
-        <span title="Angry">
+        <span title="Angry reactions (scraped)">
           <Angry size={14} aria-hidden /> {formatMetric(post.angry_count)}
         </span>
-        <span title="Interaction">IT {formatMetric(post.interaction)}</span>
-        <span title="Hot score">H {formatScore(post.hot_score)}</span>
-        <span title="Trend score">T {formatScore(post.trend_score)}</span>
-        <span title="Sentiment">S {post.sentiment.toFixed(2)}</span>
+        <span
+          title={getInteractionFormulaTooltip({
+            platform,
+            likes: post.likes,
+            comments: post.comments,
+            shares: post.shares,
+            interaction: post.interaction,
+          })}
+        >
+          IT {formatMetric(post.interaction)}
+        </span>
+        <span
+          title={getHotScoreFormulaTooltip({
+            platform,
+            likes: post.likes,
+            comments: post.comments,
+            shares: post.shares,
+            angry_count: post.angry_count,
+            views: post.views,
+            hot_score: post.hot_score,
+          })}
+        >
+          H {formatScore(post.hot_score)}
+        </span>
+        <span
+          title={getTrendScoreFormulaTooltip({
+            platform,
+            likes: post.likes,
+            comments: post.comments,
+            shares: post.shares,
+            views: post.views,
+            trend_score: post.trend_score,
+          })}
+        >
+          T {formatScore(post.trend_score)}
+        </span>
+        <span
+          title={getSentimentFormulaTooltip({
+            platform,
+            likes: post.likes,
+            angry_count: post.angry_count,
+            sentiment: post.sentiment,
+          })}
+        >
+          S {post.sentiment.toFixed(2)}
+        </span>
       </div>
       {post.post_url && (
         <a
@@ -141,6 +238,7 @@ function PostCard({
         summary={post.comment_summary}
         contentBrief={post.content_brief}
         contentBriefStatus={post.content_brief_status}
+        onAnalyzed={onCommentAnalyzed}
       />
     </article>
   );
@@ -193,6 +291,11 @@ export function SubjectDetailModal({
     externalDateFrom || initialRange.date_from
   );
   const [appliedDateTo, setAppliedDateTo] = useState(externalDateTo || initialRange.date_to);
+  const [compareSeed, setCompareSeed] = useState<{
+    initialPostIds: number[];
+  } | null>(null);
+  const [compareByDayPost, setCompareByDayPost] = useState<SubjectRelatedPost | null>(null);
+  const [statsPost, setStatsPost] = useState<SubjectRelatedPost | null>(null);
 
   const load = useCallback(
     async (options?: {
@@ -280,6 +383,25 @@ export function SubjectDetailModal({
     return map;
   }, [detail?.subject?.channels]);
 
+  /** Kênh theo tab nền tảng đang chọn (hoặc tất cả nếu không lọc). */
+  const visibleChannels = useMemo(() => {
+    const all = detail?.subject?.channels || [];
+    if (!platformFilter) return all;
+    return all.filter(
+      (ch) => normalizePlatform(ch.type_channel) === normalizePlatform(platformFilter)
+    );
+  }, [detail?.subject?.channels, platformFilter]);
+
+  const channelFollowers = useMemo(
+    () => visibleChannels.reduce((sum, ch) => sum + (Number(ch.followers) || 0), 0),
+    [visibleChannels]
+  );
+
+  const channelPostCount = useMemo(
+    () => visibleChannels.reduce((sum, ch) => sum + (Number(ch.post_count) || 0), 0),
+    [visibleChannels]
+  );
+
   const platformTabs = useMemo(
     () => buildPlatformTabs(detail?.posts_by_platform),
     [detail?.posts_by_platform]
@@ -346,9 +468,19 @@ export function SubjectDetailModal({
       );
     }
 
+    const cardProps = {
+      channelMap,
+      onCompare: (post: SubjectRelatedPost) =>
+        setCompareSeed({ initialPostIds: [post.id] }),
+      onCompareByDay: (post: SubjectRelatedPost) => setCompareByDayPost(post),
+      onStats: (post: SubjectRelatedPost) => setStatsPost(post),
+      onCommentAnalyzed: () =>
+        void load({ page, sort: sortBy, platform: platformFilter }),
+    };
+
     if (platformFilter) {
       return detail.posts.map((post) => (
-        <PostCard key={post.id} post={post} channelMap={channelMap} />
+        <PostCard key={post.id} post={post} {...cardProps} />
       ));
     }
 
@@ -367,7 +499,7 @@ export function SubjectDetailModal({
           </header>
           <div className={styles.platformGroupList}>
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} channelMap={channelMap} />
+              <PostCard key={post.id} post={post} {...cardProps} />
             ))}
           </div>
         </section>
@@ -376,30 +508,37 @@ export function SubjectDetailModal({
   };
 
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <header className={styles.header}>
-          <div>
-            <p className={styles.eyebrow}>Chi tiết đối tượng</p>
-            <h2 className={styles.title}>
-              {detail?.subject?.name || (loading && !detail ? 'Đang tải…' : '—')}
-            </h2>
+    <>
+      <div className={styles.overlay} role="dialog" aria-modal="true" onClick={onClose}>
+        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <header className={styles.header}>
+            <div>
+              <p className={styles.eyebrow}>Chi tiết đối tượng</p>
+              <h2 className={styles.title}>
+                {detail?.subject?.name || (loading && !detail ? 'Đang tải…' : '—')}
+              </h2>
             {detail?.subject?.normalized_name && (
               <p className={styles.subtitle}>Biệt danh: {detail.subject.normalized_name}</p>
             )}
             {(detail?.subject?.channels?.length || 0) > 0 ? (
               <div className={styles.channelSection}>
-                {(detail.subject.channels || []).map((ch) => (
+                {(detail?.subject?.channels || []).map((ch) => (
                   <a
                     key={ch.id}
-                    className={styles.chipAssign}
+                    className={styles.channelCard}
                     href={ch.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     title={ch.url}
                   >
-                    <PlatformBadge platform={ch.type_channel} />
-                    {ch.name}
+                    <span className={styles.channelCardHead}>
+                      <PlatformBadge platform={ch.type_channel} />
+                      <strong>{ch.name}</strong>
+                    </span>
+                    <span className={styles.channelCardMeta}>
+                      {formatMetric(ch.followers ?? 0)} followers ·{' '}
+                      {formatMetric(ch.post_count ?? 0)} bài viết
+                    </span>
                   </a>
                 ))}
               </div>
@@ -426,31 +565,83 @@ export function SubjectDetailModal({
         ) : detail ? (
           <>
             <section className={styles.aggregate}>
-              <div className={styles.aggCard}>
+              <div
+                className={styles.aggCard}
+                title={getDiscussionFormulaTooltip({
+                  comments: aggregate?.comments,
+                  posts_count: aggregate?.posts_count,
+                  discussion: aggregate?.discussion,
+                })}
+              >
                 <span>Thảo luận</span>
                 <strong>{formatMetric(aggregate?.discussion ?? 0)}</strong>
               </div>
-              <div className={styles.aggCard}>
+              <div
+                className={styles.aggCard}
+                title={getAggregateInteractionFormulaTooltip({
+                  channelTypes: (detail.subject.channels || []).map((ch) => ch.type_channel),
+                  likes: aggregate?.likes,
+                  comments: aggregate?.comments,
+                  shares: aggregate?.shares,
+                  interaction: aggregate?.interaction,
+                })}
+              >
                 <span>Tương tác</span>
                 <strong>{formatMetric(aggregate?.interaction ?? 0)}</strong>
               </div>
-              <div className={styles.aggCard}>
-                <span>Follow</span>
-                <strong>{formatMetric(aggregate?.follow ?? 0)}</strong>
+              <div className={styles.aggCard} title="Tổng followers các kênh gắn với đối tượng">
+                <span>Followers</span>
+                <strong>{formatMetric(channelFollowers)}</strong>
               </div>
-              <div className={styles.aggCard}>
+              <div className={styles.aggCard} title="Tổng số bài viết kênh (từ channel.post_count)">
+                <span>Số bài viết kênh</span>
+                <strong>{formatMetric(channelPostCount)}</strong>
+              </div>
+              <div
+                className={styles.aggCard}
+                title={getAggregateSentimentFormulaTooltip({
+                  channelTypes: (detail.subject.channels || []).map((ch) => ch.type_channel),
+                  likes: aggregate?.likes,
+                  angry_count: aggregate?.angry_count,
+                  sentiment: aggregate?.sentiment,
+                })}
+              >
                 <span>Cảm xúc</span>
                 <strong>{(aggregate?.sentiment ?? 0).toFixed(2)}</strong>
               </div>
-              <div className={styles.aggCard}>
+              <div
+                className={styles.aggCard}
+                title={getAggregateHotScoreFormulaTooltip({
+                  channelTypes: (detail.subject.channels || []).map((ch) => ch.type_channel),
+                  likes: aggregate?.likes,
+                  comments: aggregate?.comments,
+                  shares: aggregate?.shares,
+                  angry_count: aggregate?.angry_count,
+                  views: aggregate?.views,
+                  hot_score: aggregate?.hot_score,
+                })}
+              >
                 <span>Hot score</span>
                 <strong>{formatScore(aggregate?.hot_score ?? 0)}</strong>
               </div>
-              <div className={styles.aggCard}>
+              <div
+                className={styles.aggCard}
+                title={getAggregateTrendScoreFormulaTooltip({
+                  channelTypes: (detail.subject.channels || []).map((ch) => ch.type_channel),
+                  likes: aggregate?.likes,
+                  comments: aggregate?.comments,
+                  shares: aggregate?.shares,
+                  views: aggregate?.views,
+                  trend_score: aggregate?.trend_score,
+                })}
+              >
                 <span>Trend score</span>
                 <strong>{formatScore(aggregate?.trend_score ?? 0)}</strong>
               </div>
-              <div className={styles.aggCard}>
+              <div
+                className={styles.aggCard}
+                title="Uptrend nếu đạt ngưỡng hot/trend; ngược lại Downtrend"
+              >
                 <span>Xu hướng</span>
                 <strong className={styles.trendValue}>
                   {aggregate?.trend_direction === 'up' ? (
@@ -470,7 +661,8 @@ export function SubjectDetailModal({
               <span>Likes {formatMetric(aggregate?.likes ?? 0)}</span>
               <span>Comments {formatMetric(aggregate?.comments ?? 0)}</span>
               <span>Shares {formatMetric(aggregate?.shares ?? 0)}</span>
-              <span>Follow {formatMetric(aggregate?.follow ?? 0)}</span>
+              <span>Followers {formatMetric(channelFollowers)}</span>
+              <span>Số bài viết kênh {formatMetric(channelPostCount)}</span>
               <span>Angry {formatMetric(aggregate?.angry_count ?? 0)}</span>
               <span>Số bài {formatMetric(aggregate?.posts_count ?? 0)}</span>
               <span>
@@ -603,6 +795,27 @@ export function SubjectDetailModal({
           </>
         ) : null}
       </div>
-    </div>
+      </div>
+
+      {compareSeed && detail ? (
+        <CompareModal
+          mode="posts"
+          initialPostIds={compareSeed.initialPostIds}
+          postCandidates={subjectPostsToCandidates(detail.posts)}
+          onClose={() => setCompareSeed(null)}
+        />
+      ) : null}
+
+      {compareByDayPost ? (
+        <ComparePostByDayModal
+          post={compareByDayPost}
+          onClose={() => setCompareByDayPost(null)}
+        />
+      ) : null}
+
+      {statsPost ? (
+        <PostSnapshotModal post={statsPost} onClose={() => setStatsPost(null)} />
+      ) : null}
+    </>
   );
 }

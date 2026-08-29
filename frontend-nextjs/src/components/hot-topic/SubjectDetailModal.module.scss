@@ -52,8 +52,48 @@
 .channelSection {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin-top: 10px;
+}
+
+.channelCard {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #c2410c;
+  text-decoration: none;
+  border: 1px solid #ffedd5;
+  transition: background 0.12s;
+
+  &:hover {
+    background: #ffedd5;
+  }
+}
+
+.channelCardHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  strong {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.channelCardMeta {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #9a3412;
+  font-variant-numeric: tabular-nums;
 }
 
 .chipGeneral,
@@ -430,6 +470,55 @@
   color: #64748b;
 }
 
+.postHeaderRight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.postCompareBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: #4338ca;
+  }
+}
+
+.postCompareByDayBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  color: #c2410c;
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    background: #ffedd5;
+    border-color: #fb923c;
+    color: #9a3412;
+  }
+}
+
 .postOrigin {
   display: flex;
   flex-wrap: wrap;
@@ -552,8 +641,42 @@
   font-weight: 700;
   cursor: pointer;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: #e0e7ff;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+}
+
+.commentActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+
+  .commentAnalysisBtn {
+    margin-top: 0;
+  }
+}
+
+.commentAnalysisBtnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: #f1f5f9;
   }
 }
 

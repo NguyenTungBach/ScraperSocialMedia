@@ -78,9 +78,10 @@ function buildWatchUrl(videoId) {
 /**
  * Map item từ videos.list sang shape ingest (giống normalizeApifyItem).
  * @param {object} video
- * @param {{ follow?: number }} [extras]
+ * @param {object} [extras] — giữ tương thích gọi cũ; follow không còn stamp lên bài
  */
 function normalizeYoutubeVideo(video, extras = {}) {
+    void extras;
     const videoId = video?.id || video?.videoId || null;
     const snippet = video?.snippet || {};
     const statistics = video?.statistics || {};
@@ -104,7 +105,8 @@ function normalizeYoutubeVideo(video, extras = {}) {
         shares: 0,
         angry_count: 0,
         views: toCount(Number(statistics.viewCount ?? video?.viewCount ?? video?.views ?? 0)),
-        follow: toCount(Number(extras.follow ?? video?.follow ?? 0)),
+        // Subscribers thuộc kênh (channels.followers), không stamp lên bài
+        follow: 0,
         raw_data: video,
     };
 }

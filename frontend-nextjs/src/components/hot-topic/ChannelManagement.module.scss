@@ -99,6 +99,35 @@ $st-red: #dc2626;
   &:hover {
     filter: brightness(0.96);
   }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+}
+
+.secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid $st-border;
+  border-radius: 8px;
+  background: $st-white;
+  color: $st-text;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    background: $st-bg;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
 }
 
 .backBtn {
@@ -137,9 +166,11 @@ $st-red: #dc2626;
 .tableRow {
   display: grid;
   grid-template-columns:
-    minmax(160px, 1fr)
-    minmax(220px, 2fr)
-    minmax(120px, 0.8fr)
+    minmax(140px, 1.1fr)
+    minmax(180px, 1.6fr)
+    minmax(100px, 0.7fr)
+    minmax(88px, 0.55fr)
+    minmax(88px, 0.55fr)
     156px;
   gap: 12px;
   align-items: center;
@@ -193,6 +224,13 @@ $st-red: #dc2626;
   &:hover {
     text-decoration: underline;
   }
+}
+
+.statCell {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: $st-text;
+  font-variant-numeric: tabular-nums;
 }
 
 .actionsHead {

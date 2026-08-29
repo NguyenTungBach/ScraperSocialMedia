@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  BarChart3,
+  GitCompareArrows,
   Loader2,
   Pencil,
   Plus,
@@ -21,6 +23,8 @@ import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { HotTopicHeader } from './HotTopicHeader';
 import { PlatformBadge } from './PlatformBadge';
+import { ChannelSnapshotModal } from './ChannelSnapshotModal';
+import { CompareModal } from './CompareModal';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelManagement.module.scss';
 
@@ -58,6 +62,8 @@ export function ChannelManagement() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [scrapingId, setScrapingId] = useState<number | null>(null);
+  const [statsChannel, setStatsChannel] = useState<ChannelItem | null>(null);
+  const [compareChannelIds, setCompareChannelIds] = useState<number[] | null>(null);
 
   const loadList = useCallback(
     async (options?: { page?: number; q?: string; type_channel?: string }) => {
@@ -315,6 +321,8 @@ export function ChannelManagement() {
             <span>Tên kênh</span>
             <span>URL</span>
             <span>Nền tảng</span>
+            <span>Followers</span>
+            <span>Số bài viết</span>
             <span className={styles.actionsHead}>Thao tác</span>
           </div>
 
@@ -342,7 +350,31 @@ export function ChannelManagement() {
                   <div>
                     <PlatformBadge platform={item.type_channel} size="md" />
                   </div>
+                  <div className={styles.statCell}>
+                    {(item.followers ?? 0).toLocaleString('vi-VN')}
+                  </div>
+                  <div className={styles.statCell}>
+                    {(item.post_count ?? 0).toLocaleString('vi-VN')}
+                  </div>
                   <div className={styles.rowActions}>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={() => setStatsChannel(item)}
+                      aria-label={`Thống kê ${item.name}`}
+                      title="Xem thống kê kênh"
+                    >
+                      <BarChart3 size={15} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={() => setCompareChannelIds([item.id])}
+                      aria-label={`So sánh ${item.name}`}
+                      title="So sánh kênh"
+                    >
+                      <GitCompareArrows size={15} aria-hidden />
+                    </button>
                     {(normalizePlatform(item.type_channel) === 'youtube' ||
                       normalizePlatform(item.type_channel) === 'tiktok' ||
                       normalizePlatform(item.type_channel) === 'facebook') && (
@@ -509,6 +541,21 @@ export function ChannelManagement() {
             </form>
           </div>
         </div>
+      )}
+
+      {statsChannel && (
+        <ChannelSnapshotModal
+          channel={statsChannel}
+          onClose={() => setStatsChannel(null)}
+        />
+      )}
+
+      {compareChannelIds && (
+        <CompareModal
+          mode="channels"
+          initialChannelIds={compareChannelIds}
+          onClose={() => setCompareChannelIds(null)}
+        />
       )}
     </div>
   );

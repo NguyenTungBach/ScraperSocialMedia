@@ -168,6 +168,16 @@ class TikTokScrapeService {
                 });
             videoRunId = videoRun?.id || videoRunId;
 
+            const authorMeta =
+                (rawVideos || []).find((item) => item?.authorMeta)?.authorMeta || null;
+            if (authorMeta) {
+                await this.channelRepository.updateChannelStats(channel.id, {
+                    followers: authorMeta.fans ?? authorMeta.followers ?? 0,
+                    post_count: authorMeta.video ?? 0,
+                    raw_data: authorMeta,
+                });
+            }
+
             const videos = (rawVideos || [])
                 .map((item) => normalizeTikTokItem(item))
                 .filter((v) => v?.platform_post_id);

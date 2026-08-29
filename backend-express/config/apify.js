@@ -9,6 +9,7 @@ module.exports = {
 
     /** Actor IDs cố định trong code (không cần .env — chỉ là endpoint Apify). */
     facebookActorId: 'KoJrdxJCTtpon81KY',
+    facebookPagesActorId: 'apify/facebook-pages-scraper',
     facebookCommentsActorId: 'apify/facebook-comments-scraper',
     tiktokActorId: 'clockworks/free-tiktok-scraper',
     tiktokCommentsActorId: 'BDec00yAmCm1QbMEI',

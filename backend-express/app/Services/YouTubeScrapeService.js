@@ -156,11 +156,17 @@ class YouTubeScrapeService {
                 name: channel.name,
             });
 
-            const { videos, quota_used } =
+            const { videos, quota_used, follow, videoCount, channelRaw } =
                 await this.youtubeService.scrapeChannelByRef(channelRef, {
                     maxResults: max,
                 });
             quotaUsed += quota_used || 3;
+
+            await this.channelRepository.updateChannelStats(channel.id, {
+                followers: follow || 0,
+                post_count: videoCount || 0,
+                raw_data: channelRaw || null,
+            });
 
             const ingest = await this.repository.ingestYoutubeItems({
                 videos,

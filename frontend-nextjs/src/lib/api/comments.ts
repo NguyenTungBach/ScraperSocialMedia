@@ -56,10 +56,36 @@ export interface CommentSummary {
   analyzed: boolean;
 }
 
+export interface CommentAnalyzeResult {
+  scraper_run_id: number;
+  content_brief: {
+    analyzed: boolean;
+    reason?: string;
+    content_brief?: string | null;
+  };
+  comments_analysis: {
+    analyzed: boolean;
+    reason?: string;
+    scraper_run_id: number;
+    model?: string;
+  };
+  comments: ScraperRunComments;
+}
+
 export const commentsApi = {
   getByScraperRun: (scraperRunId: number) =>
     apiClient.get<ScraperRunComments>('/comments', {
       params: { scraper_run_id: scraperRunId },
       skipAuth: true,
     }) as Promise<ApiResponse<ScraperRunComments>>,
+
+  analyze: (scraperRunId: number) =>
+    apiClient.post<CommentAnalyzeResult>(
+      '/comments/analyze',
+      { scraper_run_id: scraperRunId },
+      {
+        skipAuth: true,
+        timeout: 1_800_000,
+      }
+    ) as Promise<ApiResponse<CommentAnalyzeResult>>,
 };

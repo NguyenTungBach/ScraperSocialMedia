@@ -156,6 +156,32 @@ class FacebookScrapeService {
                 );
             }
 
+            logger.info('[facebook-scrape] Scraping page profile', {
+                channel_id: channel.id,
+                name: channel.name,
+                url: channel.url,
+            });
+
+            try {
+                const { items: pageItems } =
+                    await this.apifyService.runFacebookPagesScraper({
+                        startUrls: [channel.url],
+                    });
+                const page = (pageItems || [])[0] || null;
+                if (page) {
+                    await this.channelRepository.updateChannelStats(channel.id, {
+                        followers: page.followers ?? page.likes ?? 0,
+                        post_count: 0,
+                        raw_data: page,
+                    });
+                }
+            } catch (pageErr) {
+                logger.warn('[facebook-scrape] Page profile scrape failed', {
+                    channel_id: channel.id,
+                    message: pageErr.message,
+                });
+            }
+
             logger.info('[facebook-scrape] Scraping posts', {
                 channel_id: channel.id,
                 name: channel.name,

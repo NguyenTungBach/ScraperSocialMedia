@@ -228,6 +228,10 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
                   <a href={item.url} target="_blank" rel="noopener noreferrer">
                     {item.url}
                   </a>
+                  <div className={styles.meta}>
+                    {(item.followers ?? 0).toLocaleString('vi-VN')} followers ·{' '}
+                    {(item.post_count ?? 0).toLocaleString('vi-VN')} bài viết
+                  </div>
                   <PlatformBadge platform={item.type_channel} />
                 </div>
                 <div className={styles.rowActions}>

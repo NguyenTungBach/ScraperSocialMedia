@@ -15,6 +15,8 @@ const socialPostsRoutes = require('./socialPosts');
 const alertsRoutes = require('./alerts');
 const commentsRoutes = require('./comments');
 const channelsRoutes = require('./channels');
+const snapshotsRoutes = require('./snapshots');
+const reportsRoutes = require('./reports');
 
 const AuthController = require('../../app/Http/Controllers/Api/AuthController');
 
@@ -26,6 +28,8 @@ router.use('/social-posts', socialPostsRoutes);
 router.use('/alerts', alertsRoutes);
 router.use('/comments', commentsRoutes);
 router.use('/channels', channelsRoutes);
+router.use('/snapshots', snapshotsRoutes);
+router.use('/reports', reportsRoutes);
 
 router.use('/auth', authRoutes);
 router.use(authenticate());

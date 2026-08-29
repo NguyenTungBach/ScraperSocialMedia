@@ -32,6 +32,13 @@ import {
   formatScore,
 } from '@/lib/mock/hotTopics';
 import { normalizePlatform } from '@/lib/utils/socialPlatforms';
+import {
+  getAggregateHotScoreFormulaTooltip,
+  getAggregateInteractionFormulaTooltip,
+  getAggregateSentimentFormulaTooltip,
+  getAggregateTrendScoreFormulaTooltip,
+  getDiscussionFormulaTooltip,
+} from '@/lib/utils/metricFormulas';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
 import { SubjectDetailModal } from './SubjectDetailModal';
@@ -47,7 +54,7 @@ type SortDir = 'asc' | 'desc';
 const METRIC_SORT_OPTIONS: { value: SubjectListSortBy; label: string }[] = [
   { value: 'discussion', label: 'Tổng lượng thảo luận' },
   { value: 'interaction', label: 'Tổng lượng tương tác' },
-  { value: 'follow', label: 'Follow' },
+  { value: 'follow', label: 'Followers' },
   { value: 'sentiment', label: 'Chỉ số cảm xúc' },
   { value: 'hot_score', label: 'Hot score' },
   { value: 'trend_score', label: 'Trend score' },
@@ -663,7 +670,14 @@ export function SubjectManagement() {
                     <ChannelChips channels={item.channels} />
 
                     <div className={dash.metrics}>
-                      <div className={dash.metricItem}>
+                      <div
+                        className={dash.metricItem}
+                        title={getDiscussionFormulaTooltip({
+                          comments: agg?.comments,
+                          posts_count: agg?.posts_count,
+                          discussion: agg?.discussion,
+                        })}
+                      >
                         <span className={dash.metricLabel}>Tổng lượng thảo luận</span>
                         <span className={dash.metricValue}>
                           {formatMetric(agg?.discussion ?? 0)}
@@ -679,19 +693,36 @@ export function SubjectManagement() {
                           )}
                         </span>
                       </div>
-                      <div className={dash.metricItem}>
+                      <div
+                        className={dash.metricItem}
+                        title={getAggregateInteractionFormulaTooltip({
+                          channelTypes: (item.channels || []).map((ch) => ch.type_channel),
+                          likes: agg?.likes,
+                          comments: agg?.comments,
+                          shares: agg?.shares,
+                          interaction: agg?.interaction,
+                        })}
+                      >
                         <span className={dash.metricLabel}>Tổng lượng tương tác</span>
                         <span className={dash.metricValue}>
                           {formatMetric(agg?.interaction ?? 0)}
                         </span>
                       </div>
-                      <div className={dash.metricItem}>
-                        <span className={dash.metricLabel}>Follow</span>
+                      <div className={dash.metricItem} title="Tổng followers các kênh gắn đối tượng">
+                        <span className={dash.metricLabel}>Followers</span>
                         <span className={dash.metricValue}>
                           {formatMetric(agg?.follow ?? 0)}
                         </span>
                       </div>
-                      <div className={dash.metricItem}>
+                      <div
+                        className={dash.metricItem}
+                        title={getAggregateSentimentFormulaTooltip({
+                          channelTypes: (item.channels || []).map((ch) => ch.type_channel),
+                          likes: agg?.likes,
+                          angry_count: agg?.angry_count,
+                          sentiment: agg?.sentiment,
+                        })}
+                      >
                         <span className={dash.metricLabel}>Chỉ số cảm xúc</span>
                         <span className={dash.metricValue}>
                           {(agg?.sentiment ?? 0).toFixed(2).replace('.', ',')}
@@ -703,13 +734,28 @@ export function SubjectManagement() {
                         <div className={dash.brandList}>
                           <span
                             className={dash.brandChip}
-                            title={`Hot score: ${formatScore(agg?.hot_score ?? 0)}`}
+                            title={getAggregateHotScoreFormulaTooltip({
+                              channelTypes: (item.channels || []).map((ch) => ch.type_channel),
+                              likes: agg?.likes,
+                              comments: agg?.comments,
+                              shares: agg?.shares,
+                              angry_count: agg?.angry_count,
+                              views: agg?.views,
+                              hot_score: agg?.hot_score,
+                            })}
                           >
                             H {formatScore(agg?.hot_score ?? 0)}
                           </span>
                           <span
                             className={dash.brandChip}
-                            title={`Trend score: ${formatScore(agg?.trend_score ?? 0)}`}
+                            title={getAggregateTrendScoreFormulaTooltip({
+                              channelTypes: (item.channels || []).map((ch) => ch.type_channel),
+                              likes: agg?.likes,
+                              comments: agg?.comments,
+                              shares: agg?.shares,
+                              views: agg?.views,
+                              trend_score: agg?.trend_score,
+                            })}
                           >
                             T {formatScore(agg?.trend_score ?? 0)}
                           </span>

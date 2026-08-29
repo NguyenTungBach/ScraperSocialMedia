@@ -19,6 +19,14 @@ module.exports = (sequelize, DataTypes) => {
                 foreignKey: 'channel_id',
                 as: 'scraperRuns',
             });
+            Channel.hasMany(models.ChannelDailySnapshot, {
+                foreignKey: 'channel_id',
+                as: 'dailySnapshots',
+            });
+            Channel.hasMany(models.PostDailySnapshot, {
+                foreignKey: 'channel_id',
+                as: 'postDailySnapshots',
+            });
         }
     }
 
@@ -31,6 +39,21 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(50),
                 allowNull: false,
                 defaultValue: 'facebook',
+            },
+            followers: {
+                type: DataTypes.BIGINT.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            post_count: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: 0,
+            },
+            raw_data: {
+                type: DataTypes.JSON,
+                allowNull: true,
+                defaultValue: null,
             },
         },
         {
