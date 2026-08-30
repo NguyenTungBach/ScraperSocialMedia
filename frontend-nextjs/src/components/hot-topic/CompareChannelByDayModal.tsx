@@ -3,16 +3,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { CalendarRange, Loader2, RefreshCw, X } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
-import { snapshotsApi, type PostDailySnapshotRow } from '@/lib/api/snapshots';
-import type { SubjectRelatedPost } from '@/lib/api/subjects';
+import type { ChannelItem } from '@/lib/api/channels';
+import { snapshotsApi, type ChannelDailySnapshotRow } from '@/lib/api/snapshots';
 import { formatDateInput } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
-import { ComparePostCharts } from './ComparePostCharts';
+import { CompareChannelCharts } from './CompareChannelCharts';
+import type { ComparePeriodMode } from './ComparePostByDayModal';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './CompareModal.module.scss';
-
-export type ComparePeriodMode = 'day' | 'month' | 'year';
 
 function padMonth(y: number, m: number) {
   return `${y}-${String(m).padStart(2, '0')}`;
@@ -120,25 +119,19 @@ function resolvePeriodBounds(
   };
 }
 
-/** Snapshot cuối cùng trong [start, end] của bài. */
+/** Snapshot cuối cùng trong [start, end] của kênh. */
 function lastSnapshotInRange(
-  rows: PostDailySnapshotRow[],
-  postId: number,
+  rows: ChannelDailySnapshotRow[],
+  channelId: number,
   start: string,
   end: string
 ): string | null {
   const dates = rows
-    .filter((r) => Number(r.scraper_run_id) === postId)
+    .filter((r) => Number(r.channel_id) === channelId)
     .map((r) => String(r.snapshot_date).slice(0, 10))
     .filter((d) => d >= start && d <= end)
     .sort();
   return dates.length ? dates[dates.length - 1]! : null;
-}
-
-function truncate(text: string, max = 72) {
-  const t = text.replace(/\s+/g, ' ').trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max)}…`;
 }
 
 const MODE_LABEL: Record<ComparePeriodMode, string> = {
@@ -147,12 +140,12 @@ const MODE_LABEL: Record<ComparePeriodMode, string> = {
   year: 'năm',
 };
 
-interface ComparePostByDayModalProps {
-  post: SubjectRelatedPost;
+interface CompareChannelByDayModalProps {
+  channel: ChannelItem;
   onClose: () => void;
 }
 
-export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalProps) {
+export function CompareChannelByDayModal({ channel, onClose }: CompareChannelByDayModalProps) {
   const dayInit = defaultDayRange();
   const monthInit = defaultMonthRange();
   const yearInit = defaultYearRange();
@@ -167,17 +160,15 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
 
   const [loading, setLoading] = useState(false);
   const [hasCompared, setHasCompared] = useState(false);
-  const [rows, setRows] = useState<PostDailySnapshotRow[]>([]);
+  const [rows, setRows] = useState<ChannelDailySnapshotRow[]>([]);
   const [compareFrom, setCompareFrom] = useState<string>('');
   const [compareTo, setCompareTo] = useState<string>('');
 
-  const title = truncate(post.title?.trim() || post.text?.trim() || post.post_url || `Bài #${post.id}`);
-
   const labelById = useMemo(() => {
     const map = new Map<number, string>();
-    map.set(post.id, title);
+    map.set(channel.id, channel.name || `Kênh #${channel.id}`);
     return map;
-  }, [post.id, title]);
+  }, [channel.id, channel.name]);
 
   const yearOptions = useMemo(() => {
     const cur = new Date().getFullYear();
@@ -205,16 +196,16 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
 
     setLoading(true);
     try {
-      const res = await snapshotsApi.comparePosts({
-        scraper_run_ids: [post.id],
+      const res = await snapshotsApi.compareChannels({
+        channel_ids: [channel.id],
         date_from: bounds.date_from,
         date_to: bounds.date_to,
       });
       const result = res.data?.result || [];
       setRows(result);
 
-      const snapA = lastSnapshotInRange(result, post.id, bounds.periodAStart, bounds.periodAEnd);
-      const snapB = lastSnapshotInRange(result, post.id, bounds.periodBStart, bounds.periodBEnd);
+      const snapA = lastSnapshotInRange(result, channel.id, bounds.periodAStart, bounds.periodAEnd);
+      const snapB = lastSnapshotInRange(result, channel.id, bounds.periodBStart, bounds.periodBEnd);
 
       if (mode === 'day') {
         setCompareFrom(bounds.periodAStart);
@@ -242,7 +233,7 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
     } finally {
       setLoading(false);
     }
-  }, [post.id, mode, dateFrom, dateTo, monthFrom, monthTo, yearFrom, yearTo]);
+  }, [channel.id, mode, dateFrom, dateTo, monthFrom, monthTo, yearFrom, yearTo]);
 
   const resetFilters = useCallback(() => {
     const day = defaultDayRange();
@@ -282,7 +273,7 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
               <CalendarRange size={18} aria-hidden /> So sánh theo kỳ
             </h2>
             <p className={styles.sub}>
-              Cùng một bài — so snapshot kỳ A vs kỳ B (Δ chỉ số) theo ngày / tháng / năm
+              Cùng một kênh — so snapshot kỳ A vs kỳ B (Δ chỉ số) theo ngày / tháng / năm
             </p>
           </div>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Đóng">
@@ -291,8 +282,8 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
         </header>
 
         <div className={styles.dayPostBanner}>
-          {post.platform ? <PlatformBadge platform={post.platform} size="sm" /> : null}
-          <span className={styles.dayPostTitle}>{title}</span>
+          {channel.type_channel ? <PlatformBadge platform={channel.type_channel} size="sm" /> : null}
+          <span className={styles.dayPostTitle}>{channel.name}</span>
         </div>
 
         <div className={styles.periodTabs} role="tablist" aria-label="Kiểu kỳ so sánh">
@@ -403,11 +394,11 @@ export function ComparePostByDayModal({ post, onClose }: ComparePostByDayModalPr
             <p className={styles.muted}>{periodHint}</p>
           ) : rows.length === 0 ? (
             <p className={styles.muted}>
-              Không có snapshot. Mở thống kê bài → Snapshot cho cả hai kỳ, rồi chạy lại so sánh.
+              Không có snapshot. Mở thống kê kênh → Snapshot cho cả hai kỳ, rồi chạy lại so sánh.
             </p>
           ) : (
-            <ComparePostCharts
-              postIds={[post.id]}
+            <CompareChannelCharts
+              channelIds={[channel.id]}
               rows={rows}
               labelById={labelById}
               compareDateFrom={compareFrom || undefined}

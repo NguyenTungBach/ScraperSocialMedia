@@ -167,12 +167,18 @@ export function ComparePostCharts({
       }
 
       const deltas: Partial<Record<PostMetricKey, number | null>> = {};
+      const prevValues: Partial<Record<PostMetricKey, number | null>> = {};
+      const latestValues: Partial<Record<PostMetricKey, number | null>> = {};
 
       for (const m of POST_METRICS) {
         const series = metricMaps?.get(m.key);
         const cur = latestDate != null ? series?.get(latestDate) : undefined;
         const prev = prevDate != null ? series?.get(prevDate) : undefined;
-        deltas[m.key] = cur == null || prev == null ? null : Number(cur) - Number(prev);
+        const curN = cur == null ? null : Number(cur);
+        const prevN = prev == null ? null : Number(prev);
+        prevValues[m.key] = prevN;
+        latestValues[m.key] = curN;
+        deltas[m.key] = curN == null || prevN == null ? null : curN - prevN;
       }
 
       return {
@@ -180,6 +186,8 @@ export function ComparePostCharts({
         label: shortLabel(labelById.get(id) || `Bài #${id}`, 36),
         latestDate,
         prevDate,
+        prevValues,
+        latestValues,
         deltas,
         ready: Boolean(latestDate && prevDate),
         usedExplicit: hasExplicitFrom && hasExplicitTo && explicitFrom !== explicitTo,
@@ -398,6 +406,51 @@ export function ComparePostCharts({
                 ))}
               </div>
 
+              <h5 className={styles.lineCardTitle}>Bảng so sánh snapshot kỳ A vs kỳ B</h5>
+              {dayOverDay.map((row) => (
+                <div key={row.id} className={styles.tableWrap} style={{ marginTop: 8, marginBottom: 12 }}>
+                  {postIds.length > 1 ? (
+                    <p className={styles.chartSub} style={{ margin: '8px 12px 0' }}>
+                      <strong>{row.label}</strong>
+                      {row.ready ? ` · ${row.prevDate} → ${row.latestDate}` : null}
+                    </p>
+                  ) : null}
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Chỉ số</th>
+                        <th>Kỳ A{row.prevDate ? ` (${row.prevDate})` : ''}</th>
+                        <th>Kỳ B{row.latestDate ? ` (${row.latestDate})` : ''}</th>
+                        <th>Δ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {POST_METRICS.map((m) => {
+                        const a = row.prevValues[m.key];
+                        const b = row.latestValues[m.key];
+                        const d = row.deltas[m.key];
+                        const cls =
+                          d == null
+                            ? undefined
+                            : d > 0
+                              ? styles.deltaUp
+                              : d < 0
+                                ? styles.deltaDown
+                                : undefined;
+                        return (
+                          <tr key={m.key}>
+                            <td className={styles.dodPostCell}>{m.label}</td>
+                            <td>{a == null ? '—' : fmt(a)}</td>
+                            <td>{b == null ? '—' : fmt(b)}</td>
+                            <td className={cls}>{fmtDelta(d ?? null)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+
               <h5 className={styles.lineCardTitle}>Biểu đồ Δ theo chỉ số</h5>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={deltaBarData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -433,53 +486,6 @@ export function ComparePostCharts({
                   ))}
                 </BarChart>
               </ResponsiveContainer>
-
-              <div className={styles.tableWrap} style={{ marginTop: 12 }}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>Bài</th>
-                      <th>Mốc</th>
-                      {POST_METRICS.map((m) => (
-                        <th key={m.key}>{m.label} (Δ)</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayOverDay.map((row) => (
-                      <tr key={row.id}>
-                        <td className={styles.dodPostCell}>{row.label}</td>
-                        <td>
-                          {row.ready ? (
-                            <>
-                              {row.prevDate}
-                              <br />→ {row.latestDate}
-                            </>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        {POST_METRICS.map((m) => {
-                          const d = row.deltas[m.key];
-                          const cls =
-                            d == null
-                              ? undefined
-                              : d > 0
-                                ? styles.deltaUp
-                                : d < 0
-                                  ? styles.deltaDown
-                                  : undefined;
-                          return (
-                            <td key={m.key} className={cls}>
-                              {fmtDelta(d ?? null)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </>
           )}
         </div>

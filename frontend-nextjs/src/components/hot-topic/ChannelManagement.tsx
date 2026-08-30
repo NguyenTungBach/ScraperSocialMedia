@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BarChart3,
+  CalendarRange,
   GitCompareArrows,
   Loader2,
   Pencil,
@@ -24,6 +25,7 @@ import { MakeToast } from '@/lib/utils/toast';
 import { HotTopicHeader } from './HotTopicHeader';
 import { PlatformBadge } from './PlatformBadge';
 import { ChannelSnapshotModal } from './ChannelSnapshotModal';
+import { CompareChannelByDayModal } from './CompareChannelByDayModal';
 import { CompareModal } from './CompareModal';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelManagement.module.scss';
@@ -64,6 +66,7 @@ export function ChannelManagement() {
   const [scrapingId, setScrapingId] = useState<number | null>(null);
   const [statsChannel, setStatsChannel] = useState<ChannelItem | null>(null);
   const [compareChannelIds, setCompareChannelIds] = useState<number[] | null>(null);
+  const [compareByDayChannel, setCompareByDayChannel] = useState<ChannelItem | null>(null);
 
   const loadList = useCallback(
     async (options?: { page?: number; q?: string; type_channel?: string }) => {
@@ -375,6 +378,15 @@ export function ChannelManagement() {
                     >
                       <GitCompareArrows size={15} aria-hidden />
                     </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={() => setCompareByDayChannel(item)}
+                      aria-label={`So sánh theo kỳ ${item.name}`}
+                      title="So sánh theo kỳ"
+                    >
+                      <CalendarRange size={15} aria-hidden />
+                    </button>
                     {(normalizePlatform(item.type_channel) === 'youtube' ||
                       normalizePlatform(item.type_channel) === 'tiktok' ||
                       normalizePlatform(item.type_channel) === 'facebook') && (
@@ -555,6 +567,13 @@ export function ChannelManagement() {
           mode="channels"
           initialChannelIds={compareChannelIds}
           onClose={() => setCompareChannelIds(null)}
+        />
+      )}
+
+      {compareByDayChannel && (
+        <CompareChannelByDayModal
+          channel={compareByDayChannel}
+          onClose={() => setCompareByDayChannel(null)}
         />
       )}
     </div>
