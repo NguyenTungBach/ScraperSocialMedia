@@ -73,6 +73,7 @@ function buildGeminiPayload(scraperRun, comments) {
         video: {
             video_id: scraperRun.platform_post_id,
             title: scraperRun.title || '',
+            text: scraperRun.text || '',
             post_url: scraperRun.post_url || '',
         },
         comments: comments.map((c) => ({

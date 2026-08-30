@@ -6,6 +6,7 @@ const YouTubeService = require('./YouTubeService');
 const ScraperRepository = require('../Repositories/ScraperRepository');
 const ChannelRepository = require('../Repositories/ChannelRepository');
 const CommentRepository = require('../Repositories/CommentRepository');
+const CommentAnalysisService = require('./CommentAnalysisService');
 const {
     parseYoutubeChannelRef,
     toYoutubeVideoResponse,
@@ -18,6 +19,7 @@ class YouTubeScrapeService {
         this.repository = new ScraperRepository();
         this.channelRepository = new ChannelRepository();
         this.commentRepository = new CommentRepository();
+        this.commentAnalysisService = new CommentAnalysisService();
     }
 
     /**
@@ -125,6 +127,9 @@ class YouTubeScrapeService {
             updated: 0,
             threads_upserted: 0,
             videos_with_comments: 0,
+            ai_briefs_analyzed: 0,
+            ai_comments_analyzed: 0,
+            ai_skipped: 0,
         };
         const channelsSkipped = [];
         const affectedSubjectIds = new Set();
@@ -199,21 +204,30 @@ class YouTubeScrapeService {
                         );
                     quotaUsed += commentQuota || 0;
 
-                    if (comments.length === 0) continue;
-
-                    const commentIngest = await this.commentRepository.ingestAndRebuild(
-                        scraperRunId,
-                        comments
-                    );
-                    commentTotals.inserted += commentIngest.inserted || 0;
-                    commentTotals.updated += commentIngest.updated || 0;
-                    commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
-                    commentTotals.videos_with_comments += 1;
+                    if (comments.length > 0) {
+                        const commentIngest = await this.commentRepository.ingestAndRebuild(
+                            scraperRunId,
+                            comments
+                        );
+                        commentTotals.inserted += commentIngest.inserted || 0;
+                        commentTotals.updated += commentIngest.updated || 0;
+                        commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
+                        commentTotals.videos_with_comments += 1;
+                    }
                 } catch (commentErr) {
                     // Comment disabled or API error — skip video comments, keep video ingest.
                     if (commentErr.status !== 403) {
                         throw commentErr;
                     }
+                }
+
+                const ai =
+                    await this.commentAnalysisService.analyzePostAfterScrape(scraperRunId);
+                if (ai?.content_brief?.analyzed) commentTotals.ai_briefs_analyzed += 1;
+                if (ai?.comments_analysis?.analyzed) {
+                    commentTotals.ai_comments_analyzed += 1;
+                } else if (ai?.comments_analysis?.reason === 'already_done') {
+                    commentTotals.ai_skipped += 1;
                 }
 
                 allVideos.push(toYoutubeVideoResponse(video));

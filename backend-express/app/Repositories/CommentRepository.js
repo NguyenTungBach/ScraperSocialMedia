@@ -575,6 +575,47 @@ class CommentRepository {
                 },
             }
         );
+
+        // Thread "bình thường" Gemini có thể không trả về — đánh dấu done để không phân tích lại.
+        await this.commentThreadModel.update(
+            { analysis_status: 'done', analyzed_at: now },
+            {
+                where: {
+                    scraper_run_id: scraperRunId,
+                    analysis_status: 'pending',
+                },
+            }
+        );
+    }
+
+    /**
+     * Comment còn cần Gemini: lone pending + toàn bộ comment thuộc thread pending.
+     */
+    async loadCommentsPendingAnalysis(scraperRunId) {
+        const pendingThreads = await this.commentThreadModel.findAll({
+            where: { scraper_run_id: scraperRunId, analysis_status: 'pending' },
+            attributes: ['thread_key'],
+        });
+        const pendingThreadKeys = new Set(pendingThreads.map((t) => t.thread_key));
+
+        const comments = await this.postCommentModel.findAll({
+            where: { scraper_run_id: scraperRunId },
+            order: [
+                ['sort_order', 'ASC'],
+                ['id', 'ASC'],
+            ],
+        });
+
+        return comments.filter((row) => {
+            const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
+            if (plain.group_type === 'lone' && plain.analysis_status === 'pending') {
+                return true;
+            }
+            if (plain.group_type === 'thread' && pendingThreadKeys.has(plain.thread_key)) {
+                return true;
+            }
+            return false;
+        });
     }
 
     async needsContentBrief(scraperRunId) {

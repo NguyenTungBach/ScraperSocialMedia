@@ -82,19 +82,12 @@ class CommentController {
                 throw createError(422, 'scraper_run_id is required');
             }
 
-            const brief = await this.commentAnalysisService.analyzeContentBriefIfNeeded(
-                scraperRunId
-            );
-            const comments = await this.commentAnalysisService.analyzeScraperRunIfNeeded(
-                scraperRunId
-            );
-            const data = await this.commentRepository.getCommentsByScraperRunId(scraperRunId);
+            const data = await this.commentAnalysisService.analyzePostIfNeeded(scraperRunId);
+            const comments = await this.commentRepository.getCommentsByScraperRunId(scraperRunId);
 
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, {
-                scraper_run_id: scraperRunId,
-                content_brief: brief,
-                comments_analysis: comments,
-                comments: data,
+                ...data,
+                comments,
             });
         } catch (error) {
             return next(error);

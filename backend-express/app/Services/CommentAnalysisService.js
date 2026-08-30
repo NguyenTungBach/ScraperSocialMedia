@@ -4,6 +4,7 @@ const CommentRepository = require('../Repositories/CommentRepository');
 const GeminiService = require('../Services/GeminiService');
 const { buildGeminiPayload } = require('../Helpers/CommentHelper');
 const geminiConfig = require('../../config/gemini');
+const logger = require('../Logging/logger');
 
 class CommentAnalysisService {
     constructor() {
@@ -97,7 +98,18 @@ class CommentAnalysisService {
             return { analyzed: false, reason: 'gemini_disabled', scraper_run_id: scraperRunId };
         }
 
-        const geminiPayload = buildGeminiPayload(loaded.run, loaded.comments);
+        const pendingComments =
+            await this.commentRepository.loadCommentsPendingAnalysis(scraperRunId);
+        if (pendingComments.length === 0) {
+            return {
+                analyzed: false,
+                reason: 'already_done',
+                scraper_run_id: scraperRunId,
+                payload: await this.commentRepository.getAnalysisPayloadForEmail(scraperRunId),
+            };
+        }
+
+        const geminiPayload = buildGeminiPayload(loaded.run, pendingComments);
         const { result, model } = await this.geminiService.analyzeVideoComments(geminiPayload);
         await this.commentRepository.applyAnalysisResult(scraperRunId, result);
 
@@ -107,6 +119,36 @@ class CommentAnalysisService {
             model,
             payload: await this.commentRepository.getAnalysisPayloadForEmail(scraperRunId),
         };
+    }
+
+    /**
+     * Content brief (nếu chưa) + phân tích comment pending (bỏ qua đã done).
+     * Dùng chung cho nút UI và sau scrape FB/YT/TT.
+     */
+    async analyzePostIfNeeded(scraperRunId) {
+        const content_brief = await this.analyzeContentBriefIfNeeded(scraperRunId);
+        const comments_analysis = await this.analyzeScraperRunIfNeeded(scraperRunId);
+        return { scraper_run_id: scraperRunId, content_brief, comments_analysis };
+    }
+
+    /**
+     * Sau scrape: không làm fail luồng cào nếu Gemini lỗi / tắt.
+     */
+    async analyzePostAfterScrape(scraperRunId) {
+        try {
+            return await this.analyzePostIfNeeded(scraperRunId);
+        } catch (error) {
+            logger.warn('[comment-analysis] Gemini after scrape failed', {
+                scraper_run_id: scraperRunId,
+                error: error.message,
+            });
+            return {
+                scraper_run_id: scraperRunId,
+                analyzed: false,
+                reason: 'error',
+                error: error.message,
+            };
+        }
     }
 
     async analyzeSubject(subjectId, { date_from, date_to } = {}) {

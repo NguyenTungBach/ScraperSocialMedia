@@ -6,6 +6,7 @@ const ApifyService = require('./ApifyService');
 const ScraperRepository = require('../Repositories/ScraperRepository');
 const ChannelRepository = require('../Repositories/ChannelRepository');
 const CommentRepository = require('../Repositories/CommentRepository');
+const CommentAnalysisService = require('./CommentAnalysisService');
 const {
     normalizeTikTokItem,
     normalizeTikTokCommentItems,
@@ -21,6 +22,7 @@ class TikTokScrapeService {
         this.repository = new ScraperRepository();
         this.channelRepository = new ChannelRepository();
         this.commentRepository = new CommentRepository();
+        this.commentAnalysisService = new CommentAnalysisService();
     }
 
     async resolveTikTokChannels({ channel_id = [] } = {}) {
@@ -127,6 +129,9 @@ class TikTokScrapeService {
             skipped: 0,
             threads_upserted: 0,
             videos_with_comments: 0,
+            ai_briefs_analyzed: 0,
+            ai_comments_analyzed: 0,
+            ai_skipped: 0,
         };
         const channelsSkipped = [];
         const affectedSubjectIds = new Set();
@@ -256,6 +261,13 @@ class TikTokScrapeService {
                 commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
                 if ((commentIngest.inserted || 0) > 0 || (commentIngest.skipped || 0) > 0) {
                     commentTotals.videos_with_comments += 1;
+                }
+
+                const ai = await this.commentAnalysisService.analyzePostAfterScrape(saved.id);
+                if (ai?.content_brief?.analyzed) commentTotals.ai_briefs_analyzed += 1;
+                if (ai?.comments_analysis?.analyzed) commentTotals.ai_comments_analyzed += 1;
+                else if (ai?.comments_analysis?.reason === 'already_done') {
+                    commentTotals.ai_skipped += 1;
                 }
             }
 
