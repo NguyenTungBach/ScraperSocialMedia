@@ -3,14 +3,27 @@
 const createError = require('http-errors');
 const geminiConfig = require('../../config/gemini');
 const { parsePersonName } = require('../Helpers/TextNormalizeHelper');
+const { fireServiceFailureAlert } = require('./ServiceFailureAlertService');
+const logger = require('../Logging/logger');
 
 class GeminiService {
+    fail(status, message, operation) {
+        const err = createError(status, message);
+        logger.error('[gemini] service error', { operation, message });
+        fireServiceFailureAlert(err, {
+            service: 'Gemini',
+            operation,
+            source: 'Gemini',
+        });
+        throw err;
+    }
+
     ensureEnabled() {
         if (!geminiConfig.enabled) {
             throw createError(503, 'Gemini is disabled. Set GEMINI_ENABLED=true in .env');
         }
         if (!geminiConfig.apiKey) {
-            throw createError(500, 'GEMINI_API_KEY is not configured');
+            this.fail(500, 'GEMINI_API_KEY is not configured', 'ensureEnabled');
         }
     }
 
@@ -366,7 +379,7 @@ class GeminiService {
                     if (retryable && hasNextModel) {
                         break; // thử model fallback
                     }
-                    throw createError(502, lastErrorMessage);
+                    this.fail(502, lastErrorMessage, 'discoverSubjects');
                 }
 
                 const blockReason = payload?.promptFeedback?.blockReason;
@@ -382,7 +395,7 @@ class GeminiService {
             }
         }
 
-        throw createError(502, lastErrorMessage);
+        this.fail(502, lastErrorMessage, 'discoverSubjects');
     }
 
     parseCommentAnalysisJson(rawText) {
@@ -447,16 +460,25 @@ ${JSON.stringify(payload)}`;
                         continue;
                     }
                     if (retryable && mi < models.length - 1) break;
-                    throw createError(502, lastErrorMessage);
+                    this.fail(502, lastErrorMessage, 'analyzeVideoComments');
                 }
 
                 const rawText = this.extractText(apiPayload);
-                const result = this.parseCommentAnalysisJson(rawText);
+                let result;
+                try {
+                    result = this.parseCommentAnalysisJson(rawText);
+                } catch (parseErr) {
+                    this.fail(
+                        502,
+                        parseErr.message || 'Failed to parse comment analysis',
+                        'analyzeVideoComments'
+                    );
+                }
                 return { result, model: modelName };
             }
         }
 
-        throw createError(502, lastErrorMessage);
+        this.fail(502, lastErrorMessage, 'analyzeVideoComments');
     }
 
     buildContentBriefBody(prompt) {
@@ -564,7 +586,7 @@ Nhắc lại: chỉ trả về JSON object {"brief":"..."}, không có bất k�
                         continue;
                     }
                     if (retryable && mi < models.length - 1) break;
-                    throw createError(502, lastErrorMessage);
+                    this.fail(502, lastErrorMessage, 'summarizeVideoContent');
                 }
 
                 const rawText = this.extractText(apiPayload);
@@ -575,7 +597,7 @@ Nhắc lại: chỉ trả về JSON object {"brief":"..."}, không có bất k�
                         continue;
                     }
                     if (mi < models.length - 1) break;
-                    throw createError(502, lastErrorMessage);
+                    this.fail(502, lastErrorMessage, 'summarizeVideoContent');
                 }
 
                 try {
@@ -590,12 +612,16 @@ Nhắc lại: chỉ trả về JSON object {"brief":"..."}, không có bất k�
                         }
                         break;
                     }
-                    throw parseErr;
+                    this.fail(
+                        502,
+                        parseErr.message || 'Failed to parse content brief',
+                        'summarizeVideoContent'
+                    );
                 }
             }
         }
 
-        throw createError(502, lastErrorMessage);
+        this.fail(502, lastErrorMessage, 'summarizeVideoContent');
     }
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Sparkles, X } from 'lucide-react';
+import { Pagination } from '@/components/common/Pagination/Pagination';
 import { commentsApi, type ScraperRunComments } from '@/lib/api/comments';
 import { getApiErrorMessage } from '@/lib/api/client';
 import {
@@ -16,6 +17,8 @@ import {
 } from '@/lib/utils/commentAnalysis';
 import { cn } from '@/lib/utils';
 import styles from './CommentAnalysisModal.module.scss';
+
+const PAGE_SIZE = 10;
 
 interface CommentAnalysisModalProps {
   open: boolean;
@@ -86,6 +89,7 @@ export function CommentAnalysisModal({
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScraperRunComments | null>(initialData);
   const [filter, setFilter] = useState<AnalysisFilter>('all');
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,6 +109,7 @@ export function CommentAnalysisModal({
     if (!open) {
       setError(null);
       setFilter('all');
+      setPage(1);
       return;
     }
     if (initialData) {
@@ -136,6 +141,20 @@ export function CommentAnalysisModal({
     ? Boolean(data.meta?.analyzed) || hasAnalysisData(data)
     : false;
 
+  const pendingCount =
+    (data?.meta?.pending_lone_count ?? 0) + (data?.meta?.pending_thread_count ?? 0);
+  const totalRecords = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return rows.slice(start, start + PAGE_SIZE);
+  }, [rows, currentPage]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, scraperRunId]);
+
   if (!open) return null;
 
   return (
@@ -150,8 +169,9 @@ export function CommentAnalysisModal({
             <p className={styles.subtitle}>
               Scraper run #{scraperRunId}
               {data?.meta
-                ? ` · ${data.meta.analyzed_lone_count} lone + ${data.meta.analyzed_thread_count} thread từ DB`
+                ? ` · ${data.meta.analyzed_lone_count} lone + ${data.meta.analyzed_thread_count} thread đã phân loại`
                 : ''}
+              {pendingCount > 0 ? ` · ${pendingCount} chưa phân loại` : ''}
             </p>
             {contentBrief && contentBriefStatus === 'done' ? (
               <div className={styles.contentBriefBox}>
@@ -219,9 +239,17 @@ export function CommentAnalysisModal({
                   })}
                 </div>
 
+                {pendingCount > 0 ? (
+                  <p className={styles.pendingHint}>
+                    Còn {pendingCount} comment chưa có kết quả AI — bấm «Phân tích comment» để chạy
+                    lại (mỗi lần gửi tối đa 10 comment lên Gemini).
+                  </p>
+                ) : null}
+
                 {rows.length === 0 ? (
                   <p className={styles.empty}>Không có mục nào khớp bộ lọc.</p>
                 ) : (
+                  <>
                   <div className={styles.tableWrap}>
                     <table className={styles.table}>
                       <thead>
@@ -238,9 +266,9 @@ export function CommentAnalysisModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.map((row, index) => (
+                        {pagedRows.map((row, index) => (
                           <tr key={row.key}>
-                            <td>{index + 1}</td>
+                            <td>{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
                             <td>{classifyLabel(row.groupType)}</td>
                             <td>
                               <span
@@ -270,6 +298,18 @@ export function CommentAnalysisModal({
                       </tbody>
                     </table>
                   </div>
+
+                  {totalPages > 1 ? (
+                    <Pagination
+                      className={styles.pagination}
+                      page={currentPage}
+                      totalPages={totalPages}
+                      totalRecords={totalRecords}
+                      unitLabel="mục"
+                      onChange={setPage}
+                    />
+                  ) : null}
+                  </>
                 )}
               </>
             )}

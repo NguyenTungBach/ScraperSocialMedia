@@ -1,4 +1,6 @@
 const ResponseService = require('../Helpers/ResponseService');
+const serviceFailureAlertService = require('../Services/ServiceFailureAlertService');
+const { shouldNotifyHttpError } = require('../Helpers/ServiceFailureAlertHelper');
 const logger = require('../Logging/logger');
 
 class ExceptionHandler {
@@ -12,6 +14,20 @@ class ExceptionHandler {
                 ? { id: req.user.id, user_code: req.user.user_code, role: req.user.role }
                 : undefined
         });
+
+        if (shouldNotifyHttpError(err, req)) {
+            void serviceFailureAlertService
+                .notifyFailure(err, {
+                    url: req.originalUrl || req.url,
+                    method: req.method,
+                    source: 'http',
+                })
+                .catch((notifyErr) => {
+                    logger.error('[service-failure-alert] notify failed', {
+                        message: notifyErr?.message,
+                    });
+                });
+        }
 
         if (
             err.statusCode === 422 &&

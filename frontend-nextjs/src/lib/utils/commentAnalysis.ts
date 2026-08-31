@@ -44,7 +44,6 @@ export interface CommentAnalysisRow {
 
 function hasStoredAnalysis(comment: PostCommentItem): boolean {
   return (
-    comment.analysis_status === 'done' ||
     Boolean(comment.classified_as) ||
     Boolean(comment.reason) ||
     (Boolean(comment.sentiment) && comment.sentiment !== 'unknown') ||
@@ -54,7 +53,6 @@ function hasStoredAnalysis(comment: PostCommentItem): boolean {
 
 function hasStoredThreadAnalysis(thread: CommentThreadItem): boolean {
   return (
-    thread.analysis_status === 'done' ||
     Boolean(thread.classified_as) ||
     Boolean(thread.reason) ||
     (Boolean(thread.sentiment) && thread.sentiment !== 'unknown') ||

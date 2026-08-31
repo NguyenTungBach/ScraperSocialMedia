@@ -27,9 +27,9 @@ Hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, 
                               │     · engagement = SUM metrics bài (theo cửa sổ)
                               │     · follow = SUM(channels.followers) qua subject_channels
                               │
-                              └─ Gemini: content_brief, phân tích sentiment comment
-                                        ↓ (khi hot & trend ≥ ngưỡng)
-                                   Gmail alert
+                              └─ Gemini: content_brief + phân tích comment (chunk 10/lần)
+                                        ↓ (khi hot hoặc trend ≥ ngưỡng — luồng alert)
+                                   Gmail alert (+ AI top bài/subject)
 ```
 
 ---
@@ -43,10 +43,10 @@ Hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, 
 | **Cào dữ liệu** | Facebook (Apify), YouTube (Data API v3), TikTok (Apify). Mặc định: **10 bài mới** / lần, **30 comment** / bài, **10 reply**. Bài cũ chưa bắt buộc cập nhật định kỳ (có API refresh tail YouTube nếu cần). |
 | **Chỉ số** | **Bài** (`scraper_runs`): likes, comments, shares, angry, views (`follow` cột luôn 0, không dùng). **Kênh** (`channels.followers`): page likes / YT subscribers / TT fans. **Subject** (`social_posts`): SUM engagement bài + `follow` = SUM followers kênh gắn. Tính **hot_score**, **trend_score**; suy ra Thảo luận / Tương tác / Cảm xúc (công thức bên dưới). |
 | **Đối tượng & kênh** | CRUD `subjects`, `channels`; gắn N–N subject ↔ channel; discover subject qua Gemini. |
-| **Comment + AI** | Lưu comment/thread; Gemini gắn sentiment, category, severity; content brief cho bài. Nút **Phân tích comment** trên từng bài (FB/YT/TT). |
+| **Comment + AI** | Lưu comment/thread; Gemini gắn sentiment, category, severity, reason; **content brief** cho bài. Phân tích theo **chunk 10 comment gốc (hoặc 1 thread)/lần** gọi Gemini. Tự chạy sau scrape; nút **Phân tích comment** trên UI (FB/YT/TT). FE: danh sách comment + bảng phân tích **10 mục/trang**. |
 | **Snapshot metrics** | 3 bảng ngày: `channel_daily_snapshots`, `post_daily_snapshots` (kèm hot/trend), `post_top_comments_daily`. Chỉ kênh ∈ `subject_channels`. CLI `npm run app:metric-snapshot`; GH Action mỗi 5h; FE nút Snapshot + xem thống kê kênh. |
 | **So sánh + mail** | UI so sánh nhiều kênh/bài theo khoảng ngày (snapshot); gửi báo cáo mail (`POST /reports/compare-email`) — tách khỏi alert hot/trend. |
-| **Alert** | Gửi mail khi hot **và** trend vượt ngưỡng (đã làm; hiện tạm không dùng vận hành). |
+| **Alert** | `POST /api/alerts/gmail`: mail khi bài vượt ngưỡng **hot hoặc trend** (trong tháng hiện tại); trước khi gửi chạy AI **top N bài hot/subject** (mặc định 3). CLI `npm run app:alert-gmail`. |
 | **Hệ thống** | Auth đăng nhập; BE API (tìm kiếm, paginate, CRUD); FE (home, subjects, channels); queue/jobs; migrate DB. |
 
 ### Đang / sẽ làm
@@ -86,8 +86,79 @@ Chỉ số phụ (derive lúc API, không lưu riêng trên `social_posts` trừ
 | YouTube | `channels.list` → `statistics.subscriberCount` (không có trong `scraper_runs.raw_data` video) |
 | TikTok | `authorMeta.fans` (có trong payload video / `scraper_runs.raw_data`, nhưng ghi vào kênh) |
 
-Ngưỡng alert mặc định: `ALERT_HOT_THRESHOLD`, `ALERT_TREND_THRESHOLD` (`.env`).
+Ngưỡng alert mặc định: `ALERT_HOT_THRESHOLD`, `ALERT_TREND_THRESHOLD` (`.env`) — bài vượt **một trong hai** ngưỡng là candidate.
+Top bài AI trong mail alert: `ALERT_TOP_POSTS_PER_SUBJECT` (alias `ALERT_TOP_VIDEOS_PER_SUBJECT`, mặc định **3** bài hot nhất / subject).
+Chunk phân tích comment: `GEMINI_COMMENT_ANALYSIS_CHUNK_SIZE` (mặc định **10**).
 Ngưỡng nhãn up/down mail so sánh: `COMPARE_UPTREND_PCT`, `COMPARE_DOWNTREND_PCT` (mặc định 5 / -5).
+
+---
+
+## Luồng Alert Gmail (`POST /api/alerts/gmail`)
+
+```
+1. listAlertPosts
+   · Bài FB/YT/TT có link subject (subjects_scraper_runs)
+   · posted_at trong tháng lịch hiện tại
+   · hot_score >= ALERT_HOT_THRESHOLD  HOẶC  trend_score >= ALERT_TREND_THRESHOLD
+   · (tuỳ chọn) lọc subject_id nếu body có subject_id
+
+2. Nếu không có candidate → { sent: false, reason: "no_candidates_over_threshold" }
+
+3. Nhóm bài theo subject → mỗi subject lấy top N bài theo hot_score (ALERT_TOP_POSTS_PER_SUBJECT)
+
+4. Với từng bài trong top N:
+   · content_brief (Gemini) nếu chưa có
+   · phân tích comment pending / thiếu kết quả (Gemini, chunk 10 đơn vị/lần)
+
+5. buildAlertEmail → gửi SMTP/SES tới MAIL_MAIN (hoặc body.to)
+   · BCC: MAIL_ALERT_BCC + body.bcc (dedupe, bỏ trùng người nhận chính)
+```
+
+**Lưu ý:** Ngưỡng là **OR** (hot **hoặc** trend), không yêu cầu cả hai cùng vượt. Mail liệt kê **tất cả** candidate vượt ngưỡng; phần AI comment trong mail chỉ chạy trên **top N bài hot/subject**.
+
+---
+
+## API Comment & phân tích AI
+
+| Method | Path | Mô tả |
+|--------|------|--------|
+| GET | `/api/comments?scraper_run_id=` | Comment đã lưu (lone + threads) + `meta` (số đã phân loại / còn thiếu) |
+| POST | `/api/comments/analyze` | AI 1 bài: `{ "scraper_run_id": 123 }` |
+
+### `POST /api/comments/analyze`
+
+**Luồng:**
+
+1. **Content brief** — nếu `content_brief_status` chưa `done`/`skipped`: Gemini tóm tắt title/text bài.
+2. **Comment analysis** — chỉ comment cần xử lý:
+   - `analysis_status = pending`, hoặc
+   - `done` nhưng **thiếu** `classified_as` và `reason` (kết quả cũ bị cắt / lỗi).
+3. Nhóm thành **đơn vị**: 1 comment lone hoặc 1 thread (giữ nguyên cả chuỗi reply).
+4. Chia chunk tối đa **10 đơn vị** → gọi Gemini từng chunk → lưu kết quả từng comment/thread.
+5. Thread đã gửi nhưng Gemini không trả (thường bình thường) → đánh dấu `done` ở bước finalize.
+6. Comment lone **không** có trong response Gemini → **không** bị ép `done` (giữ pending để chạy lại).
+
+**Response (rút gọn):**
+
+```json
+{
+  "scraper_run_id": 210,
+  "content_brief": { "analyzed": true, "content_brief": "..." },
+  "comments_analysis": {
+    "analyzed": true,
+    "chunks_processed": 8,
+    "comments_sent": 76,
+    "model": "gemini-3.6-flash"
+  },
+  "comments": { "lone": [], "threads": [], "meta": { "analyzed_lone_count": 11, "pending_lone_count": 65 } }
+}
+```
+
+**`comments_analysis.reason` thường gặp:** `already_done` · `no_comments` · `gemini_disabled` · `not_found`
+
+**Tự động sau scrape:** FB / YT / TT gọi `analyzePostAfterScrape` — lỗi Gemini không làm fail luồng cào.
+
+**FE:** panel comment và modal «Xem bảng phân tích chi tiết» phân trang **10 mục/trang** (client-side).
 
 ---
 
@@ -153,10 +224,12 @@ SCRAPE_MAX_REPLIES=10
 
 GEMINI_ENABLED=true
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.6-flash
+GEMINI_COMMENT_ANALYSIS_CHUNK_SIZE=10
 
 ALERT_TREND_THRESHOLD=500
 ALERT_HOT_THRESHOLD=800
+ALERT_TOP_POSTS_PER_SUBJECT=3
 
 MAIL_MAILER=smtp
 MAIL_HOST=smtp.gmail.com
@@ -207,7 +280,9 @@ npm run dev
 | POST | `/api/scraper/tiktok/run` | Apify TikTok video + comments |
 | POST | `/api/scraper/youtube/refresh-tail` | Refresh stats video YT cũ (không comment) |
 | GET | `/api/social-posts` | Tổng hợp, sort `hot_score` DESC |
-| POST | `/api/alerts/gmail` | Gửi mail nếu hot **và** trend vượt ngưỡng |
+| GET | `/api/comments?scraper_run_id=` | Danh sách comment + thread của 1 bài |
+| POST | `/api/comments/analyze` | Phân tích AI 1 bài (`scraper_run_id`) — content brief + comment chunk Gemini |
+| POST | `/api/alerts/gmail` | Alert mail: bài vượt ngưỡng hot **hoặc** trend + AI top N bài/subject |
 | POST | `/api/snapshots/run` | Snapshot metrics (`force` ghi đè). Tuỳ chọn `channel_id` / `scraper_run_id` để chụp 1 kênh hoặc 1 bài |
 | GET | `/api/snapshots/status` | Đã có snapshot ngày chưa |
 | GET | `/api/snapshots/channels/:id` | Thống kê kênh hôm nay/delta hoặc `date_from`–`date_to` |
@@ -216,7 +291,6 @@ npm run dev
 | GET | `/api/snapshots/posts/:id/top-comments` | Top 10 comment like đã snapshot |
 | GET | `/api/snapshots/channels/compare` | So sánh nhiều kênh |
 | GET | `/api/snapshots/posts/compare` | So sánh nhiều bài |
-| POST | `/api/comments/analyze` | Phân tích comment AI 1 bài (`scraper_run_id`) — FB/YT/TT |
 | POST | `/api/reports/compare-email` | Gửi mail báo cáo so sánh (sau luồng so sánh; không đụng alert) |
 
 ### Demo nhanh
@@ -241,7 +315,15 @@ Content-Type: application/json
 
 GET /api/social-posts
 
+POST /api/comments/analyze
+Content-Type: application/json
+
+{ "scraper_run_id": 210 }
+
 POST /api/alerts/gmail
+Content-Type: application/json
+
+{ "subject_id": 8, "to": "you@example.com" }
 ```
 
 ---

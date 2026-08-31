@@ -9,6 +9,22 @@ const { buildAlertEmail } = require('../Helpers/EmailAlertBuilder');
 const geminiConfig = require('../../config/gemini');
 const mailConfig = require('../../config/mail');
 
+function groupAlertPostsBySubject(posts = []) {
+    const map = new Map();
+    for (const post of posts) {
+        const subjectId = Number(post.subject_id);
+        if (!map.has(subjectId)) {
+            map.set(subjectId, {
+                subject_id: subjectId,
+                subject: post.subject,
+                posts: [],
+            });
+        }
+        map.get(subjectId).posts.push(post);
+    }
+    return map;
+}
+
 class AlertService {
     constructor() {
         this.repository = new ScraperRepository();
@@ -39,8 +55,8 @@ class AlertService {
             bcc.push(trimmed);
         }
 
-        const candidates = await this.repository.listAlertCandidates({ subject_id });
-        if (candidates.length === 0) {
+        const alertPosts = await this.repository.listAlertPosts({ subject_id });
+        if (alertPosts.length === 0) {
             return {
                 sent: false,
                 reason: 'no_candidates_over_threshold',
@@ -53,23 +69,31 @@ class AlertService {
         }
 
         const geminiDisabled = !geminiConfig.enabled || !geminiConfig.apiKey;
+        const subjectGroups = groupAlertPostsBySubject(alertPosts);
         const subjectAnalyses = [];
         let videosAnalyzed = 0;
         let commentsVideos = 0;
         let contentBriefsAnalyzed = 0;
+        const topLimit = geminiConfig.alertTopPostsPerSubject;
 
-        for (const row of candidates) {
-            const subjectId = Number(row.subject_id);
-            const analysis = await this.commentAnalysisService.analyzeSubject(subjectId);
+        for (const group of subjectGroups.values()) {
+            const sorted = [...group.posts].sort((a, b) => b.hot_score - a.hot_score);
+            const topPosts = sorted.slice(0, topLimit);
+            const runIds = topPosts.map((p) => p.id);
+            const subjectId = group.subject_id;
+
+            const analysis = await this.commentAnalysisService.analyzeSubject(subjectId, {
+                runIds,
+            });
             videosAnalyzed += analysis.videos_analyzed || 0;
             commentsVideos += analysis.videos?.length || 0;
             contentBriefsAnalyzed += analysis.content_briefs_analyzed || 0;
 
             subjectAnalyses.push({
-                subjectName: row.subject?.name || `#${subjectId}`,
+                subjectName: group.subject?.name || `#${subjectId}`,
                 subjectStats: {
-                    hot_score: row.hot_score,
-                    trend_score: row.trend_score,
+                    hot_score: sorted[0]?.hot_score ?? 0,
+                    trend_score: Math.max(...sorted.map((p) => p.trend_score ?? 0)),
                 },
                 videos: analysis.videos || [],
                 geminiDisabled,
@@ -77,7 +101,7 @@ class AlertService {
         }
 
         const html = buildAlertEmail({
-            candidates,
+            alertPosts,
             subjectAnalyses,
             thresholds: {
                 hot: geminiConfig.alertHotThreshold,
@@ -86,9 +110,10 @@ class AlertService {
             geminiDisabled,
         });
 
+        const subjectCount = subjectGroups.size;
         const ok = await MailService.sendHtml({
             to: recipient,
-            subject: `[Alert] ${candidates.length} subject(s) vượt ngưỡng hot/trend`,
+            subject: `[Alert] ${alertPosts.length} bài viết (${subjectCount} subject) vượt ngưỡng hot/trend`,
             html,
             bcc: bcc.length ? bcc : undefined,
         });
@@ -101,7 +126,8 @@ class AlertService {
             sent: true,
             to: recipient,
             bcc_count: bcc.length,
-            count: candidates.length,
+            count: alertPosts.length,
+            subject_count: subjectCount,
             thresholds: {
                 hot: geminiConfig.alertHotThreshold,
                 trend: geminiConfig.alertTrendThreshold,
@@ -113,12 +139,14 @@ class AlertService {
                 content_briefs_analyzed: contentBriefsAnalyzed,
                 gemini_disabled: geminiDisabled,
             },
-            subjects: candidates.map((row) => ({
+            posts: alertPosts.map((row) => ({
+                scraper_run_id: row.id,
                 subject_id: row.subject_id,
-                name: row.subject?.name,
+                subject_name: row.subject?.name,
+                platform: row.platform,
+                title: row.title,
                 hot_score: roundScore(row.hot_score),
                 trend_score: roundScore(row.trend_score),
-                posts_count: row.posts_count,
             })),
         };
     }

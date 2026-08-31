@@ -2166,21 +2166,69 @@ class ScraperRepository {
     }
 
     async listAlertCandidates({ subject_id = null } = {}) {
-        const hot = geminiConfig.alertHotThreshold;
-        const trend = geminiConfig.alertTrendThreshold;
-        const where = {
-            hot_score: { [Op.gte]: hot },
-            trend_score: { [Op.gte]: trend },
-        };
+        return this.listAlertPosts({ subject_id });
+    }
+
+    /**
+     * Bài scraper_runs (FB/YT/TT) trong tháng hiện tại vượt ngưỡng hot HOẶC trend.
+     */
+    async listAlertPosts({ subject_id = null } = {}) {
+        const hotTh = geminiConfig.alertHotThreshold;
+        const trendTh = geminiConfig.alertTrendThreshold;
+        const range = resolvePostedAtRange({});
+        const postedAtWhere = buildPostedAtWhere(range);
+
+        const linkWhere = {};
         if (subject_id) {
-            where.subject_id = subject_id;
+            linkWhere.subject_id = subject_id;
         }
 
-        return this.socialPostModel.findAll({
-            where,
-            order: [['hot_score', 'DESC']],
-            include: [this.socialPostSubjectInclude()],
+        const links = await this.subjectScraperRunModel.findAll({
+            where: linkWhere,
+            include: [
+                {
+                    model: this.scraperRunModel,
+                    as: 'scraperRun',
+                    required: true,
+                    where: {
+                        platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
+                        ...postedAtWhere,
+                    },
+                },
+                {
+                    model: this.subjectModel,
+                    as: 'subject',
+                    attributes: ['id', 'name', 'normalized_name', 'status'],
+                },
+            ],
         });
+
+        const results = [];
+        for (const link of links) {
+            const run = link.scraperRun;
+            if (!run) continue;
+            const plain = typeof run.toJSON === 'function' ? run.toJSON() : { ...run };
+            const scores = calculateScores({
+                likes: plain.likes,
+                comments: plain.comments,
+                shares: plain.shares,
+                angry_count: plain.angry_count,
+                views: plain.views,
+                platform: plain.platform,
+            });
+            if (scores.hot_score >= hotTh || scores.trend_score >= trendTh) {
+                results.push({
+                    ...plain,
+                    subject_id: link.subject_id,
+                    subject: link.subject,
+                    hot_score: scores.hot_score,
+                    trend_score: scores.trend_score,
+                });
+            }
+        }
+
+        results.sort((a, b) => b.hot_score - a.hot_score);
+        return results;
     }
 }
 

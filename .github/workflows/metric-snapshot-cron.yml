@@ -3,8 +3,10 @@
 #
 # BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
 #   DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#   MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM_ADDRESS, MAIL_MAIN
 #
 # Tuỳ chọn Variables:
+#   MAIL_PORT (mặc định 587), MAIL_ALERT_BCC (BCC khi báo lỗi dịch vụ / alert)
 #   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
 #   APP_TIMEZONE (mặc định Asia/Ho_Chi_Minh) — quyết định snapshot_date
 #
@@ -43,10 +45,16 @@ jobs:
           DB_DATABASE: ${{ vars.DB_DATABASE }}
           DB_USERNAME: ${{ vars.DB_USERNAME }}
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
+          MAIL_HOST: ${{ vars.MAIL_HOST }}
+          MAIL_USERNAME: ${{ vars.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ vars.MAIL_PASSWORD }}
+          MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
+          MAIL_MAIN: ${{ vars.MAIL_MAIN }}
         run: |
           set -euo pipefail
           missing=()
-          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD; do
+          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD \
+            MAIL_HOST MAIL_USERNAME MAIL_PASSWORD MAIL_FROM_ADDRESS MAIL_MAIN; do
             if [ -z "${!key:-}" ]; then
               missing+=("$key")
             fi
@@ -54,7 +62,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::Missing repository variables: ${missing[*]}"
             echo "Add them at: Settings → Secrets and variables → Actions → Variables"
-            echo "Copy values from backend-express/.env (DB_*)."
+            echo "Copy values from backend-express/.env (DB_* / MAIL_*)."
             exit 1
           fi
           echo "All required variables are present."
@@ -73,4 +81,13 @@ jobs:
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
           DB_SSL: ${{ vars.DB_SSL || 'true' }}
           APP_TIMEZONE: ${{ vars.APP_TIMEZONE || 'Asia/Ho_Chi_Minh' }}
+          MAIL_MAILER: smtp
+          MAIL_HOST: ${{ vars.MAIL_HOST }}
+          MAIL_PORT: ${{ vars.MAIL_PORT || '587' }}
+          MAIL_USERNAME: ${{ vars.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ vars.MAIL_PASSWORD }}
+          MAIL_ENCRYPTION: tls
+          MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
+          MAIL_MAIN: ${{ vars.MAIL_MAIN }}
+          MAIL_ALERT_BCC: ${{ vars.MAIL_ALERT_BCC }}
         run: npm run app:metric-snapshot

@@ -297,28 +297,21 @@ class CommentRepository {
     }
 
     buildAnalysisMeta(lone = [], threads = []) {
-        const analyzedLoneCount = lone.filter(
-            (c) =>
-                c.analysis_status === 'done' ||
-                c.classified_as ||
-                c.reason ||
-                (c.sentiment && c.sentiment !== 'unknown') ||
-                (c.category && c.category !== 'unknown')
-        ).length;
+        const hasRealAnalysis = (item) =>
+            Boolean(item.classified_as) ||
+            Boolean(item.reason) ||
+            (item.sentiment && item.sentiment !== 'unknown') ||
+            (item.category && item.category !== 'unknown');
 
-        const analyzedThreadCount = threads.filter(
-            (t) =>
-                t.analysis_status === 'done' ||
-                t.classified_as ||
-                t.reason ||
-                (t.sentiment && t.sentiment !== 'unknown') ||
-                (t.category && t.category !== 'unknown')
-        ).length;
+        const analyzedLoneCount = lone.filter(hasRealAnalysis).length;
+        const analyzedThreadCount = threads.filter(hasRealAnalysis).length;
 
         return {
             analyzed: analyzedLoneCount > 0 || analyzedThreadCount > 0,
             analyzed_lone_count: analyzedLoneCount,
             analyzed_thread_count: analyzedThreadCount,
+            pending_lone_count: lone.filter((c) => !hasRealAnalysis(c)).length,
+            pending_thread_count: threads.filter((t) => !hasRealAnalysis(t)).length,
         };
     }
 
@@ -356,7 +349,7 @@ class CommentRepository {
                     'scraper_run_id',
                     [
                         db.sequelize.literal(
-                            "SUM(CASE WHEN analysis_status = 'done' OR classified_as IS NOT NULL OR reason IS NOT NULL THEN 1 ELSE 0 END)"
+                            "SUM(CASE WHEN classified_as IS NOT NULL OR reason IS NOT NULL OR (sentiment IS NOT NULL AND sentiment <> 'unknown') OR (category IS NOT NULL AND category <> 'unknown') THEN 1 ELSE 0 END)"
                         ),
                         'analyzed_lone_count',
                     ],
@@ -445,7 +438,25 @@ class CommentRepository {
         return map;
     }
 
-    async listYoutubeRunsForSubject(subjectId, { limit = 10, date_from, date_to } = {}) {
+    async loadRunsByIds(runIds = []) {
+        const ids = runIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0);
+        if (ids.length === 0) return [];
+
+        const rows = await this.scraperRunModel.findAll({
+            where: { id: { [Op.in]: ids } },
+        });
+        const byId = new Map(
+            rows.map((row) => {
+                const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
+                return [plain.id, plain];
+            })
+        );
+        return ids.map((id) => byId.get(id)).filter(Boolean);
+    }
+
+    async listTopRunsForSubject(subjectId, { limit = 3, date_from, date_to } = {}) {
         const range = resolvePostedAtRange({ date_from, date_to });
         const postedAtWhere = buildPostedAtWhere(range);
 
@@ -457,7 +468,7 @@ class CommentRepository {
                     as: 'scraperRun',
                     required: true,
                     where: {
-                        platform: 'youtube',
+                        platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
                         ...postedAtWhere,
                     },
                 },
@@ -482,9 +493,14 @@ class CommentRepository {
             })
             .filter(Boolean)
             .sort((a, b) => b.hot_score - a.hot_score)
-            .slice(0, Math.max(Number(limit) || 10, 1));
+            .slice(0, Math.max(Number(limit) || 3, 1));
 
         return scored.map((item) => item.run);
+    }
+
+    /** @deprecated Dùng listTopRunsForSubject */
+    async listYoutubeRunsForSubject(subjectId, options = {}) {
+        return this.listTopRunsForSubject(subjectId, options);
     }
 
     async loadRunWithComments(scraperRunId) {
@@ -507,19 +523,37 @@ class CommentRepository {
             where: {
                 scraper_run_id: scraperRunId,
                 group_type: 'lone',
-                analysis_status: 'pending',
+                [Op.or]: [
+                    { analysis_status: 'pending' },
+                    {
+                        analysis_status: 'done',
+                        classified_as: null,
+                        reason: null,
+                    },
+                ],
             },
         });
         const pendingThreads = await this.commentThreadModel.count({
             where: {
                 scraper_run_id: scraperRunId,
-                analysis_status: 'pending',
+                [Op.or]: [
+                    { analysis_status: 'pending' },
+                    {
+                        analysis_status: 'done',
+                        classified_as: null,
+                        reason: null,
+                    },
+                ],
             },
         });
         return pendingLone > 0 || pendingThreads > 0;
     }
 
-    async applyAnalysisResult(scraperRunId, result = {}) {
+    async applyAnalysisResult(
+        scraperRunId,
+        result = {},
+        { finalizePendingThreads = false, sentThreadKeys = [] } = {}
+    ) {
         const now = new Date();
 
         for (const bucket of ['negative', 'normal']) {
@@ -563,37 +597,72 @@ class CommentRepository {
                     },
                 }
             );
+
+            await this.postCommentModel.update(
+                { analysis_status: 'done' },
+                {
+                    where: {
+                        scraper_run_id: scraperRunId,
+                        group_type: 'thread',
+                        thread_key: thread.thread_id,
+                    },
+                }
+            );
         }
 
-        await this.postCommentModel.update(
-            { analysis_status: 'done' },
-            {
-                where: {
-                    scraper_run_id: scraperRunId,
-                    group_type: 'lone',
-                    analysis_status: 'pending',
-                },
-            }
-        );
+        if (finalizePendingThreads && sentThreadKeys.length > 0) {
+            await this.finalizePendingThreads(scraperRunId, sentThreadKeys);
+        }
+    }
 
-        // Thread "bình thường" Gemini có thể không trả về — đánh dấu done để không phân tích lại.
+    /**
+     * Thread đã gửi Gemini nhưng không trả về (thường là bình thường) — đánh dấu done.
+     */
+    async finalizePendingThreads(scraperRunId, threadKeys = []) {
+        const keys = [...new Set(threadKeys.filter(Boolean))];
+        if (keys.length === 0) return;
+
+        const now = new Date();
         await this.commentThreadModel.update(
             { analysis_status: 'done', analyzed_at: now },
             {
                 where: {
                     scraper_run_id: scraperRunId,
                     analysis_status: 'pending',
+                    thread_key: { [Op.in]: keys },
+                },
+            }
+        );
+
+        await this.postCommentModel.update(
+            { analysis_status: 'done' },
+            {
+                where: {
+                    scraper_run_id: scraperRunId,
+                    group_type: 'thread',
+                    analysis_status: 'pending',
+                    thread_key: { [Op.in]: keys },
                 },
             }
         );
     }
 
     /**
-     * Comment còn cần Gemini: lone pending + toàn bộ comment thuộc thread pending.
+     * Comment còn cần Gemini: pending hoặc done nhưng thiếu kết quả phân loại.
      */
     async loadCommentsPendingAnalysis(scraperRunId) {
         const pendingThreads = await this.commentThreadModel.findAll({
-            where: { scraper_run_id: scraperRunId, analysis_status: 'pending' },
+            where: {
+                scraper_run_id: scraperRunId,
+                [Op.or]: [
+                    { analysis_status: 'pending' },
+                    {
+                        analysis_status: 'done',
+                        classified_as: null,
+                        reason: null,
+                    },
+                ],
+            },
             attributes: ['thread_key'],
         });
         const pendingThreadKeys = new Set(pendingThreads.map((t) => t.thread_key));
@@ -608,8 +677,15 @@ class CommentRepository {
 
         return comments.filter((row) => {
             const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
-            if (plain.group_type === 'lone' && plain.analysis_status === 'pending') {
-                return true;
+            if (plain.group_type === 'lone') {
+                if (plain.analysis_status === 'pending') return true;
+                if (
+                    plain.analysis_status === 'done' &&
+                    !plain.classified_as &&
+                    !plain.reason
+                ) {
+                    return true;
+                }
             }
             if (plain.group_type === 'thread' && pendingThreadKeys.has(plain.thread_key)) {
                 return true;
@@ -688,10 +764,12 @@ class CommentRepository {
         return {
             video: {
                 id: run.id,
+                platform: run.platform,
                 platform_post_id: run.platform_post_id,
                 title: run.title,
                 post_url: run.post_url,
                 hot_score: scores.hot_score,
+                trend_score: scores.trend_score,
                 comment_total:
                     data.lone.length +
                     data.threads.reduce((s, t) => s + (t.comments?.length || 0), 0),

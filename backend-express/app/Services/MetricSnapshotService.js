@@ -6,6 +6,8 @@ const {
     normalizeSnapshotDate,
     todaySnapshotDate,
 } = require('../Helpers/SnapshotDateHelper');
+const { fireServiceFailureAlert } = require('./ServiceFailureAlertService');
+const logger = require('../Logging/logger');
 
 class MetricSnapshotService {
     constructor() {
@@ -31,12 +33,22 @@ class MetricSnapshotService {
                 `Chỉ được snapshot ngày hôm nay (${today}). Không hỗ trợ ngày ${snapshotDate}.`
             );
         }
-        return this.repository.runSnapshot({
-            force,
-            snapshotDate: today,
-            channelId: input.channel_id != null ? Number(input.channel_id) : null,
-            scraperRunId: input.scraper_run_id != null ? Number(input.scraper_run_id) : null,
-        });
+        try {
+            return await this.repository.runSnapshot({
+                force,
+                snapshotDate: today,
+                channelId: input.channel_id != null ? Number(input.channel_id) : null,
+                scraperRunId: input.scraper_run_id != null ? Number(input.scraper_run_id) : null,
+            });
+        } catch (error) {
+            logger.error('[snapshot] run failed', { message: error?.message });
+            fireServiceFailureAlert(error, {
+                service: 'Database',
+                operation: 'metric-snapshot',
+                source: 'Database',
+            });
+            throw error;
+        }
     }
 
     async status(dateInput = 'today') {

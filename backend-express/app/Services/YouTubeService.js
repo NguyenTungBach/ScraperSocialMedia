@@ -3,14 +3,36 @@
 const createError = require('http-errors');
 const youtubeConfig = require('../../config/youtube');
 const { normalizeYoutubeVideo } = require('../Helpers/YouTubeHelper');
+const { fireServiceFailureAlert } = require('./ServiceFailureAlertService');
+const logger = require('../Logging/logger');
 
 class YouTubeService {
+    shouldAlertYoutubeError(status, reason) {
+        if (reason === 'keyInvalid' || reason === 'keyExpired') return true;
+        if (reason === 'quotaExceeded' || status === 429) return true;
+        return status >= 500;
+    }
+
+    notifyFailure(error, operation) {
+        logger.error('[youtube] service error', {
+            operation,
+            message: error?.message,
+        });
+        fireServiceFailureAlert(error, {
+            service: 'YouTube',
+            operation,
+            source: 'YouTube',
+        });
+    }
+
     ensureApiKey() {
         if (!youtubeConfig.apiKey) {
-            throw createError(
+            const err = createError(
                 500,
                 'YOUTUBE_API_KEY is not configured. Add it to your .env file.'
             );
+            this.notifyFailure(err, 'ensureApiKey');
+            throw err;
         }
     }
 
@@ -31,7 +53,12 @@ class YouTubeService {
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            throw this.mapYoutubeError(response.status, payload);
+            const err = this.mapYoutubeError(response.status, payload);
+            const reason = payload?.error?.errors?.[0]?.reason || '';
+            if (this.shouldAlertYoutubeError(response.status, reason)) {
+                this.notifyFailure(err, endpoint);
+            }
+            throw err;
         }
 
         return payload;

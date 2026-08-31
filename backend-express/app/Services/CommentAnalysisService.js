@@ -2,7 +2,12 @@
 
 const CommentRepository = require('../Repositories/CommentRepository');
 const GeminiService = require('../Services/GeminiService');
-const { buildGeminiPayload } = require('../Helpers/CommentHelper');
+const {
+    buildGeminiPayload,
+    groupCommentsIntoAnalysisUnits,
+    chunkAnalysisUnits,
+    flattenAnalysisUnits,
+} = require('../Helpers/CommentHelper');
 const geminiConfig = require('../../config/gemini');
 const logger = require('../Logging/logger');
 
@@ -109,14 +114,47 @@ class CommentAnalysisService {
             };
         }
 
-        const geminiPayload = buildGeminiPayload(loaded.run, pendingComments);
-        const { result, model } = await this.geminiService.analyzeVideoComments(geminiPayload);
-        await this.commentRepository.applyAnalysisResult(scraperRunId, result);
+        const units = groupCommentsIntoAnalysisUnits(pendingComments);
+        const chunks = chunkAnalysisUnits(
+            units,
+            geminiConfig.commentAnalysisChunkSize || 10
+        );
+        const sentThreadKeys = [];
+        let model = null;
+        let chunksProcessed = 0;
+
+        for (const chunk of chunks) {
+            for (const unit of chunk) {
+                if (unit.type === 'thread' && unit.threadKey) {
+                    sentThreadKeys.push(unit.threadKey);
+                }
+            }
+
+            const chunkComments = flattenAnalysisUnits(chunk);
+            const geminiPayload = buildGeminiPayload(loaded.run, chunkComments);
+            const outcome = await this.geminiService.analyzeVideoComments(geminiPayload);
+            model = outcome.model;
+            await this.commentRepository.applyAnalysisResult(scraperRunId, outcome.result, {
+                finalizePendingThreads: false,
+            });
+            chunksProcessed += 1;
+
+            logger.info('[comment-analysis] chunk processed', {
+                scraper_run_id: scraperRunId,
+                chunk: chunksProcessed,
+                chunks_total: chunks.length,
+                comments_in_chunk: chunkComments.length,
+            });
+        }
+
+        await this.commentRepository.finalizePendingThreads(scraperRunId, sentThreadKeys);
 
         return {
             analyzed: true,
             scraper_run_id: scraperRunId,
             model,
+            chunks_processed: chunksProcessed,
+            comments_sent: pendingComments.length,
             payload: await this.commentRepository.getAnalysisPayloadForEmail(scraperRunId),
         };
     }
@@ -151,12 +189,17 @@ class CommentAnalysisService {
         }
     }
 
-    async analyzeSubject(subjectId, { date_from, date_to } = {}) {
-        const runs = await this.commentRepository.listYoutubeRunsForSubject(subjectId, {
-            limit: geminiConfig.alertTopVideosPerSubject,
-            date_from,
-            date_to,
-        });
+    async analyzeSubject(subjectId, { runIds, date_from, date_to, limit } = {}) {
+        let runs;
+        if (Array.isArray(runIds) && runIds.length > 0) {
+            runs = await this.commentRepository.loadRunsByIds(runIds);
+        } else {
+            runs = await this.commentRepository.listTopRunsForSubject(subjectId, {
+                limit: limit ?? geminiConfig.alertTopPostsPerSubject,
+                date_from,
+                date_to,
+            });
+        }
 
         const videos = [];
         let analyzedCount = 0;

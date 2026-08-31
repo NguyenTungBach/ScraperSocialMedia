@@ -20,7 +20,7 @@ const path = require('path');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-const apiName = process.env.PM2_API_NAME || 'hoyocodes-api';
+const apiName = process.env.PM2_API_NAME || 'scrap-social-media-api';
 const port = Number(process.env.APP_PORT || process.env.PORT || 3400);
 const nodeEnv = process.env.NODE_ENV || 'production';
 /** PM2 node binary — override bằng PM2_NODE_INTERPRETER nếu cần. */

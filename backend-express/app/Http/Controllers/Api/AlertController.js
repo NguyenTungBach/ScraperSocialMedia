@@ -14,11 +14,11 @@ class AlertController {
      * /alerts/gmail:
      *   post:
      *     tags: [Alerts]
-     *     summary: Gửi Gmail khi hot_score và trend_score vượt ngưỡng
+     *     summary: Gửi Gmail khi bài viết vượt ngưỡng hot/trend
      *     description: |
-     *       Lọc `social_posts` có `hot_score >= ALERT_HOT_THRESHOLD` **và**
-     *       `trend_score >= ALERT_TREND_THRESHOLD`, phân tích comment AI (top video hot/subject),
-     *       rồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).
+     *       Lọc `scraper_runs` (Facebook, YouTube, TikTok) trong tháng hiện tại có
+     *       `hot_score >= ALERT_HOT_THRESHOLD` **hoặc** `trend_score >= ALERT_TREND_THRESHOLD`,
+     *       phân tích comment AI (top 3 bài hot/subject), rồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).
      *       BCC: `MAIL_ALERT_BCC` trong `.env` và/hoặc `bcc` trong body (mảng email hoặc chuỗi phân cách bằng dấu phẩy).
      *     security: []
      *     requestBody:

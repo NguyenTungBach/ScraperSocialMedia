@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Loader2, Sparkles } from 'lucide-react';
+import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   commentsApi,
   type CommentThreadItem,
@@ -14,6 +15,8 @@ import { isCommentSupportedPlatform } from '@/lib/utils/socialPlatforms';
 import { MakeToast } from '@/lib/utils/toast';
 import { CommentAnalysisModal } from './CommentAnalysisModal';
 import styles from './SubjectDetailModal.module.scss';
+
+const COMMENT_PAGE_SIZE = 10;
 
 function toneClass(classified?: string | null) {
   if (classified === 'negative') return styles.commentBadgeNegative;
@@ -180,6 +183,7 @@ export function CommentPanel({
   const [data, setData] = useState<ScraperRunComments | null>(null);
   const [localBrief, setLocalBrief] = useState(contentBrief);
   const [localBriefStatus, setLocalBriefStatus] = useState(contentBriefStatus);
+  const [commentPage, setCommentPage] = useState(1);
 
   useEffect(() => {
     setLocalBrief(contentBrief);
@@ -210,6 +214,24 @@ export function CommentPanel({
     () => (data ? buildTopLevelComments(data) : []),
     [data]
   );
+
+  const commentTotalPages = Math.max(
+    1,
+    Math.ceil(topLevelComments.length / COMMENT_PAGE_SIZE)
+  );
+  const commentCurrentPage = Math.min(commentPage, commentTotalPages);
+  const pagedTopLevelComments = useMemo(() => {
+    const start = (commentCurrentPage - 1) * COMMENT_PAGE_SIZE;
+    return topLevelComments.slice(start, start + COMMENT_PAGE_SIZE);
+  }, [topLevelComments, commentCurrentPage]);
+
+  useEffect(() => {
+    setCommentPage(1);
+  }, [scraperRunId, data]);
+
+  useEffect(() => {
+    if (open) setCommentPage(1);
+  }, [open]);
 
   const hasAnalysisFromDb = useMemo(() => {
     if (data?.meta?.analyzed) return true;
@@ -274,6 +296,32 @@ export function CommentPanel({
     .filter(Boolean)
     .join(' · ');
 
+  const commentRangeStart =
+    topLevelComments.length === 0 ? 0 : (commentCurrentPage - 1) * COMMENT_PAGE_SIZE + 1;
+  const commentRangeEnd = Math.min(
+    commentCurrentPage * COMMENT_PAGE_SIZE,
+    topLevelComments.length
+  );
+  const showCommentPagination = topLevelComments.length > COMMENT_PAGE_SIZE;
+
+  const renderCommentPagination = (position: 'top' | 'bottom') =>
+    showCommentPagination ? (
+      <Pagination
+        key={`comment-page-${position}`}
+        className={
+          position === 'top' ? styles.commentPaginationTop : styles.commentPaginationBottom
+        }
+        page={commentCurrentPage}
+        totalPages={commentTotalPages}
+        totalRecords={topLevelComments.length}
+        unitLabel="comment gốc"
+        info={`Hiển thị ${commentRangeStart}–${commentRangeEnd} / ${topLevelComments.length} comment gốc · Trang ${commentCurrentPage}/${commentTotalPages}`}
+        onChange={setCommentPage}
+      />
+    ) : position === 'top' && topLevelComments.length > 0 ? (
+      <p className={styles.commentPageInfo}>{topLevelComments.length} comment gốc</p>
+    ) : null;
+
   return (
     <>
       <div className={styles.commentPanel}>
@@ -302,7 +350,7 @@ export function CommentPanel({
             {analyzing
               ? 'Đang phân tích…'
               : hasAnalysisFromDb
-                ? 'Phân tích lại (nếu còn pending)'
+                ? 'Phân tích lại (comment thiếu kết quả)'
                 : 'Phân tích comment'}
           </button>
 
@@ -318,7 +366,7 @@ export function CommentPanel({
         </div>
 
         <p className={styles.commentScopeHint}>
-          Mỗi lần chạy cào dữ liệu chỉ lấy 20 comment gốc mới nhất · tối đa 10 reply/comment gốc
+          Mỗi lần cào tối đa 30 comment gốc · 10 reply/comment · AI phân tích theo lô 10 comment/lần
         </p>
 
         {open ? (
@@ -333,9 +381,13 @@ export function CommentPanel({
               <>
                 {topLevelComments.length > 0 ? (
                   <section className={styles.commentSection}>
-                    {topLevelComments.map((item) => (
+                    {renderCommentPagination('top')}
+
+                    {pagedTopLevelComments.map((item) => (
                       <CommentRootRow key={item.root.id} item={item} />
                     ))}
+
+                    {renderCommentPagination('bottom')}
                   </section>
                 ) : (
                   <p className={styles.commentEmpty}>Chưa có comment được lưu.</p>

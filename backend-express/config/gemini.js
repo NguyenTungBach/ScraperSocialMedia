@@ -95,5 +95,12 @@ module.exports = {
     discoverSubjectsPrompt: DISCOVER_SUBJECTS_PROMPT,
     commentAnalysisPrompt: COMMENT_ANALYSIS_PROMPT,
     contentBriefPrompt: CONTENT_BRIEF_PROMPT,
-    alertTopVideosPerSubject: Number(process.env.ALERT_TOP_VIDEOS_PER_SUBJECT) || 10,
+    alertTopPostsPerSubject:
+        Number(process.env.ALERT_TOP_POSTS_PER_SUBJECT || process.env.ALERT_TOP_VIDEOS_PER_SUBJECT) ||
+        3,
+    alertTopVideosPerSubject:
+        Number(process.env.ALERT_TOP_POSTS_PER_SUBJECT || process.env.ALERT_TOP_VIDEOS_PER_SUBJECT) ||
+        3,
+    /** Số comment gốc / thread tối đa mỗi lần gọi Gemini phân tích */
+    commentAnalysisChunkSize: Number(process.env.GEMINI_COMMENT_ANALYSIS_CHUNK_SIZE) || 10,
 };

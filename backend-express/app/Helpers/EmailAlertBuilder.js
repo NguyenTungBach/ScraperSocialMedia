@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatScore } = require('./PostScoreHelper');
+const { formatScore, normalizePlatform } = require('./PostScoreHelper');
 const {
     classifyLabel,
     countAnalysisByType,
@@ -20,6 +20,26 @@ function truncate(text, max = 160) {
         .trim();
     if (t.length <= max) return t;
     return `${t.slice(0, max)}…`;
+}
+
+function platformLabel(platform) {
+    const labels = {
+        facebook: 'Facebook',
+        youtube: 'YouTube',
+        tiktok: 'TikTok',
+    };
+    return labels[normalizePlatform(platform)] || String(platform || '—');
+}
+
+function platformBadge(platform) {
+    const label = platformLabel(platform);
+    const colors = {
+        facebook: { bg: '#dbeafe', color: '#1d4ed8' },
+        youtube: { bg: '#fee2e2', color: '#b91c1c' },
+        tiktok: { bg: '#f3e8ff', color: '#7e22ce' },
+    };
+    const tone = colors[normalizePlatform(platform)] || { bg: '#f1f5f9', color: '#475569' };
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${tone.bg};color:${tone.color};font-size:11px;font-weight:600;">${escapeHtml(label)}</span>`;
 }
 
 function classifiedBadge(classifiedAs) {
@@ -83,7 +103,7 @@ function renderRowDetails(row) {
 function renderAnalysisTable(videoBlock) {
     const rows = videoBlock.analysis_rows || [];
     if (rows.length === 0) {
-        return `<p style="color:#64748b;margin:8px 0;">Chưa có phân tích AI trong DB cho video này.</p>`;
+        return `<p style="color:#64748b;margin:8px 0;">Chưa có phân tích AI trong DB cho bài viết này.</p>`;
     }
 
     const stats = countAnalysisByType(rows);
@@ -131,7 +151,7 @@ function buildSubjectAnalysisSection(subjectAnalysis) {
     const { subjectName, subjectStats, videos = [], geminiDisabled } = subjectAnalysis;
     let html = `<div style="margin:24px 0 12px;padding-top:16px;border-top:2px solid #e2e8f0;">
       <h2 style="margin:0 0 8px;color:#0f172a;">▼ ${escapeHtml(subjectName)}</h2>
-      <p style="margin:0 0 12px;color:#475569;">Hot ${formatScore(subjectStats?.hot_score)} · Trend ${formatScore(subjectStats?.trend_score)} · ${videos.length} video</p>`;
+      <p style="margin:0 0 12px;color:#475569;">Hot ${formatScore(subjectStats?.hot_score)} · Trend ${formatScore(subjectStats?.trend_score)} · ${videos.length} bài viết</p>`;
 
     if (geminiDisabled) {
         html += `<p style="color:#b45309;">AI chưa bật — chưa phân tích comment.</p></div>`;
@@ -139,15 +159,16 @@ function buildSubjectAnalysisSection(subjectAnalysis) {
     }
 
     if (videos.length === 0) {
-        html += `<p style="color:#64748b;">Chưa có video YouTube hoặc comment để phân tích.</p></div>`;
+        html += `<p style="color:#64748b;">Chưa có bài viết hoặc comment để phân tích.</p></div>`;
         return html;
     }
 
     for (const videoBlock of videos) {
         const v = videoBlock.video || {};
         const meta = videoBlock.meta || {};
+        const title = v.title || v.platform_post_id || 'Bài viết';
         html += `<div style="margin:16px 0;padding:12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;">
-          <h3 style="margin:0 0 6px;font-size:16px;">${escapeHtml(v.title || v.platform_post_id || 'Video')}</h3>`;
+          <h3 style="margin:0 0 6px;font-size:16px;">${platformBadge(v.platform)} ${escapeHtml(title)}</h3>`;
 
         if (v.post_url) {
             html += `<p style="margin:0 0 8px;"><a href="${escapeHtml(v.post_url)}" style="color:#2563eb;">${escapeHtml(v.post_url)}</a></p>`;
@@ -160,19 +181,27 @@ function buildSubjectAnalysisSection(subjectAnalysis) {
             </div>`;
         }
 
-        html += `<p style="margin:0 0 12px;color:#64748b;font-size:13px;">Hot ${formatScore(v.hot_score)} · ${v.comment_total || 0} comment đã scrape`;
+        html += `<p style="margin:0 0 12px;color:#64748b;font-size:13px;">Hot ${formatScore(v.hot_score)} · Trend ${formatScore(v.trend_score)} · ${v.comment_total || 0} comment đã scrape`;
         if (meta.analyzed) {
             html += ` · ${meta.analyzed_lone_count || 0} lone + ${meta.analyzed_thread_count || 0} thread từ DB`;
         }
         html += `</p>`;
 
         if ((v.comment_total || 0) === 0) {
-            html += `<p style="color:#64748b;">Chưa có dữ liệu comment — cần quét YouTube trước.</p></div>`;
+            html += `<p style="color:#64748b;">Chưa có dữ liệu comment — cần quét bài trước.</p></div>`;
             continue;
         }
 
-        html += `<h4 style="margin:12px 0 8px;font-size:14px;color:#0f172a;">Bảng phân tích comment AI</h4>`;
-        html += renderAnalysisTable(videoBlock);
+        const analysisRows = videoBlock.analysis_rows || [];
+        if (analysisRows.length > 0) {
+            html += renderAnalysisStats(countAnalysisByType(analysisRows));
+        } else {
+            html += `<p style="color:#64748b;margin:8px 0;">Chưa có phân tích AI trong DB cho bài viết này.</p>`;
+        }
+
+        // TODO: bật lại bảng comment chi tiết khi cần — renderAnalysisTable()
+        // html += `<h4 style="margin:12px 0 8px;font-size:14px;color:#0f172a;">Bảng phân tích comment AI</h4>`;
+        // html += renderAnalysisTable(videoBlock);
         html += `</div>`;
     }
 
@@ -180,24 +209,30 @@ function buildSubjectAnalysisSection(subjectAnalysis) {
     return html;
 }
 
-function buildAlertEmail({ candidates = [], subjectAnalyses = [], thresholds = {}, geminiDisabled = false }) {
-    const rowsHtml = candidates
+function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {}, geminiDisabled = false }) {
+    const rowsHtml = alertPosts
         .map((row) => {
             const name = row.subject?.name || `#${row.subject_id}`;
+            const title = truncate(row.title || row.platform_post_id || '—', 80);
+            const titleCell = row.post_url
+                ? `<a href="${escapeHtml(row.post_url)}" style="color:#2563eb;">${escapeHtml(title)}</a>`
+                : escapeHtml(title);
             return `<tr>
               <td>${escapeHtml(name)}</td>
-              <td>${row.posts_count}</td>
-              <td>${row.likes}</td>
-              <td>${row.comments}</td>
-              <td>${row.shares}</td>
-              <td>${row.angry_count}</td>
+              <td>${platformBadge(row.platform)}</td>
+              <td>${titleCell}</td>
+              <td>${row.likes ?? 0}</td>
+              <td>${row.comments ?? 0}</td>
+              <td>${row.shares ?? 0}</td>
+              <td>${row.views ?? 0}</td>
+              <td>${row.angry_count ?? 0}</td>
               <td>${formatScore(row.trend_score)}</td>
               <td>${formatScore(row.hot_score)}</td>
             </tr>`;
         })
         .join('');
 
-    let analysisHtml = `<h2 style="margin-top:28px;color:#0f172a;">Phân tích comment AI</h2>`;
+    let analysisHtml = `<h2 style="margin-top:28px;color:#0f172a;">Phân tích comment AI (top bài hot)</h2>`;
     if (geminiDisabled) {
         analysisHtml += `<p style="color:#b45309;">GEMINI_ENABLED=false hoặc thiếu API key — chỉ gửi bảng tổng quan.</p>`;
     } else if (subjectAnalyses.length === 0) {
@@ -211,13 +246,13 @@ function buildAlertEmail({ candidates = [], subjectAnalyses = [], thresholds = {
     const html = `
       <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:960px;">
         <h2>ScraperSocialMedia — Alert vượt ngưỡng</h2>
-        <p>Ngưỡng: hot_score &gt;= <b>${thresholds.hot}</b> và trend_score &gt;= <b>${thresholds.trend}</b></p>
-        <h3 style="margin-top:20px;">Tổng quan đối tượng</h3>
+        <p>Ngưỡng: hot_score &gt;= <b>${thresholds.hot}</b> <b>hoặc</b> trend_score &gt;= <b>${thresholds.trend}</b></p>
+        <h3 style="margin-top:20px;">Bài viết vượt ngưỡng (${alertPosts.length})</h3>
         <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;">
           <thead>
             <tr style="background:#f1f5f9;">
-              <th>Subject</th><th>Posts</th><th>Likes</th><th>Comments</th>
-              <th>Shares</th><th>Angry</th><th>Trend</th><th>Hot</th>
+              <th>Subject</th><th>Platform</th><th>Bài viết</th><th>Likes</th><th>Comments</th>
+              <th>Shares</th><th>Views</th><th>Angry</th><th>Trend</th><th>Hot</th>
             </tr>
           </thead>
           <tbody>${rowsHtml}</tbody>

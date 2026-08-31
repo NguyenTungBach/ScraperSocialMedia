@@ -28,7 +28,7 @@ async function main() {
         logger.error('Command execution failed', {
             signature,
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
         });
         process.exit(1);
     }

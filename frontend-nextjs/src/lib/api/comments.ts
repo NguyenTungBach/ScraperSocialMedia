@@ -44,6 +44,8 @@ export interface ScraperRunComments {
     analyzed: boolean;
     analyzed_lone_count: number;
     analyzed_thread_count: number;
+    pending_lone_count?: number;
+    pending_thread_count?: number;
   };
 }
 

@@ -81,21 +81,19 @@ function classifyLabel(value) {
 
 function hasStoredLoneAnalysis(comment) {
     return (
-        comment.analysis_status === 'done' ||
-        comment.classified_as ||
-        comment.reason ||
-        (comment.sentiment && comment.sentiment !== 'unknown') ||
-        (comment.category && comment.category !== 'unknown')
+        Boolean(comment.classified_as) ||
+        Boolean(comment.reason) ||
+        (Boolean(comment.sentiment) && comment.sentiment !== 'unknown') ||
+        (Boolean(comment.category) && comment.category !== 'unknown')
     );
 }
 
 function hasStoredThreadAnalysis(thread) {
     return (
-        thread.analysis_status === 'done' ||
-        thread.classified_as ||
-        thread.reason ||
-        (thread.sentiment && thread.sentiment !== 'unknown') ||
-        (thread.category && thread.category !== 'unknown')
+        Boolean(thread.classified_as) ||
+        Boolean(thread.reason) ||
+        (Boolean(thread.sentiment) && thread.sentiment !== 'unknown') ||
+        (Boolean(thread.category) && thread.category !== 'unknown')
     );
 }
 

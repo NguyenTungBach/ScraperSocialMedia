@@ -4,8 +4,10 @@
 # BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
 #   DB_HOST, DB_DATABASE, DB_USERNAME, DB_PASSWORD
 #   YOUTUBE_API_KEY
+#   MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM_ADDRESS, MAIL_MAIN
 #
 # Tuỳ chọn Variables:
+#   MAIL_PORT (mặc định 587), MAIL_ALERT_BCC (BCC khi báo lỗi dịch vụ / alert)
 #   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
 #   SCRAPE_MAX_POSTS / SCRAPE_MAX_TOP_COMMENTS / SCRAPE_MAX_REPLIES (chung mọi nền tảng)
 #   YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube trong DB)
@@ -51,10 +53,16 @@ jobs:
           DB_USERNAME: ${{ vars.DB_USERNAME }}
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
           YOUTUBE_API_KEY: ${{ vars.YOUTUBE_API_KEY }}
+          MAIL_HOST: ${{ vars.MAIL_HOST }}
+          MAIL_USERNAME: ${{ vars.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ vars.MAIL_PASSWORD }}
+          MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
+          MAIL_MAIN: ${{ vars.MAIL_MAIN }}
         run: |
           set -euo pipefail
           missing=()
-          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD YOUTUBE_API_KEY; do
+          for key in DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD YOUTUBE_API_KEY \
+            MAIL_HOST MAIL_USERNAME MAIL_PASSWORD MAIL_FROM_ADDRESS MAIL_MAIN; do
             if [ -z "${!key:-}" ]; then
               missing+=("$key")
             fi
@@ -62,7 +70,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::Missing repository variables: ${missing[*]}"
             echo "Add them at: Settings → Secrets and variables → Actions → Variables"
-            echo "Copy values from backend-express/.env (DB_* / YOUTUBE_API_KEY)."
+            echo "Copy values from backend-express/.env (DB_* / YOUTUBE_API_KEY / MAIL_*)."
             exit 1
           fi
           echo "All required variables are present."
@@ -81,6 +89,15 @@ jobs:
           DB_PASSWORD: ${{ vars.DB_PASSWORD }}
           DB_SSL: ${{ vars.DB_SSL || 'true' }}
           YOUTUBE_API_KEY: ${{ vars.YOUTUBE_API_KEY }}
+          MAIL_MAILER: smtp
+          MAIL_HOST: ${{ vars.MAIL_HOST }}
+          MAIL_PORT: ${{ vars.MAIL_PORT || '587' }}
+          MAIL_USERNAME: ${{ vars.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ vars.MAIL_PASSWORD }}
+          MAIL_ENCRYPTION: tls
+          MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
+          MAIL_MAIN: ${{ vars.MAIL_MAIN }}
+          MAIL_ALERT_BCC: ${{ vars.MAIL_ALERT_BCC }}
           SCRAPE_MAX_POSTS: ${{ vars.SCRAPE_MAX_POSTS || '10' }}
           SCRAPE_MAX_TOP_COMMENTS: ${{ vars.SCRAPE_MAX_TOP_COMMENTS || '30' }}
           SCRAPE_MAX_REPLIES: ${{ vars.SCRAPE_MAX_REPLIES || '10' }}

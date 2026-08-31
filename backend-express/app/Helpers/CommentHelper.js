@@ -85,9 +85,76 @@ function buildGeminiPayload(scraperRun, comments) {
     };
 }
 
+function toPlainComment(row) {
+    return typeof row.toJSON === 'function' ? row.toJSON() : row;
+}
+
+/** Lone hoặc thread đã gửi Gemini nhưng thiếu kết quả phân loại. */
+function isIncompleteAnalysisRecord(record) {
+    if (!record) return false;
+    if (record.analysis_status === 'pending') return true;
+    if (record.analysis_status !== 'done') return false;
+    return !record.classified_as && !record.reason;
+}
+
+/**
+ * Nhóm comment pending thành đơn vị phân tích: 1 lone hoặc 1 thread (giữ nguyên cả chuỗi).
+ */
+function groupCommentsIntoAnalysisUnits(comments = []) {
+    const units = [];
+    const seenThreads = new Set();
+
+    for (const row of comments) {
+        const plain = toPlainComment(row);
+        if (plain.group_type === 'lone') {
+            units.push({ type: 'lone', threadKey: null, comments: [plain] });
+            continue;
+        }
+        if (plain.group_type !== 'thread' || seenThreads.has(plain.thread_key)) continue;
+
+        seenThreads.add(plain.thread_key);
+        const threadComments = comments
+            .map(toPlainComment)
+            .filter((c) => c.group_type === 'thread' && c.thread_key === plain.thread_key);
+        units.push({
+            type: 'thread',
+            threadKey: plain.thread_key,
+            comments: threadComments,
+        });
+    }
+
+    return units;
+}
+
+/** Chia đơn vị phân tích thành các chunk (mặc định 10 đơn vị/chunk). */
+function chunkAnalysisUnits(units = [], chunkSize = 10) {
+    const size = Math.max(Number(chunkSize) || 10, 1);
+    const chunks = [];
+    let current = [];
+
+    for (const unit of units) {
+        if (current.length >= size) {
+            chunks.push(current);
+            current = [];
+        }
+        current.push(unit);
+    }
+
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+}
+
+function flattenAnalysisUnits(units = []) {
+    return units.flatMap((unit) => unit.comments);
+}
+
 module.exports = {
     toCount,
     normalizeYoutubeCommentItem,
     assignThreadKeys,
     buildGeminiPayload,
+    isIncompleteAnalysisRecord,
+    groupCommentsIntoAnalysisUnits,
+    chunkAnalysisUnits,
+    flattenAnalysisUnits,
 };
