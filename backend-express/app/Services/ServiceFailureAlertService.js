@@ -11,11 +11,30 @@ const logger = require('../Logging/logger');
 
 const LOG_PREFIX = '[service-failure-alert]';
 
-/** Gửi mail bất đồng bộ — gọi tại tầng dịch vụ (Apify, YouTube, Gemini, DB…). */
+/** Promise đang gửi mail — CLI phải await trước process.exit kẻo mail bị cắt. */
+const pendingAlerts = new Set();
+
+/**
+ * Gửi mail bất đồng bộ — gọi tại tầng dịch vụ (Apify, YouTube, Gemini, DB…).
+ * HTTP server giữ process sống nên fire-and-forget ổn; CLI dùng flushPendingServiceFailureAlerts().
+ */
 function fireServiceFailureAlert(error, context = {}) {
-    void module.exports.notifyFailure(error, context).catch((notifyErr) => {
-        logger.error(`${LOG_PREFIX} notify failed`, { message: notifyErr?.message });
-    });
+    const promise = module.exports
+        .notifyFailure(error, context)
+        .catch((notifyErr) => {
+            logger.error(`${LOG_PREFIX} notify failed`, { message: notifyErr?.message });
+        })
+        .finally(() => {
+            pendingAlerts.delete(promise);
+        });
+    pendingAlerts.add(promise);
+    return promise;
+}
+
+/** Chờ mọi alert đang gửi xong (dùng trước process.exit trong CLI). */
+async function flushPendingServiceFailureAlerts() {
+    if (pendingAlerts.size === 0) return;
+    await Promise.allSettled([...pendingAlerts]);
 }
 
 class ServiceFailureAlertService {
@@ -88,3 +107,4 @@ class ServiceFailureAlertService {
 
 module.exports = new ServiceFailureAlertService();
 module.exports.fireServiceFailureAlert = fireServiceFailureAlert;
+module.exports.flushPendingServiceFailureAlerts = flushPendingServiceFailureAlerts;
