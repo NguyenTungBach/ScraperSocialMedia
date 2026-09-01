@@ -108,19 +108,20 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
       if (data?.sent) {
         const bccNote =
           data.bcc_count && data.bcc_count > 0 ? ` · BCC ${data.bcc_count} người` : '';
+
+        if (data.reason === 'no_candidates_over_threshold') {
+          const hot = data.thresholds?.hot ?? '?';
+          const trend = data.thresholds?.trend ?? '?';
+          MakeToast({
+            variant: 'success',
+            content: `Đã gửi email: không có đối tượng vượt ngưỡng (hot ≥ ${hot}, trend ≥ ${trend})${bccNote}`,
+          });
+          return;
+        }
+
         MakeToast({
           variant: 'success',
           content: `Đã gửi cảnh báo ${data.count} đối tượng vượt ngưỡng hot/trend${bccNote}`,
-        });
-        return;
-      }
-
-      if (data?.reason === 'no_candidates_over_threshold') {
-        const hot = data.thresholds?.hot ?? '?';
-        const trend = data.thresholds?.trend ?? '?';
-        MakeToast({
-          variant: 'info',
-          content: `Không có đối tượng vượt ngưỡng (hot ≥ ${hot}, trend ≥ ${trend})`,
         });
         return;
       }

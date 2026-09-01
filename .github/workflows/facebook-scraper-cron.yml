@@ -1,4 +1,4 @@
-# Cào bài Facebook mỗi 10 giờ — CHỈ 1 kênh (match theo URL trong DB).
+# Cào bài Facebook 2 lần/ngày (05:00 và 17:00 ICT) — CHỈ 1 kênh (match theo URL trong DB).
 # Chạy TRỰC TIẾP trên GitHub runner (Apify + DB), không gọi Render.
 #
 # BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
@@ -18,8 +18,9 @@ name: Facebook Scraper Cron
 
 on:
   schedule:
-    # Mỗi 10 giờ (UTC: 00:00, 10:00, 20:00). GitHub có thể trễ vài phút.
-    - cron: '0 */10 * * *'
+    # 05:00 và 17:00 ICT (UTC+7) = 22:00 và 10:00 UTC. GitHub có thể trễ vài phút.
+    - cron: '0 22 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:

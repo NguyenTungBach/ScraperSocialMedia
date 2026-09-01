@@ -157,6 +157,8 @@ const subjectListQuerySchema = z
             ])
             .optional(),
         sort_dir: z.enum(['asc', 'desc', 'ASC', 'DESC']).optional(),
+        date_from: dateOnlySchema,
+        date_to: dateOnlySchema,
     })
     .transform((data) => ({
         ...withSearchAlias(data),

@@ -37,6 +37,11 @@ $st-red: #dc2626;
   color: $st-muted;
 }
 
+.periodLabel {
+  color: $st-text;
+  font-weight: 600;
+}
+
 .toolbarActions {
   display: flex;
   align-items: center;

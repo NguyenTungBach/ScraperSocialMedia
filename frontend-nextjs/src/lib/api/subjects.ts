@@ -50,6 +50,8 @@ export interface SubjectListParams {
   q?: string;
   sort_by?: SubjectListSortBy;
   sort_dir?: 'asc' | 'desc';
+  date_from?: string;
+  date_to?: string;
 }
 
 export type SubjectListSortBy =
@@ -159,6 +161,8 @@ export const subjectsApi = {
         q: params.q || undefined,
         sort_by: params.sort_by,
         sort_dir: params.sort_dir,
+        date_from: params.date_from || undefined,
+        date_to: params.date_to || undefined,
       },
     }) as Promise<ApiResponse<SubjectListData>>,
 

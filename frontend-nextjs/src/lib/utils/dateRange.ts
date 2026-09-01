@@ -20,6 +20,26 @@ export function getCurrentMonthDateRange(ref: Date = new Date()): {
   };
 }
 
+/** Dịch chuyển ±N tháng lịch so với `dateFrom` (mặc định tháng hiện tại). */
+export function shiftMonthDateRange(
+  dateFrom: string | undefined,
+  deltaMonths: number
+): { date_from: string; date_to: string } {
+  const anchor = dateFrom ? new Date(`${dateFrom}T00:00:00`) : new Date();
+  const ref = new Date(anchor.getFullYear(), anchor.getMonth() + deltaMonths, 1);
+  return getCurrentMonthDateRange(ref);
+}
+
+/** Còn được sang tháng sau không (không vượt quá tháng lịch hiện tại). */
+export function canGoToNextMonth(
+  dateFrom: string | undefined,
+  ref: Date = new Date()
+): boolean {
+  const next = shiftMonthDateRange(dateFrom, 1);
+  const current = getCurrentMonthDateRange(ref);
+  return next.date_from <= current.date_from;
+}
+
 export function formatMonthRangeLabel(dateFrom?: string | null, dateTo?: string | null): string {
   if (!dateFrom && !dateTo) {
     const { date_from, date_to } = getCurrentMonthDateRange();

@@ -17,8 +17,9 @@ name: YouTube Tail Refresh
 
 on:
   schedule:
-    # Mỗi 2 ngày lúc 03:00 UTC
-    - cron: '0 3 */2 * *'
+    # 05:00 và 17:00 ICT (UTC+7) = 22:00 và 10:00 UTC. GitHub có thể trễ vài phút.
+    - cron: '0 22 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       start_offset:

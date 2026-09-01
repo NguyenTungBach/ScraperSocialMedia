@@ -127,7 +127,11 @@ class ScraperRepository {
         q = null,
         sort_by = 'id',
         sort_dir,
+        date_from,
+        date_to,
     } = {}) {
+        const range = resolvePostedAtRange({ date_from, date_to });
+        const hasDateFilter = date_from != null || date_to != null;
         const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
         const currentPage = Math.max(Number(page) || 1, 1);
         const offset = (currentPage - 1) * limit;
@@ -176,13 +180,79 @@ class ScraperRepository {
             }
         }
 
+        let aggregatesBySubjectId = null;
+        if (hasDateFilter) {
+            aggregatesBySubjectId = await this.batchAggregatesForSubjects(rows, range);
+        }
+
         const serialized = rows.map((row) =>
             this.serializeSubjectListItem(row, {
                 scraper_runs_count: linkCountBySubjectId.get(Number(row.id)) || 0,
+                aggregateOverride: aggregatesBySubjectId?.get(Number(row.id)) ?? null,
             })
         );
 
         return { rows: serialized, count, page: currentPage, per_page: limit };
+    }
+
+    /**
+     * Aggregate engagement theo posted_at cho nhiều subject (dùng khi list có date_from/date_to).
+     */
+    async batchAggregatesForSubjects(subjectRows, range) {
+        const map = new Map();
+        if (!Array.isArray(subjectRows) || subjectRows.length === 0) return map;
+
+        const subjectIds = subjectRows.map((row) => Number(row.id)).filter(Boolean);
+        if (subjectIds.length === 0) return map;
+
+        const postedAtWhere = buildPostedAtWhere(range);
+        const links = await this.subjectScraperRunModel.findAll({
+            where: { subject_id: { [Op.in]: subjectIds } },
+            include: [
+                {
+                    model: this.scraperRunModel,
+                    as: 'scraperRun',
+                    attributes: [
+                        'id',
+                        'platform',
+                        'likes',
+                        'comments',
+                        'shares',
+                        'angry_count',
+                        'views',
+                        'posted_at',
+                    ],
+                    required: true,
+                    where: postedAtWhere,
+                },
+            ],
+        });
+
+        const runsBySubject = new Map();
+        for (const link of links) {
+            const sid = Number(link.subject_id);
+            if (!runsBySubject.has(sid)) runsBySubject.set(sid, []);
+            if (link.scraperRun) runsBySubject.get(sid).push(link.scraperRun);
+        }
+
+        for (const row of subjectRows) {
+            const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
+            const sid = Number(plain.id);
+            const channels = (plain.channels || []).map((ch) => this.serializeChannel(ch));
+            const follow = this.sumFollowersFromChannels(channels);
+            const aggPayload = this.buildAggregateFromRuns(runsBySubject.get(sid) || [], {
+                follow,
+            });
+            const serialized = this.serializeSocialPost({
+                ...aggPayload,
+                subject_id: sid,
+                created_at: plain.created_at,
+                subject: { ...plain, channels },
+            });
+            map.set(sid, serialized);
+        }
+
+        return map;
     }
 
     /**
@@ -514,11 +584,13 @@ class ScraperRepository {
         };
     }
 
-    serializeSubjectListItem(row, { scraper_runs_count = 0 } = {}) {
+    serializeSubjectListItem(row, { scraper_runs_count = 0, aggregateOverride = null } = {}) {
         const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
-        const socialPost = plain.socialPost
-            ? this.serializeSocialPost(plain.socialPost)
-            : null;
+        const socialPost = aggregateOverride
+            ? aggregateOverride
+            : plain.socialPost
+              ? this.serializeSocialPost(plain.socialPost)
+              : null;
         const channels = (plain.channels || []).map((ch) => this.serializeChannel(ch));
 
         return {

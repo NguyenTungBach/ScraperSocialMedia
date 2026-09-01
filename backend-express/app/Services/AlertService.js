@@ -5,7 +5,7 @@ const ScraperRepository = require('../Repositories/ScraperRepository');
 const CommentAnalysisService = require('./CommentAnalysisService');
 const MailService = require('./MailService');
 const { roundScore } = require('../Helpers/PostScoreHelper');
-const { buildAlertEmail } = require('../Helpers/EmailAlertBuilder');
+const { buildAlertEmail, buildNoAlertEmail } = require('../Helpers/EmailAlertBuilder');
 const geminiConfig = require('../../config/gemini');
 const mailConfig = require('../../config/mail');
 
@@ -55,16 +55,32 @@ class AlertService {
             bcc.push(trimmed);
         }
 
+        const thresholds = {
+            hot: geminiConfig.alertHotThreshold,
+            trend: geminiConfig.alertTrendThreshold,
+        };
+
         const alertPosts = await this.repository.listAlertPosts({ subject_id });
         if (alertPosts.length === 0) {
+            const html = buildNoAlertEmail({ thresholds, subject_id });
+            const ok = await MailService.sendHtml({
+                to: recipient,
+                subject: '[Alert] Không có đối tượng vượt ngưỡng hot/trend',
+                html,
+                bcc: bcc.length ? bcc : undefined,
+            });
+
+            if (!ok) {
+                throw createError(500, 'Failed to send Gmail');
+            }
+
             return {
-                sent: false,
+                sent: true,
                 reason: 'no_candidates_over_threshold',
-                thresholds: {
-                    hot: geminiConfig.alertHotThreshold,
-                    trend: geminiConfig.alertTrendThreshold,
-                },
+                to: recipient,
+                bcc_count: bcc.length,
                 count: 0,
+                thresholds,
             };
         }
 
@@ -103,10 +119,7 @@ class AlertService {
         const html = buildAlertEmail({
             alertPosts,
             subjectAnalyses,
-            thresholds: {
-                hot: geminiConfig.alertHotThreshold,
-                trend: geminiConfig.alertTrendThreshold,
-            },
+            thresholds,
             geminiDisabled,
         });
 
@@ -128,10 +141,7 @@ class AlertService {
             bcc_count: bcc.length,
             count: alertPosts.length,
             subject_count: subjectCount,
-            thresholds: {
-                hot: geminiConfig.alertHotThreshold,
-                trend: geminiConfig.alertTrendThreshold,
-            },
+            thresholds,
             analysis: {
                 subjects_analyzed: subjectAnalyses.length,
                 videos_analyzed: videosAnalyzed,

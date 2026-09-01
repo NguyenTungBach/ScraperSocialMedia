@@ -40,9 +40,11 @@ import {
   getDiscussionFormulaTooltip,
 } from '@/lib/utils/metricFormulas';
 import { cn } from '@/lib/utils';
+import { formatMonthRangeLabel, getCurrentMonthDateRange, canGoToNextMonth, shiftMonthDateRange } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
 import { SubjectDetailModal } from './SubjectDetailModal';
-import { HotTopicHeader } from './HotTopicHeader';
+import { HotTopicStickyShell } from './HotTopicStickyShell';
+import { MonthDateFilterBar } from './MonthDateFilterBar';
 import { PlatformBadge } from './PlatformBadge';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './SubjectManagement.module.scss';
@@ -182,6 +184,7 @@ const EMPTY_FORM: SubjectFormState = {
 };
 
 export function SubjectManagement() {
+  const initialRange = getCurrentMonthDateRange();
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -192,6 +195,13 @@ export function SubjectManagement() {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SubjectListSortBy>('id');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [dateFrom, setDateFrom] = useState(initialRange.date_from);
+  const [dateTo, setDateTo] = useState(initialRange.date_to);
+  const [appliedDateFrom, setAppliedDateFrom] = useState(initialRange.date_from);
+  const [appliedDateTo, setAppliedDateTo] = useState(initialRange.date_to);
+  const [periodLabel, setPeriodLabel] = useState(
+    formatMonthRangeLabel(initialRange.date_from, initialRange.date_to)
+  );
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
@@ -221,11 +231,15 @@ export function SubjectManagement() {
       q?: string;
       sort_by?: SubjectListSortBy;
       sort_dir?: SortDir;
+      date_from?: string;
+      date_to?: string;
     }) => {
       const nextPage = options?.page ?? 1;
       const nextQ = options?.q ?? query;
       const nextSortBy = options?.sort_by ?? sortBy;
       const nextSortDir = options?.sort_dir ?? sortDir;
+      const nextDateFrom = options?.date_from ?? appliedDateFrom;
+      const nextDateTo = options?.date_to ?? appliedDateTo;
       setLoading(true);
       setError(null);
       try {
@@ -235,6 +249,8 @@ export function SubjectManagement() {
           q: nextQ || undefined,
           sort_by: nextSortBy,
           sort_dir: nextSortDir,
+          date_from: nextDateFrom,
+          date_to: nextDateTo,
         });
         const data = res.data;
         if (!data) throw new Error('Empty subjects response');
@@ -244,6 +260,9 @@ export function SubjectManagement() {
         setTotalRecords(data.pagination?.total_records ?? 0);
         setSortBy(nextSortBy);
         setSortDir(nextSortDir);
+        setAppliedDateFrom(nextDateFrom);
+        setAppliedDateTo(nextDateTo);
+        setPeriodLabel(formatMonthRangeLabel(nextDateFrom, nextDateTo));
       } catch (err) {
         setError(getApiErrorMessage(err));
         setItems([]);
@@ -251,12 +270,57 @@ export function SubjectManagement() {
         setLoading(false);
       }
     },
-    [query, sortBy, sortDir]
+    [query, sortBy, sortDir, appliedDateFrom, appliedDateTo]
+  );
+
+  const applyDateRange = () => {
+    const from = dateFrom || getCurrentMonthDateRange().date_from;
+    const to = dateTo || getCurrentMonthDateRange().date_to;
+    setDateFrom(from);
+    setDateTo(to);
+    void loadList({ page: 1, q: query, date_from: from, date_to: to });
+  };
+
+  const resetToCurrentMonth = () => {
+    const range = getCurrentMonthDateRange();
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    void loadList({
+      page: 1,
+      q: query,
+      date_from: range.date_from,
+      date_to: range.date_to,
+    });
+  };
+
+  const goToAdjacentMonth = (deltaMonths: number) => {
+    if (deltaMonths > 0 && !canGoToNextMonth(appliedDateFrom)) return;
+    const range = shiftMonthDateRange(appliedDateFrom, deltaMonths);
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    void loadList({
+      page: 1,
+      q: query,
+      date_from: range.date_from,
+      date_to: range.date_to,
+    });
+  };
+
+  const canNextMonth = useMemo(
+    () => canGoToNextMonth(appliedDateFrom),
+    [appliedDateFrom]
   );
 
   useEffect(() => {
-    void loadList({ page: 1, q: query, sort_by: sortBy, sort_dir: sortDir });
-    // Chỉ reload khi query đổi; sort đổi qua handler riêng
+    void loadList({
+      page: 1,
+      q: query,
+      sort_by: sortBy,
+      sort_dir: sortDir,
+      date_from: appliedDateFrom,
+      date_to: appliedDateTo,
+    });
+    // Chỉ reload khi query đổi; sort/date đổi qua handler riêng
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
@@ -464,15 +528,35 @@ export function SubjectManagement() {
   }, [totalRecords]);
 
   return (
-    <div className={dash.dashboard}>
-      <HotTopicHeader onScrapeSuccess={() => loadList({ page, q: query })} />
-
+    <HotTopicStickyShell
+      onScrapeSuccess={() => loadList({ page, q: query })}
+      filterBar={
+        <MonthDateFilterBar
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onApply={applyDateRange}
+          onResetMonth={resetToCurrentMonth}
+          onPrevMonth={() => goToAdjacentMonth(-1)}
+          onNextMonth={() => goToAdjacentMonth(1)}
+          canNextMonth={canNextMonth}
+          disabled={loading}
+        />
+      }
+    >
       <div className={styles.toolbar}>
         <div className={styles.toolbarInner}>
           <div>
             <h1 className={styles.pageTitle}>Quản lý đối tượng</h1>
             <p className={styles.pageDesc}>
               Thêm/sửa/xóa đối tượng và gắn kênh theo dõi
+              {periodLabel ? (
+                <>
+                  {' '}
+                  · <span className={styles.periodLabel}>Chỉ số: {periodLabel}</span>
+                </>
+              ) : null}
             </p>
           </div>
 
@@ -905,11 +989,13 @@ export function SubjectManagement() {
       <SubjectDetailModal
         open={detailOpen}
         subjectId={detailSubjectId}
+        dateFrom={appliedDateFrom}
+        dateTo={appliedDateTo}
         onClose={() => {
           setDetailOpen(false);
           setDetailSubjectId(null);
         }}
       />
-    </div>
+    </HotTopicStickyShell>
   );
 }

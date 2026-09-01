@@ -1,7 +1,6 @@
-const pino = require('pino');
-const path = require('path');
-const fs = require('fs');
+const winston = require('winston');
 const { isGcpLogging } = require('../../Logging/isGcpLogging');
+const { createDailyRotateTransport, jsonFileFormat, cleanupStaleApiRequestLogs } = require('../../Logging/dailyRotateTransport');
 
 /**
  * Request logging middleware
@@ -17,30 +16,22 @@ class RequestLogging {
      */
     getLogger() {
         if (isGcpLogging()) {
-            return pino({
+            return winston.createLogger({
                 level: 'info',
-                base: { loggingMode: 'gcp', channel: 'api_request' },
+                defaultMeta: { loggingMode: 'gcp', channel: 'api_request' },
+                transports: [
+                    new winston.transports.Console({
+                        format: jsonFileFormat,
+                    }),
+                ],
             });
         }
 
-        const logDir = path.join(__dirname, '../../../storage/logs');
+        cleanupStaleApiRequestLogs();
 
-        // Create log directory if it doesn't exist
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        const dateString = new Date().toISOString().split('T')[0].replace(/-/g, '_');
-        const filePath = path.join(logDir, `api_request_${dateString}.log`);
-
-        return pino({
+        return winston.createLogger({
             level: 'info',
-            transport: {
-                target: 'pino/file',
-                options: {
-                    destination: filePath,
-                },
-            },
+            transports: [createDailyRotateTransport('api_request_%DATE%.log', 'YYYY_MM_DD')],
         });
     }
 

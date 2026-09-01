@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Calendar,
   Loader2,
   ScanLine,
   Sparkles,
@@ -28,7 +27,7 @@ import {
   type RankedBy,
 } from '@/lib/mock/hotTopics';
 import { cn } from '@/lib/utils';
-import { formatMonthRangeLabel, getCurrentMonthDateRange } from '@/lib/utils/dateRange';
+import { formatMonthRangeLabel, getCurrentMonthDateRange, canGoToNextMonth, shiftMonthDateRange } from '@/lib/utils/dateRange';
 import { normalizePlatform } from '@/lib/utils/socialPlatforms';
 import {
   getAggregateHotScoreFormulaTooltip,
@@ -39,7 +38,8 @@ import {
 } from '@/lib/utils/metricFormulas';
 import { MakeToast } from '@/lib/utils/toast';
 import { PlatformBadge } from './PlatformBadge';
-import { HotTopicHeader } from './HotTopicHeader';
+import { HotTopicStickyShell } from './HotTopicStickyShell';
+import { MonthDateFilterBar } from './MonthDateFilterBar';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import styles from './HotTopicDashboard.module.scss';
 
@@ -512,6 +512,20 @@ export function HotTopicDashboard() {
     setAppliedDateTo(range.date_to);
   };
 
+  const goToAdjacentMonth = (deltaMonths: number) => {
+    if (deltaMonths > 0 && !canGoToNextMonth(appliedDateFrom)) return;
+    const range = shiftMonthDateRange(appliedDateFrom, deltaMonths);
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    setAppliedDateFrom(range.date_from);
+    setAppliedDateTo(range.date_to);
+  };
+
+  const canNextMonth = useMemo(
+    () => canGoToNextMonth(appliedDateFrom),
+    [appliedDateFrom]
+  );
+
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -635,54 +649,25 @@ export function HotTopicDashboard() {
   }, []);
 
   return (
-    <div className={styles.dashboard}>
-      <HotTopicHeader
-        onScrapeSuccess={() => void loadDashboard()}
-      />
-
-      <div className={styles.filterBar}>
-        <div className={styles.filterBarInner}>
-          <div className={styles.filterBarRight}>
-            <label className={styles.toggleLabel}>
-              <input
-                type="checkbox"
-                checked={showNewOnly}
-                onChange={(e) => setShowNewOnly(e.target.checked)}
-              />
-              <span className={styles.toggleSwitch} aria-hidden />
-              <span className={styles.toggleText}>
-                <span className={styles.toggleTextFull}>Chỉ hiện chủ đề mới xuất hiện</span>
-                <span className={styles.toggleTextShort}>Chỉ hiện chủ đề mới</span>
-              </span>
-            </label>
-            <div className={styles.datePicker}>
-              <Calendar size={15} aria-hidden />
-              <label>
-                Từ
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </label>
-              <label>
-                Đến
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </label>
-              <button type="button" onClick={applyDateRange}>
-                Áp dụng
-              </button>
-              <button type="button" onClick={resetToCurrentMonth} title="Tháng hiện tại">
-                Tháng này
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <HotTopicStickyShell
+      onScrapeSuccess={() => void loadDashboard()}
+      filterBar={
+        <MonthDateFilterBar
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onApply={applyDateRange}
+          onResetMonth={resetToCurrentMonth}
+          onPrevMonth={() => goToAdjacentMonth(-1)}
+          onNextMonth={() => goToAdjacentMonth(1)}
+          canNextMonth={canNextMonth}
+          showNewOnlyToggle
+          showNewOnly={showNewOnly}
+          onShowNewOnlyChange={setShowNewOnly}
+        />
+      }
+    >
 
       <div className={styles.bodyLayout}>
         <main className={styles.mainContent}>
@@ -850,6 +835,6 @@ export function HotTopicDashboard() {
         dateFrom={appliedDateFrom}
         dateTo={appliedDateTo}
       />
-    </div>
+    </HotTopicStickyShell>
   );
 }

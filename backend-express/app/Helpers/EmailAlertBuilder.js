@@ -209,6 +209,24 @@ function buildSubjectAnalysisSection(subjectAnalysis) {
     return html;
 }
 
+function buildNoAlertEmail({ thresholds = {}, subject_id = null } = {}) {
+    const scopeNote = subject_id
+        ? `<p>Phạm vi kiểm tra: subject #${escapeHtml(subject_id)}</p>`
+        : `<p>Phạm vi kiểm tra: tất cả subject (Facebook, YouTube, TikTok — tháng hiện tại)</p>`;
+
+    return `
+      <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:960px;">
+        <h2>ScraperSocialMedia — Báo cáo alert hot/trend</h2>
+        <p style="padding:12px 16px;background:#f0fdf4;border-left:4px solid #22c55e;border-radius:6px;">
+          <b>Không có đối tượng vượt ngưỡng</b> trong phạm vi kiểm tra lần này.
+        </p>
+        <p>Ngưỡng: hot_score &gt;= <b>${thresholds.hot}</b> <b>hoặc</b> trend_score &gt;= <b>${thresholds.trend}</b></p>
+        ${scopeNote}
+        <p style="color:#64748b;font-size:13px;margin-top:20px;">Email tự động từ cron alert — không cần xử lý thêm.</p>
+      </div>
+    `;
+}
+
 function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {}, geminiDisabled = false }) {
     const rowsHtml = alertPosts
         .map((row) => {
@@ -266,6 +284,7 @@ function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {
 
 module.exports = {
     buildAlertEmail,
+    buildNoAlertEmail,
     escapeHtml,
     renderAnalysisTable,
 };

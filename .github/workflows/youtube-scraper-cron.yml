@@ -1,4 +1,4 @@
-# Cào video YouTube mỗi 10 giờ — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
+# Cào video YouTube 2 lần/ngày (05:00 và 17:00 ICT) — chạy TRỰC TIẾP trên GitHub runner (không gọi Render).
 # Lý do: tránh timeout / cold-start Render free khi scrape nhiều kênh + comment.
 #
 # BẮT BUỘC — Settings → Secrets and variables → Actions → Variables:
@@ -18,8 +18,9 @@ name: YouTube Scraper Cron
 
 on:
   schedule:
-    # Mỗi 10 giờ (UTC: 00:00, 10:00, 20:00). GitHub có thể trễ vài phút so với đúng giờ.
-    - cron: '0 */10 * * *'
+    # 05:00 và 17:00 ICT (UTC+7) = 22:00 và 10:00 UTC. GitHub có thể trễ vài phút so với đúng giờ.
+    - cron: '0 22 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       channel_ids:
