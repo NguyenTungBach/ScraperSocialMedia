@@ -29,6 +29,7 @@ export const vi = {
     HOME: 'Trang chủ',
     SUBJECTS: 'Đối tượng',
     CHANNELS: 'Kênh theo dõi',
+    USERS: 'Tài khoản',
   },
   LAYOUT: {
     LOGOUT: 'Đăng xuất',

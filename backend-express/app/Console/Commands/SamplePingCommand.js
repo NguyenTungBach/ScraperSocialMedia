@@ -10,7 +10,8 @@ const logger = require('../../Logging/logger');
 class SamplePingCommand {
     static signature = 'app:sample-ping';
 
-    static scheduleEnabled = true;
+    /** Lịch chạy qua bảng general_schedules + PM2 scheduler (spawn), không hardcode ở đây. */
+    static scheduleEnabled = false;
 
     static get schedule() {
         if (String(process.env.SCHEDULE_CHECK || '').toLowerCase() === 'true') {

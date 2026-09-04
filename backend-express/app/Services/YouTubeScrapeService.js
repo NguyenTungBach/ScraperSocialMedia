@@ -1,7 +1,7 @@
 'use strict';
 
 const createError = require('http-errors');
-const youtubeConfig = require('../../config/youtube');
+const scrapeLimits = require('../../config/scrapeLimits');
 const YouTubeService = require('./YouTubeService');
 const ScraperRepository = require('../Repositories/ScraperRepository');
 const ChannelRepository = require('../Repositories/ChannelRepository');
@@ -13,6 +13,11 @@ const {
 } = require('../Helpers/YouTubeHelper');
 const logger = require('../Logging/logger');
 
+function resolvePositiveInt(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.floor(n);
+}
 class YouTubeScrapeService {
     constructor() {
         this.youtubeService = new YouTubeService();
@@ -100,6 +105,10 @@ class YouTubeScrapeService {
                 comment_stats: {
                     inserted: 0,
                     updated: 0,
+                    comments_inserted: 0,
+                    replies_inserted: 0,
+                    comments_updated: 0,
+                    replies_updated: 0,
                     threads_upserted: 0,
                     videos_with_comments: 0,
                 },
@@ -107,11 +116,6 @@ class YouTubeScrapeService {
                 videos: [],
             };
         }
-
-        const max =
-            maxResults != null
-                ? Number(maxResults)
-                : youtubeConfig.defaultMaxResults;
 
         const allVideos = [];
         let quotaUsed = 0;
@@ -125,6 +129,10 @@ class YouTubeScrapeService {
         const commentTotals = {
             inserted: 0,
             updated: 0,
+            comments_inserted: 0,
+            replies_inserted: 0,
+            comments_updated: 0,
+            replies_updated: 0,
             threads_upserted: 0,
             videos_with_comments: 0,
             ai_briefs_analyzed: 0,
@@ -156,14 +164,43 @@ class YouTubeScrapeService {
                 );
             }
 
+            const channelMaxPosts = resolvePositiveInt(
+                maxResults ?? channel.max_posts,
+                scrapeLimits.maxPosts
+            );
+            const channelMaxTopComments = resolvePositiveInt(
+                channel.max_top_comments,
+                scrapeLimits.maxTopComments
+            );
+            const channelMaxReplies = resolvePositiveInt(
+                channel.max_replies,
+                scrapeLimits.maxReplies
+            );
+
+            if (channelMaxPosts <= 0) {
+                channelsSkipped.push({
+                    channel_id: channel.id,
+                    name: channel.name,
+                    reason: 'max_posts_zero',
+                });
+                logger.info('[youtube-scrape] Skip channel (max_posts=0)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
+                continue;
+            }
+
             logger.info('[youtube-scrape] Scraping channel', {
                 channel_id: channel.id,
                 name: channel.name,
+                max_posts: channelMaxPosts,
+                max_top_comments: channelMaxTopComments,
+                max_replies: channelMaxReplies,
             });
 
             const { videos, quota_used, follow, videoCount, channelRaw } =
                 await this.youtubeService.scrapeChannelByRef(channelRef, {
-                    maxResults: max,
+                    maxResults: channelMaxPosts,
                 });
             quotaUsed += quota_used || 3;
 
@@ -197,27 +234,37 @@ class YouTubeScrapeService {
                 const scraperRunId = runByVideoId.get(video.platform_post_id);
                 if (!scraperRunId) continue;
 
-                try {
-                    const { comments, quota_used: commentQuota } =
-                        await this.youtubeService.scrapeVideoComments(
-                            video.platform_post_id
-                        );
-                    quotaUsed += commentQuota || 0;
+                if (channelMaxTopComments > 0) {
+                    try {
+                        const { comments, quota_used: commentQuota } =
+                            await this.youtubeService.scrapeVideoComments(
+                                video.platform_post_id,
+                                {
+                                    maxTop: channelMaxTopComments,
+                                    maxReplies: channelMaxReplies,
+                                }
+                            );
+                        quotaUsed += commentQuota || 0;
 
-                    if (comments.length > 0) {
-                        const commentIngest = await this.commentRepository.ingestAndRebuild(
-                            scraperRunId,
-                            comments
-                        );
-                        commentTotals.inserted += commentIngest.inserted || 0;
-                        commentTotals.updated += commentIngest.updated || 0;
-                        commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
-                        commentTotals.videos_with_comments += 1;
-                    }
-                } catch (commentErr) {
-                    // Comment disabled or API error — skip video comments, keep video ingest.
-                    if (commentErr.status !== 403) {
-                        throw commentErr;
+                        if (comments.length > 0) {
+                            const commentIngest = await this.commentRepository.ingestAndRebuild(
+                                scraperRunId,
+                                comments
+                            );
+                            commentTotals.inserted += commentIngest.inserted || 0;
+                            commentTotals.updated += commentIngest.updated || 0;
+                            commentTotals.comments_inserted += commentIngest.comments_inserted || 0;
+                            commentTotals.replies_inserted += commentIngest.replies_inserted || 0;
+                            commentTotals.comments_updated += commentIngest.comments_updated || 0;
+                            commentTotals.replies_updated += commentIngest.replies_updated || 0;
+                            commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
+                            commentTotals.videos_with_comments += 1;
+                        }
+                    } catch (commentErr) {
+                        // Comment disabled or API error — skip video comments, keep video ingest.
+                        if (commentErr.status !== 403) {
+                            throw commentErr;
+                        }
                     }
                 }
 

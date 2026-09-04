@@ -1,7 +1,7 @@
 'use strict';
 
 const createError = require('http-errors');
-const apifyConfig = require('../../config/apify');
+const scrapeLimits = require('../../config/scrapeLimits');
 const ApifyService = require('./ApifyService');
 const ScraperRepository = require('../Repositories/ScraperRepository');
 const ChannelRepository = require('../Repositories/ChannelRepository');
@@ -15,6 +15,12 @@ const {
     toTikTokVideoResponse,
 } = require('../Helpers/TikTokHelper');
 const logger = require('../Logging/logger');
+
+function resolvePositiveInt(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.floor(n);
+}
 
 class TikTokScrapeService {
     constructor() {
@@ -100,6 +106,10 @@ class TikTokScrapeService {
                 inserted: 0,
                 updated: 0,
                 skipped: 0,
+                comments_inserted: 0,
+                replies_inserted: 0,
+                comments_updated: 0,
+                replies_updated: 0,
                 threads_upserted: 0,
                 videos_with_comments: 0,
             },
@@ -113,9 +123,6 @@ class TikTokScrapeService {
             return empty;
         }
 
-        const resultsPerPage =
-            maxResults != null ? Number(maxResults) : apifyConfig.tiktokResultsPerPage;
-
         const upsertTotals = {
             inserted: 0,
             updated: 0,
@@ -127,6 +134,10 @@ class TikTokScrapeService {
             inserted: 0,
             updated: 0,
             skipped: 0,
+            comments_inserted: 0,
+            replies_inserted: 0,
+            comments_updated: 0,
+            replies_updated: 0,
             threads_upserted: 0,
             videos_with_comments: 0,
             ai_briefs_analyzed: 0,
@@ -160,16 +171,45 @@ class TikTokScrapeService {
                 );
             }
 
+            const channelMaxPosts = resolvePositiveInt(
+                maxResults ?? channel.max_posts,
+                scrapeLimits.maxPosts
+            );
+            const channelMaxTopComments = resolvePositiveInt(
+                commentsPerPost ?? channel.max_top_comments,
+                scrapeLimits.maxTopComments
+            );
+            const channelMaxReplies = resolvePositiveInt(
+                maxRepliesPerComment ?? channel.max_replies,
+                scrapeLimits.maxReplies
+            );
+
+            if (channelMaxPosts <= 0) {
+                channelsSkipped.push({
+                    channel_id: channel.id,
+                    name: channel.name,
+                    reason: 'max_posts_zero',
+                });
+                logger.info('[tiktok-scrape] Skip channel (max_posts=0)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
+                continue;
+            }
+
             logger.info('[tiktok-scrape] Scraping videos', {
                 channel_id: channel.id,
                 name: channel.name,
                 url: channel.url,
+                max_posts: channelMaxPosts,
+                max_top_comments: channelMaxTopComments,
+                max_replies: channelMaxReplies,
             });
 
             const { run: videoRun, items: rawVideos } =
                 await this.apifyService.runTikTokVideoScraper({
                     profiles: [channel.url],
-                    resultsPerPage,
+                    resultsPerPage: channelMaxPosts,
                 });
             videoRunId = videoRun?.id || videoRunId;
 
@@ -214,7 +254,12 @@ class TikTokScrapeService {
                 allVideos.push(toTikTokVideoResponse(video));
             }
 
-            if (postURLs.length === 0) {
+            if (postURLs.length === 0 || channelMaxTopComments <= 0) {
+                if (channelMaxTopComments <= 0) {
+                    logger.info('[tiktok-scrape] Skip comments (max_top_comments=0)', {
+                        channel_id: channel.id,
+                    });
+                }
                 channelsScraped += 1;
                 continue;
             }
@@ -227,10 +272,8 @@ class TikTokScrapeService {
             const { run: commentsRun, items: rawComments } =
                 await this.apifyService.runTikTokCommentsScraper({
                     postURLs,
-                    commentsPerPost:
-                        commentsPerPost ?? apifyConfig.tiktokCommentsPerPost,
-                    maxRepliesPerComment:
-                        maxRepliesPerComment ?? apifyConfig.tiktokMaxRepliesPerComment,
+                    commentsPerPost: channelMaxTopComments,
+                    maxRepliesPerComment: channelMaxReplies,
                 });
             commentsRunId = commentsRun?.id || commentsRunId;
 
@@ -258,6 +301,10 @@ class TikTokScrapeService {
                 commentTotals.inserted += commentIngest.inserted || 0;
                 commentTotals.updated += commentIngest.updated || 0;
                 commentTotals.skipped += commentIngest.skipped || 0;
+                commentTotals.comments_inserted += commentIngest.comments_inserted || 0;
+                commentTotals.replies_inserted += commentIngest.replies_inserted || 0;
+                commentTotals.comments_updated += commentIngest.comments_updated || 0;
+                commentTotals.replies_updated += commentIngest.replies_updated || 0;
                 commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
                 if ((commentIngest.inserted || 0) > 0 || (commentIngest.skipped || 0) > 0) {
                     commentTotals.videos_with_comments += 1;

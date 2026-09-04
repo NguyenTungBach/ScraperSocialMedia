@@ -27,6 +27,7 @@ export const ja = {
     HOME: 'ホーム',
     SUBJECTS: '対象管理',
     CHANNELS: '監視チャンネル',
+    USERS: 'アカウント',
   },
   LAYOUT: {
     LOGOUT: 'ログアウト',

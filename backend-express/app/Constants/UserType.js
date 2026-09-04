@@ -1,11 +1,11 @@
 /**
- * AWA `users.role` — khớp Laravel `User::USER_ROLE_*`.
+ * `users.role` — admin (full) | member (read-only).
  */
 module.exports = {
     ADMIN: 'admin',
-    DRIVER: 'driver',
+    MEMBER: 'member',
 
-    ALLOWED_LOGIN_ROLES: Object.freeze(['admin', 'driver']),
+    ALLOWED_LOGIN_ROLES: Object.freeze(['admin', 'member']),
 
     isAllowedLoginRole(role) {
         const r = String(role || '').toLowerCase();
@@ -14,5 +14,9 @@ module.exports = {
 
     isAdmin(role) {
         return String(role || '').toLowerCase() === this.ADMIN;
+    },
+
+    isMember(role) {
+        return String(role || '').toLowerCase() === this.MEMBER;
     }
 };

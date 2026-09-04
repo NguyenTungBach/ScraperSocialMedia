@@ -68,6 +68,49 @@ function assignThreadKeys(comments) {
     return comments;
 }
 
+/**
+ * Giữ thứ tự comment gốc như nền tảng trả về (Top / Hàng đầu / Phù hợp nhất),
+ * reply trong mỗi thread theo thời gian tăng dần; gán lại sort_order.
+ * Gọi sau assignThreadKeys.
+ */
+function finalizePlatformCommentOrder(comments = []) {
+    const list = Array.isArray(comments) ? comments : [];
+    const roots = list.filter((c) => !c.parent_platform_comment_id);
+    let nextOrder = 0;
+    const ordered = [];
+
+    for (const root of roots) {
+        root.sort_order = nextOrder++;
+        ordered.push(root);
+        const replies = list
+            .filter(
+                (c) =>
+                    c.parent_platform_comment_id &&
+                    (c.thread_key === root.platform_comment_id ||
+                        c.parent_platform_comment_id === root.platform_comment_id)
+            )
+            .sort((a, b) => {
+                const aMs = a.published_at ? new Date(a.published_at).getTime() : 0;
+                const bMs = b.published_at ? new Date(b.published_at).getTime() : 0;
+                if (aMs !== bMs) return aMs - bMs;
+                return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+            });
+        for (const reply of replies) {
+            reply.sort_order = nextOrder++;
+            ordered.push(reply);
+        }
+    }
+
+    const kept = new Set(ordered.map((c) => c.platform_comment_id));
+    for (const orphan of list) {
+        if (kept.has(orphan.platform_comment_id)) continue;
+        orphan.sort_order = nextOrder++;
+        ordered.push(orphan);
+    }
+
+    return ordered;
+}
+
 function buildGeminiPayload(scraperRun, comments) {
     return {
         video: {
@@ -152,6 +195,7 @@ module.exports = {
     toCount,
     normalizeYoutubeCommentItem,
     assignThreadKeys,
+    finalizePlatformCommentOrder,
     buildGeminiPayload,
     isIncompleteAnalysisRecord,
     groupCommentsIntoAnalysisUnits,

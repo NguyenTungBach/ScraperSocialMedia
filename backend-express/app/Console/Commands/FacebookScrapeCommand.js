@@ -1,7 +1,6 @@
 'use strict';
 
 const createError = require('http-errors');
-const apifyConfig = require('../../../config/apify');
 const FacebookScrapeService = require('../../Services/FacebookScrapeService');
 const ChannelRepository = require('../../Repositories/ChannelRepository');
 const logger = require('../../Logging/logger');
@@ -35,7 +34,8 @@ function parseChannelUrls(raw) {
 /**
  * Cào bài + comment Facebook — mirror TikTok CLI.
  * Chạy: npm run app:facebook-scrape
- * Env: FACEBOOK_CHANNEL_IDS và/hoặc FACEBOOK_CHANNEL_URLS, SCRAPE_MAX_POSTS, …
+ * Env: FACEBOOK_CHANNEL_IDS và/hoặc FACEBOOK_CHANNEL_URLS
+ * Limit cào lấy từ channels.max_posts / max_top_comments / max_replies.
  * URL được ưu tiên khi set — chỉ cào đúng kênh khớp URL (không scrape all).
  */
 class FacebookScrapeCommand {
@@ -63,10 +63,8 @@ class FacebookScrapeCommand {
             });
         }
 
-        const maxResults = apifyConfig.facebookResultsLimit;
-
         const service = new FacebookScrapeService();
-        const result = await service.scrapeChannels({ channel_id, maxResults });
+        const result = await service.scrapeChannels({ channel_id });
 
         logger.info('[facebook-scrape] Scrape finished', {
             channels_scraped: result.channels_scraped,

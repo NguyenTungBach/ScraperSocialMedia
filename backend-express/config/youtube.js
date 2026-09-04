@@ -2,9 +2,12 @@
 
 require('dotenv').config();
 const scrapeLimits = require('./scrapeLimits');
+const SettingsCache = require('../app/Services/SettingsCache');
 
 module.exports = {
-    apiKey: process.env.YOUTUBE_API_KEY || '',
+    get apiKey() {
+        return SettingsCache.get('YOUTUBE_API_KEY') || '';
+    },
     baseUrl: 'https://www.googleapis.com/youtube/v3',
     defaultMaxResults: scrapeLimits.maxPosts,
     headSize: Number(process.env.YOUTUBE_HEAD_SIZE) || scrapeLimits.maxPosts,

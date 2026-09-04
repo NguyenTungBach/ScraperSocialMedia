@@ -1,178 +1,204 @@
-@use '../../scss/variables' as *;
+// Login — khớp palette NetScope Trend (HotTopicDashboard)
 
-.login-page {
-  width: 100%;
+$st-navy: #0f2341;
+$st-navy-light: #1a3358;
+$st-orange: #f58220;
+$st-orange-hover: #e07518;
+$st-bg: #f0f2f5;
+$st-white: #ffffff;
+$st-text: #1a2332;
+$st-muted: #6b7280;
+$st-border: #e5e7eb;
+$st-red: #dc2626;
 
-  height: 100dvh;
-  overflow: hidden;
-  background-color: $white;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  padding: 0 15px;
-}
-
-.login-container {
-  width: min(100%, 1140px);
-  min-height: 100%;
-  background-color: $sub-main;
-  border: 2px solid $silver-chalice;
-  border-radius: 20px;
-  display: flex;
-  margin: 0 auto;
-}
-
-.form-login {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  flex: 1;
-  margin: 30px 20px;
-  min-height: 0;
+.page {
   position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: $st-bg;
+  color: $st-text;
+  font-family: var(--font-inter), system-ui, sans-serif;
+  overflow: hidden;
 }
 
-.show-title {
-  text-align: center;
-  margin-bottom: 100px;
-  z-index: 2;
+.atmosphere {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(245, 130, 32, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(15, 35, 65, 0.08), transparent 50%),
+    linear-gradient(180deg, #e8ecf1 0%, $st-bg 40%, $st-bg 100%);
+  animation: fadeIn 0.6s ease-out;
 }
 
-.title-login {
-  font-family: var(--font-josefin), sans-serif;
-  width: 327px;
-  font-size: 80px;
-  font-weight: 300;
-  color: #e9b288;
-  margin-top: 60px;
+.panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 420px);
+  background: $st-white;
+  border: 1px solid $st-border;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(15, 35, 65, 0.08);
+  padding: 36px 32px 32px;
+  animation: slideUp 0.45s ease-out;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
   line-height: 1;
 }
 
-.form-input-account {
-  width: 100%;
-  z-index: 2;
+.logoSocial {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: $st-text;
 }
 
-.input-user-id,
-.input-password {
-  margin-bottom: 30px;
-  width: 100%;
-  display: flex;
-  justify-content: center;
+.logoTrend {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: $st-orange;
 }
 
-// Bootstrap col-sm-10 col-md-10 col-lg-6 col-xl-5 (Vue b-col)
-.input-field-col {
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
-
-  @media (min-width: 576px) {
-    width: 83.333333%;
-  }
-
-  @media (min-width: 992px) {
-    width: 50%;
-  }
-
-  @media (min-width: 1200px) {
-    width: 41.666667%;
-  }
-}
-
-.input-group {
-  display: flex;
-  align-items: stretch;
-  height: 50px;
-  border: 1px solid $mischka;
-  background-color: $white;
-  overflow: hidden;
-  border-radius: 2px;
-}
-
-.is-invalid {
-  border-color: $punch;
-}
-
-.input-group-text {
-  background-color: $white;
-  border-right: 1px solid $mischka;
-  width: 50px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: $manatee;
-}
-
-// Vue: fas fa-user-alt / fa-key — font-size 22px, solid glyph
-.input-icon {
-  flex-shrink: 0;
-  color: $manatee;
-  fill: $manatee;
-  stroke: $manatee;
-  stroke-width: 2.5px;
-}
-
-.form-control {
-  border: none;
-  flex: 1;
-  height: 100%;
-  font-size: 22px;
-  color: #2a2a2a;
-  padding: 0 14px;
-  outline: none;
-  background: $white;
-}
-
-.form-control::placeholder {
-  color: #b5b5b5;
-}
-
-.form-control:focus {
-  box-shadow: none;
-}
-
-.error-text {
-  margin-top: 8px;
-  font-size: 14px;
-  color: $punch;
-}
-
-.form-submit {
-  z-index: 2;
-  margin-top: 90px;
-  margin-bottom: 80px;
+.tagline {
+  margin: 6px 0 0;
   text-align: center;
+  font-size: 0.7rem;
+  color: $st-muted;
 }
 
-.btn-submit {
-  min-width: 200px;
-  height: 70px;
-  background: $main-header;
-  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
-  border-radius: 50px;
-  font-size: 32px;
-  color: $white;
-  border: none;
-  font-family: var(--font-inter), sans-serif;
+.title {
+  margin: 28px 0 0;
+  text-align: center;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: $st-navy;
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 0.875rem;
+  color: $st-muted;
+  line-height: 1.45;
+}
+
+.form {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.8125rem;
   font-weight: 600;
-  cursor: pointer;
+  color: $st-text;
+}
+
+.inputWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px;
+  background: $st-bg;
+  border: 1px solid $st-border;
+  border-radius: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+
+  &:focus-within {
+    background: $st-white;
+    border-color: $st-orange;
+    box-shadow: 0 0 0 3px rgba(245, 130, 32, 0.15);
+  }
+}
+
+.invalid {
+  border-color: $st-red;
+
+  &:focus-within {
+    border-color: $st-red;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+  }
+}
+
+.icon {
+  flex-shrink: 0;
+  color: $st-muted;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.9375rem;
+  color: $st-text;
+  font-family: inherit;
+
+  &::placeholder {
+    color: #9ca3af;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+}
+
+.error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: $st-red;
+}
+
+.submit {
+  margin-top: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 30px;
-  transition: opacity 0.2s ease;
-}
+  width: 100%;
+  height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 8px;
+  background: $st-orange;
+  color: $st-white;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
 
-.btn-submit:hover:not(:disabled) {
-  opacity: 0.8;
-}
+  &:hover:not(:disabled) {
+    background: $st-orange-hover;
+  }
 
-.btn-submit:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
 }
 
 .spin {
@@ -188,82 +214,34 @@
   }
 }
 
-@media (max-width: 900px) {
-  .login-page {
-    height: 100vh;
-    background-color: #FFDDC8;
-    padding: 0;
-    align-items: center;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .panel {
+    padding: 28px 20px 24px;
+    border-radius: 10px;
   }
 
-  .login-container {
-    border: none;
-    box-shadow: none;
-    width: 100%;
-    min-height: auto;
-  }
-
-  .form-login {
-    margin: 30px 20px;
-    min-height: calc(100dvh - 60px);
-  }
-
-  .show-title {
-    margin-bottom: 100px;
-  }
-
-  .title-login {
-    font-size: 45px;
-    margin-top: 60px;
-    width: 327px;
-    color: $main-header;
-  }
-
-  .form-input-account {
-    width: 100%;
-  }
-
-  .input-group {
-    border: none;
-    background: transparent;
-    border-radius: 50px;
-  }
-
-  .input-group-text {
-    background-color: $white;
-    border: 1px solid $mischka;
-    border-right-color: transparent;
-    border-top-left-radius: 50px;
-    border-bottom-left-radius: 50px;
-  }
-
-  .form-control {
-    border: 1px solid $mischka;
-    border-left-color: transparent;
-    height: 50px;
-    border-top-right-radius: 50px;
-    border-bottom-right-radius: 50px;
-    font-size: 22px;
-
-    &:focus {
-      box-shadow: none;
-      border-color: $mischka;
-      border-left-color: transparent;
-    }
-  }
-
-  .form-submit {
-    margin-top: 10px;
-    margin-bottom: 80px;
-    width: 100%;
-  }
-
-  .btn-submit {
-    width: 100%;
-    min-width: 0;
-    height: 50px;
-    background: #ff9e62;
-    font-size: 21px;
-    padding: 0 20px;
+  .logoSocial,
+  .logoTrend {
+    font-size: 1.35rem;
   }
 }

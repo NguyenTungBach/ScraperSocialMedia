@@ -1,7 +1,7 @@
 'use strict';
 
 const createError = require('http-errors');
-const apifyConfig = require('../../config/apify');
+const scrapeLimits = require('../../config/scrapeLimits');
 const ApifyService = require('./ApifyService');
 const ScraperRepository = require('../Repositories/ScraperRepository');
 const ChannelRepository = require('../Repositories/ChannelRepository');
@@ -15,6 +15,11 @@ const {
 const { normalizeApifyItem } = require('../Helpers/PostScoreHelper');
 const logger = require('../Logging/logger');
 
+function resolvePositiveInt(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.floor(n);
+}
 class FacebookScrapeService {
     constructor() {
         this.apifyService = new ApifyService();
@@ -101,6 +106,10 @@ class FacebookScrapeService {
                 inserted: 0,
                 updated: 0,
                 skipped: 0,
+                comments_inserted: 0,
+                replies_inserted: 0,
+                comments_updated: 0,
+                replies_updated: 0,
                 threads_upserted: 0,
                 posts_with_comments: 0,
             },
@@ -114,9 +123,6 @@ class FacebookScrapeService {
             return empty;
         }
 
-        const resultsLimit =
-            maxResults != null ? Number(maxResults) : apifyConfig.facebookResultsLimit;
-
         const upsertTotals = {
             inserted: 0,
             updated: 0,
@@ -128,6 +134,10 @@ class FacebookScrapeService {
             inserted: 0,
             updated: 0,
             skipped: 0,
+            comments_inserted: 0,
+            replies_inserted: 0,
+            comments_updated: 0,
+            replies_updated: 0,
             threads_upserted: 0,
             posts_with_comments: 0,
             ai_briefs_analyzed: 0,
@@ -161,6 +171,32 @@ class FacebookScrapeService {
                 );
             }
 
+            const channelMaxPosts = resolvePositiveInt(
+                maxResults ?? channel.max_posts,
+                scrapeLimits.maxPosts
+            );
+            const channelMaxTopComments = resolvePositiveInt(
+                commentsPerPost ?? channel.max_top_comments,
+                scrapeLimits.maxTopComments
+            );
+            const channelMaxReplies = resolvePositiveInt(
+                maxRepliesPerComment ?? channel.max_replies,
+                scrapeLimits.maxReplies
+            );
+
+            if (channelMaxPosts <= 0) {
+                channelsSkipped.push({
+                    channel_id: channel.id,
+                    name: channel.name,
+                    reason: 'max_posts_zero',
+                });
+                logger.info('[facebook-scrape] Skip channel (max_posts=0)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
+                continue;
+            }
+
             logger.info('[facebook-scrape] Scraping page profile', {
                 channel_id: channel.id,
                 name: channel.name,
@@ -191,12 +227,15 @@ class FacebookScrapeService {
                 channel_id: channel.id,
                 name: channel.name,
                 url: channel.url,
+                max_posts: channelMaxPosts,
+                max_top_comments: channelMaxTopComments,
+                max_replies: channelMaxReplies,
             });
 
             const { run: postsRun, items: rawPosts } =
                 await this.apifyService.runFacebookScraper({
                     startUrls: [channel.url],
-                    resultsLimit,
+                    resultsLimit: channelMaxPosts,
                 });
             postsRunId = postsRun?.id || postsRunId;
 
@@ -238,7 +277,12 @@ class FacebookScrapeService {
                 allPosts.push(toFacebookPostResponse(post));
             }
 
-            if (postURLs.length === 0) {
+            if (postURLs.length === 0 || channelMaxTopComments <= 0) {
+                if (channelMaxTopComments <= 0) {
+                    logger.info('[facebook-scrape] Skip comments (max_top_comments=0)', {
+                        channel_id: channel.id,
+                    });
+                }
                 channelsScraped += 1;
                 continue;
             }
@@ -251,10 +295,8 @@ class FacebookScrapeService {
             const { run: commentsRun, items: rawComments } =
                 await this.apifyService.runFacebookCommentsScraper({
                     postURLs,
-                    commentsPerPost:
-                        commentsPerPost ?? apifyConfig.facebookCommentsPerPost,
-                    maxRepliesPerComment:
-                        maxRepliesPerComment ?? apifyConfig.facebookMaxRepliesPerComment,
+                    commentsPerPost: channelMaxTopComments,
+                    maxRepliesPerComment: channelMaxReplies,
                 });
             commentsRunId = commentsRun?.id || commentsRunId;
 
@@ -290,6 +332,10 @@ class FacebookScrapeService {
                 commentTotals.inserted += commentIngest.inserted || 0;
                 commentTotals.updated += commentIngest.updated || 0;
                 commentTotals.skipped += commentIngest.skipped || 0;
+                commentTotals.comments_inserted += commentIngest.comments_inserted || 0;
+                commentTotals.replies_inserted += commentIngest.replies_inserted || 0;
+                commentTotals.comments_updated += commentIngest.comments_updated || 0;
+                commentTotals.replies_updated += commentIngest.replies_updated || 0;
                 commentTotals.threads_upserted += commentIngest.threads_upserted || 0;
                 if ((commentIngest.inserted || 0) > 0 || (commentIngest.skipped || 0) > 0) {
                     commentTotals.posts_with_comments += 1;

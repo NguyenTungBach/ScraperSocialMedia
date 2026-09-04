@@ -43,5 +43,5 @@ export const REDEEM_URLS: Record<RedeemCodeType, string> = {
 
 export const redeemCodesApi = {
   list: (params: RedeemCodeListParams = {}) =>
-    apiClient.post<RedeemCodeListData>('/redeem-codes/list', params, { skipAuth: true }),
+    apiClient.post<RedeemCodeListData>('/redeem-codes/list', params),
 };

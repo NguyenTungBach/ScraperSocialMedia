@@ -40,8 +40,6 @@ export interface CompareEmailResult {
 
 export const reportsApi = {
   sendCompareEmail: (payload: CompareEmailPayload) =>
-    apiClient.post<CompareEmailResult>('/reports/compare-email', payload, {
-      skipAuth: true,
-      timeout: 120_000,
+    apiClient.post<CompareEmailResult>('/reports/compare-email', payload, {timeout: 120_000,
     }) as Promise<ApiResponse<CompareEmailResult>>,
 };

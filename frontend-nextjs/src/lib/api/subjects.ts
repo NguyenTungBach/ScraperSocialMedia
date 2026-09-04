@@ -152,9 +152,7 @@ export interface SubjectDetailParams {
 
 export const subjectsApi = {
   list: (params: SubjectListParams = {}) =>
-    apiClient.get<SubjectListData>('/subjects', {
-      skipAuth: true,
-      params: {
+    apiClient.get<SubjectListData>('/subjects', {params: {
         page: params.page ?? 1,
         per_page: params.per_page ?? 20,
         status: params.status,
@@ -167,24 +165,16 @@ export const subjectsApi = {
     }) as Promise<ApiResponse<SubjectListData>>,
 
   create: (payload: SubjectCreatePayload) =>
-    apiClient.post<SubjectListItem>('/subjects', payload, {
-      skipAuth: true,
-    }) as Promise<ApiResponse<SubjectListItem>>,
+    apiClient.post<SubjectListItem>('/subjects', payload, {}) as Promise<ApiResponse<SubjectListItem>>,
 
   update: (id: number | string, payload: SubjectUpdatePayload) =>
-    apiClient.put<SubjectListItem>(`/subjects/${id}`, payload, {
-      skipAuth: true,
-    }) as Promise<ApiResponse<SubjectListItem>>,
+    apiClient.put<SubjectListItem>(`/subjects/${id}`, payload, {}) as Promise<ApiResponse<SubjectListItem>>,
 
   remove: (id: number | string) =>
-    apiClient.delete<{ id: number; deleted: boolean }>(`/subjects/${id}`, {
-      skipAuth: true,
-    }) as Promise<ApiResponse<{ id: number; deleted: boolean }>>,
+    apiClient.delete<{ id: number; deleted: boolean }>(`/subjects/${id}`, {}) as Promise<ApiResponse<{ id: number; deleted: boolean }>>,
 
   getById: (id: number | string, params: SubjectDetailParams = {}) =>
-    apiClient.get<SubjectDetail>(`/subjects/${id}`, {
-      skipAuth: true,
-      params: {
+    apiClient.get<SubjectDetail>(`/subjects/${id}`, {params: {
         page: params.page ?? 1,
         per_page: params.per_page ?? 20,
         sort_by: params.sort_by ?? 'posted_at',

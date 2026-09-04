@@ -9,8 +9,8 @@
 # Tuỳ chọn Variables:
 #   MAIL_PORT (mặc định 587), MAIL_ALERT_BCC (BCC khi báo lỗi dịch vụ / alert)
 #   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
-#   SCRAPE_MAX_POSTS / SCRAPE_MAX_TOP_COMMENTS / SCRAPE_MAX_REPLIES
 #   FACEBOOK_CHANNEL_URL (override URL cố định bên dưới)
+# Limit cào lấy từ channels.max_posts / max_top_comments / max_replies
 #
 # Chạy: Actions → "Facebook Scraper Cron" → Run workflow
 
@@ -94,9 +94,6 @@ jobs:
           MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
           MAIL_MAIN: ${{ vars.MAIL_MAIN }}
           MAIL_ALERT_BCC: ${{ vars.MAIL_ALERT_BCC }}
-          SCRAPE_MAX_POSTS: ${{ vars.SCRAPE_MAX_POSTS || '10' }}
-          SCRAPE_MAX_TOP_COMMENTS: ${{ vars.SCRAPE_MAX_TOP_COMMENTS || '30' }}
-          SCRAPE_MAX_REPLIES: ${{ vars.SCRAPE_MAX_REPLIES || '10' }}
           # Chỉ kênh này — resolve id theo URL trong bảng channels (không cào kênh khác).
           FACEBOOK_CHANNEL_URLS: ${{ vars.FACEBOOK_CHANNEL_URL || 'https://www.facebook.com/people/M%C3%B4-h%C3%ACnh-D%C3%A2n-v%E1%BA%ADn-kh%C3%A9o-Khoa-Nghi%E1%BB%87p-v%E1%BB%A5-%C4%90i%E1%BB%81u-tra-h%C3%ACnh-s%E1%BB%B1/61592260267197/' }}
         run: npm run app:facebook-scrape

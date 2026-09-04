@@ -32,8 +32,6 @@ export interface AlertCheckPayload {
 
 export const alertsApi = {
   checkGmail: (payload: AlertCheckPayload = {}) =>
-    apiClient.post<AlertCheckResult>('/alerts/gmail', payload, {
-      skipAuth: true,
-      timeout: 1_800_000, // 30 phút — phân tích Gemini có thể lâu với video chưa analyze
+    apiClient.post<AlertCheckResult>('/alerts/gmail', payload, {timeout: 1_800_000, // 30 phút — phân tích Gemini có thể lâu với video chưa analyze
     }) as Promise<ApiResponse<AlertCheckResult>>,
 };

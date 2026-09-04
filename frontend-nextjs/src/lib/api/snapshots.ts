@@ -165,23 +165,17 @@ export const snapshotsApi = {
       scraper_run_id?: number;
     } = {}
   ) =>
-    apiClient.post<SnapshotRunResult>('/snapshots/run', payload, {
-      skipAuth: true,
-    }) as Promise<ApiResponse<SnapshotRunResult>>,
+    apiClient.post<SnapshotRunResult>('/snapshots/run', payload, {}) as Promise<ApiResponse<SnapshotRunResult>>,
 
   status: (date = 'today') =>
-    apiClient.get<SnapshotStatus>('/snapshots/status', {
-      skipAuth: true,
-      params: { date },
+    apiClient.get<SnapshotStatus>('/snapshots/status', {params: { date },
     }) as Promise<ApiResponse<SnapshotStatus>>,
 
   channelDetail: (
     channelId: number | string,
     params: { date?: string; date_from?: string; date_to?: string } = {}
   ) =>
-    apiClient.get<ChannelSnapshotDetail>(`/snapshots/channels/${channelId}`, {
-      skipAuth: true,
-      params,
+    apiClient.get<ChannelSnapshotDetail>(`/snapshots/channels/${channelId}`, {params,
     }) as Promise<ApiResponse<ChannelSnapshotDetail>>,
 
   channelTopPosts: (
@@ -193,9 +187,7 @@ export const snapshotsApi = {
       snapshot_date: string;
       sort: string;
       result: ChannelTopPostRow[];
-    }>(`/snapshots/channels/${channelId}/top-posts`, {
-      skipAuth: true,
-      params,
+    }>(`/snapshots/channels/${channelId}/top-posts`, {params,
     }) as Promise<
       ApiResponse<{
         channel_id: number;
@@ -209,9 +201,7 @@ export const snapshotsApi = {
     scraperRunId: number | string,
     params: { date?: string; date_from?: string; date_to?: string } = {}
   ) =>
-    apiClient.get<PostSnapshotDetail>(`/snapshots/posts/${scraperRunId}`, {
-      skipAuth: true,
-      params,
+    apiClient.get<PostSnapshotDetail>(`/snapshots/posts/${scraperRunId}`, {params,
     }) as Promise<ApiResponse<PostSnapshotDetail>>,
 
   postTopComments: (
@@ -228,9 +218,7 @@ export const snapshotsApi = {
         text?: string | null;
         like_count: number;
       }>;
-    }>(`/snapshots/posts/${scraperRunId}/top-comments`, {
-      skipAuth: true,
-      params,
+    }>(`/snapshots/posts/${scraperRunId}/top-comments`, {params,
     }) as Promise<
       ApiResponse<{
         scraper_run_id: number;
@@ -250,9 +238,7 @@ export const snapshotsApi = {
     date_from?: string;
     date_to?: string;
   }) =>
-    apiClient.get<CompareChannelsResult>('/snapshots/channels/compare', {
-      skipAuth: true,
-      params: {
+    apiClient.get<CompareChannelsResult>('/snapshots/channels/compare', {params: {
         channel_ids: Array.isArray(params.channel_ids)
           ? params.channel_ids.join(',')
           : params.channel_ids,
@@ -266,9 +252,7 @@ export const snapshotsApi = {
     date_from?: string;
     date_to?: string;
   }) =>
-    apiClient.get<ComparePostsResult>('/snapshots/posts/compare', {
-      skipAuth: true,
-      params: {
+    apiClient.get<ComparePostsResult>('/snapshots/posts/compare', {params: {
         scraper_run_ids: Array.isArray(params.scraper_run_ids)
           ? params.scraper_run_ids.join(',')
           : params.scraper_run_ids,
@@ -283,9 +267,7 @@ export const snapshotsApi = {
     page?: number;
     per_page?: number;
   } = {}) =>
-    apiClient.get<PostCatalogResult>('/snapshots/posts/catalog', {
-      skipAuth: true,
-      params: {
+    apiClient.get<PostCatalogResult>('/snapshots/posts/catalog', {params: {
         channel_id: params.channel_id || undefined,
         q: params.q || undefined,
         page: params.page ?? 1,

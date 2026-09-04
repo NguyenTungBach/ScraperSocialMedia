@@ -1,7 +1,6 @@
 'use strict';
 
 const createError = require('http-errors');
-const apifyConfig = require('../../../config/apify');
 const TikTokScrapeService = require('../../Services/TikTokScrapeService');
 const ChannelRepository = require('../../Repositories/ChannelRepository');
 const logger = require('../../Logging/logger');
@@ -35,7 +34,8 @@ function parseChannelUrls(raw) {
 /**
  * Cào video + comment TikTok — mirror YouTube CLI.
  * Chạy: npm run app:tiktok-scrape
- * Env: TIKTOK_CHANNEL_IDS và/hoặc TIKTOK_CHANNEL_URLS, SCRAPE_MAX_POSTS, …
+ * Env: TIKTOK_CHANNEL_IDS và/hoặc TIKTOK_CHANNEL_URLS
+ * Limit cào lấy từ channels.max_posts / max_top_comments / max_replies.
  * URL được ưu tiên khi set — chỉ cào đúng kênh khớp URL (không scrape all).
  */
 class TikTokScrapeCommand {
@@ -63,10 +63,8 @@ class TikTokScrapeCommand {
             });
         }
 
-        const maxResults = apifyConfig.tiktokResultsPerPage;
-
         const service = new TikTokScrapeService();
-        const result = await service.scrapeChannels({ channel_id, maxResults });
+        const result = await service.scrapeChannels({ channel_id });
 
         logger.info('[tiktok-scrape] Scrape finished', {
             channels_scraped: result.channels_scraped,

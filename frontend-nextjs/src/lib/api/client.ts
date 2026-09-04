@@ -1,4 +1,3 @@
-import { isAuthRequired } from '@/lib/config/auth';
 import { getLanguage, translate } from '@/lib/i18n';
 import { destroyToken, destroyUserInfoCookie } from '@/lib/utils/token';
 
@@ -289,7 +288,7 @@ class ApiClient {
           );
         }
 
-        if (isAuthRequired() && !isRedirectingToLogin) {
+        if (!isRedirectingToLogin) {
           isRedirectingToLogin = true;
           this.setToken(null);
           destroyToken();

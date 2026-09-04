@@ -78,16 +78,13 @@ export const commentsApi = {
   getByScraperRun: (scraperRunId: number) =>
     apiClient.get<ScraperRunComments>('/comments', {
       params: { scraper_run_id: scraperRunId },
-      skipAuth: true,
     }) as Promise<ApiResponse<ScraperRunComments>>,
 
   analyze: (scraperRunId: number) =>
     apiClient.post<CommentAnalyzeResult>(
       '/comments/analyze',
       { scraper_run_id: scraperRunId },
-      {
-        skipAuth: true,
-        timeout: 1_800_000,
+      {timeout: 1_800_000,
       }
     ) as Promise<ApiResponse<CommentAnalyzeResult>>,
 };

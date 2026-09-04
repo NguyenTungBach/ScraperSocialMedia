@@ -1,14 +1,19 @@
 'use strict';
 
 /**
- * Khớp biến môi trường Laravel `.env`.
- * - `MAIL_MAILER=smtp` (mặc định): nodemailer → MAIL_HOST, MAIL_USERNAME, …
- * - `MAIL_MAILER=ses`: AWS SES API (`@aws-sdk/client-sesv2`) — **không** dùng MAIL_USERNAME/PASSWORD SMTP.
+ * Mail config — MAIL_* lấy từ general_settings (SettingsCache).
+ * AWS SES credentials vẫn đọc process.env.
  *
  * Laravel thường có MAIL_FROM_NAME="${APP_NAME}" — Node `dotenv` **không** tự thay ${...}.
- * Hỗ trợ: thay `${VAR}` bằng process.env; nếu MAIL_FROM_ADDRESS dạng `Tên <email@...>` thì tách đúng
- * (tránh `"DriveeLink" <${APP_NAME} <a@b>>` khi copy nhầm một dòng).
+ * Hỗ trợ: thay `${VAR}` bằng process.env; nếu MAIL_FROM_ADDRESS dạng `Tên <email@...>` thì tách đúng.
  */
+
+const SettingsCache = require('../app/Services/SettingsCache');
+
+function setting(name, fallback = '') {
+    const v = SettingsCache.get(name);
+    return v !== '' && v != null ? v : fallback;
+}
 
 /**
  * Giống Laravel: `${APP_NAME}` → giá trị env (chỉ [A-Z0-9_]).
@@ -49,16 +54,16 @@ function splitDisplayNameAndEmail(raw) {
 }
 
 function resolveFrom() {
-    const expandedAddr = expandEnvPlaceholders(process.env.MAIL_FROM_ADDRESS || '');
+    const expandedAddr = expandEnvPlaceholders(setting('MAIL_FROM_ADDRESS') || '');
     const { displayName: parsedName, email: parsedEmail } = splitDisplayNameAndEmail(expandedAddr);
-    const expandedFromName = expandEnvPlaceholders(process.env.MAIL_FROM_NAME || '').trim();
+    const expandedFromName = expandEnvPlaceholders(setting('MAIL_FROM_NAME') || '').trim();
     const fromName = expandedFromName || parsedName || 'Hoyocodes';
     const fromAddress = (parsedEmail || expandedAddr.trim()).trim();
     return { fromName, fromAddress };
 }
 
 function parsePort() {
-    const p = parseInt(process.env.MAIL_PORT || '587', 10);
+    const p = parseInt(setting('MAIL_PORT', '587'), 10);
     return Number.isFinite(p) ? p : 587;
 }
 
@@ -81,7 +86,7 @@ function parseEmailList(raw) {
 }
 
 function getMailerType() {
-    const m = String(process.env.MAIL_MAILER || 'smtp')
+    const m = String(setting('MAIL_MAILER', 'smtp'))
         .toLowerCase()
         .trim();
     return m === 'ses' ? 'ses' : 'smtp';
@@ -117,7 +122,7 @@ function isSmtpConnectionError(error) {
 }
 
 function isConfigured() {
-    const to = process.env.MAIL_MAIN && String(process.env.MAIL_MAIN).trim();
+    const to = setting('MAIL_MAIN') && String(setting('MAIL_MAIN')).trim();
     const { fromAddress: from } = resolveFrom();
     if (!to || !from) {
         return false;
@@ -125,7 +130,7 @@ function isConfigured() {
     if (getMailerType() === 'ses') {
         return Boolean(sesRegion());
     }
-    const host = process.env.MAIL_HOST && String(process.env.MAIL_HOST).trim();
+    const host = setting('MAIL_HOST') && String(setting('MAIL_HOST')).trim();
     return Boolean(host);
 }
 
@@ -138,7 +143,7 @@ function isTransportReady() {
     if (getMailerType() === 'ses') {
         return Boolean(sesRegion());
     }
-    const host = process.env.MAIL_HOST && String(process.env.MAIL_HOST).trim();
+    const host = setting('MAIL_HOST') && String(setting('MAIL_HOST')).trim();
     return Boolean(host);
 }
 
@@ -157,19 +162,19 @@ module.exports = {
         return resolveFrom().fromName;
     },
     get mailMain() {
-        return process.env.MAIL_MAIN || '';
+        return setting('MAIL_MAIN') || '';
     },
-    /** BCC alert — MAIL_ALERT_BCC hoặc BCC_MAIL (phân tách bằng dấu phẩy). */
+    /** BCC alert — MAIL_ALERT_BCC từ general_settings (phân tách bằng dấu phẩy). Alias env BCC_MAIL. */
     get alertBcc() {
-        const raw = process.env.MAIL_ALERT_BCC || process.env.BCC_MAIL || '';
+        const raw = setting('MAIL_ALERT_BCC') || process.env.BCC_MAIL || '';
         return parseEmailList(raw);
     },
     get transportOptions() {
         const port = parsePort();
-        const enc = (process.env.MAIL_ENCRYPTION || '').toLowerCase();
+        const enc = (setting('MAIL_ENCRYPTION') || '').toLowerCase();
         const secure = enc === 'ssl' || port === 465;
         const opts = {
-            host: process.env.MAIL_HOST,
+            host: setting('MAIL_HOST') || undefined,
             port,
             secure,
             connectionTimeout: Number(process.env.MAIL_CONNECTION_TIMEOUT_MS) || 20_000,
@@ -179,17 +184,17 @@ module.exports = {
         if (!secure && enc === 'tls') {
             opts.requireTLS = true;
         }
-        if (process.env.MAIL_USERNAME) {
-            // App Password Gmail thường có khoảng trắng khi copy; bỏ khoảng trắng + dấu ngoặc.
-            const rawPass = String(process.env.MAIL_PASSWORD || '').trim();
+        const username = setting('MAIL_USERNAME');
+        if (username) {
+            const rawPass = String(setting('MAIL_PASSWORD') || '').trim();
             const pass = rawPass
                 .replace(/^["']|["']$/g, '')
                 .replace(/\s+/g, '');
             opts.auth = {
-                user: String(process.env.MAIL_USERNAME).trim(),
+                user: String(username).trim(),
                 pass,
             };
         }
         return opts;
-    }
+    },
 };

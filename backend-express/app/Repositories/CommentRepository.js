@@ -77,6 +77,10 @@ class CommentRepository {
         let inserted = 0;
         let updated = 0;
         let skipped = 0;
+        let comments_inserted = 0;
+        let replies_inserted = 0;
+        let comments_updated = 0;
+        let replies_updated = 0;
 
         for (const item of comments) {
             if (!item?.platform_comment_id || !item.text) continue;
@@ -88,6 +92,8 @@ class CommentRepository {
                 },
                 transaction,
             });
+
+            const isReply = Boolean(item.parent_platform_comment_id);
 
             const basePayload = {
                 scraper_run_id: scraperRunId,
@@ -122,6 +128,8 @@ class CommentRepository {
                 }
                 await existing.update(updatePayload, { transaction });
                 updated += 1;
+                if (isReply) replies_updated += 1;
+                else comments_updated += 1;
             } else {
                 await this.postCommentModel.create(
                     {
@@ -132,10 +140,20 @@ class CommentRepository {
                     { transaction }
                 );
                 inserted += 1;
+                if (isReply) replies_inserted += 1;
+                else comments_inserted += 1;
             }
         }
 
-        return { inserted, updated, skipped };
+        return {
+            inserted,
+            updated,
+            skipped,
+            comments_inserted,
+            replies_inserted,
+            comments_updated,
+            replies_updated,
+        };
     }
 
     async rebuildThreadsForScraperRun(scraperRunId, { transaction } = {}) {
@@ -253,14 +271,19 @@ class CommentRepository {
         });
     }
 
+    /** Thứ tự scrape (YouTube: relevance / Hàng đầu). */
+    commentScrapeOrder() {
+        return [
+            ['sort_order', 'ASC'],
+            ['id', 'ASC'],
+        ];
+    }
+
     async getCommentsByScraperRunId(scraperRunId) {
         const [loneRows, threadRows, allComments] = await Promise.all([
             this.postCommentModel.findAll({
                 where: { scraper_run_id: scraperRunId, group_type: 'lone' },
-                order: [
-                    ['sort_order', 'ASC'],
-                    ['id', 'ASC'],
-                ],
+                order: this.commentScrapeOrder(),
             }),
             this.commentThreadModel.findAll({
                 where: { scraper_run_id: scraperRunId },
@@ -286,6 +309,13 @@ class CommentRepository {
         const threads = threadRows.map((t) =>
             this.serializeThread(t, byThreadKey.get(t.thread_key) || [])
         );
+
+        // Thread list theo sort_order của comment gốc (ranking scrape)
+        threads.sort((a, b) => {
+            const aRoot = a.comments?.[0];
+            const bRoot = b.comments?.[0];
+            return (aRoot?.sort_order ?? 0) - (bRoot?.sort_order ?? 0);
+        });
 
         const lone = loneRows.map((r) => this.serializeComment(r));
 
@@ -546,7 +576,15 @@ class CommentRepository {
                 ],
             },
         });
-        return pendingLone > 0 || pendingThreads > 0;
+        // Chỉ pending thật sự — không coi reply done thiếu nhãn là cần Gemini (grandfather)
+        const pendingReplies = await this.postCommentModel.count({
+            where: {
+                scraper_run_id: scraperRunId,
+                parent_platform_comment_id: { [Op.ne]: null },
+                analysis_status: 'pending',
+            },
+        });
+        return pendingLone > 0 || pendingThreads > 0 || pendingReplies > 0;
     }
 
     async applyAnalysisResult(
@@ -610,6 +648,28 @@ class CommentRepository {
             );
         }
 
+        for (const bucket of ['negative', 'normal']) {
+            for (const item of result?.replies?.[bucket] || []) {
+                await this.postCommentModel.update(
+                    {
+                        classified_as: normalizeLoneClassifiedAs(bucket),
+                        sentiment: normalizeSentiment(item.sentiment),
+                        category: normalizeCategory(item.category),
+                        severity: normalizeSeverity(item.severity),
+                        reason: normalizeReason(item.reason),
+                        analysis_status: 'done',
+                    },
+                    {
+                        where: {
+                            scraper_run_id: scraperRunId,
+                            platform_comment_id: item.comment_id,
+                            parent_platform_comment_id: { [Op.ne]: null },
+                        },
+                    }
+                );
+            }
+        }
+
         if (finalizePendingThreads && sentThreadKeys.length > 0) {
             await this.finalizePendingThreads(scraperRunId, sentThreadKeys);
         }
@@ -648,7 +708,10 @@ class CommentRepository {
     }
 
     /**
-     * Comment còn cần Gemini: pending hoặc done nhưng thiếu kết quả phân loại.
+     * Comment còn cần Gemini.
+     * Lone: pending hoặc done thiếu nhãn.
+     * Thread: pending (hoặc done thiếu nhãn tổng).
+     * Reply: CHỈ analysis_status=pending (không backfill reply done thiếu nhãn).
      */
     async loadCommentsPendingAnalysis(scraperRunId) {
         const pendingThreads = await this.commentThreadModel.findAll({
@@ -675,6 +738,18 @@ class CommentRepository {
             ],
         });
 
+        const pendingReplyThreadKeys = new Set();
+        for (const row of comments) {
+            const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
+            if (
+                plain.parent_platform_comment_id &&
+                plain.analysis_status === 'pending' &&
+                plain.thread_key
+            ) {
+                pendingReplyThreadKeys.add(plain.thread_key);
+            }
+        }
+
         return comments.filter((row) => {
             const plain = typeof row.toJSON === 'function' ? row.toJSON() : row;
             if (plain.group_type === 'lone') {
@@ -687,8 +762,10 @@ class CommentRepository {
                     return true;
                 }
             }
-            if (plain.group_type === 'thread' && pendingThreadKeys.has(plain.thread_key)) {
-                return true;
+            if (plain.group_type === 'thread') {
+                if (pendingThreadKeys.has(plain.thread_key)) return true;
+                // Gửi cả chuỗi làm context khi có reply pending (kể cả thread đã done)
+                if (pendingReplyThreadKeys.has(plain.thread_key)) return true;
             }
             return false;
         });

@@ -1,6 +1,7 @@
 'use strict';
 
 require('dotenv').config();
+const SettingsCache = require('../app/Services/SettingsCache');
 
 const DISCOVER_SUBJECTS_PROMPT = `Tôi muốn xuất ra danh sách người nổi tiếng, giang hồ mạng, phát ngôn gây bão nhưng tai tiếng tại Việt Nam trong khoảng 4 tháng gần đây hoặc mới có.
 Chủ đề liên quan đến an ninh trật tự, ở Việt Nam.
@@ -21,20 +22,25 @@ const COMMENT_ANALYSIS_PROMPT = `Bạn là AI phân tích comment YouTube. Nhi�
 INPUT: JSON gồm video + comments (comment_id, parent_id, author, text).
 
 BƯỚC 1 — NHÓM CẤU TRÚC
-- lone: comment không reply ai và không ai reply
-- thread: gốc có reply hoặc comment có parent_id (giữ cây hội thoại)
+- lone: comment không reply ai và không ai reply (parent_id null, không có con)
+- thread: chuỗi hội thoại — comment gốc + các reply (parent_id khác null)
+- reply: mọi comment có parent_id
 
 BƯỚC 2 — PHÂN LOẠI
-Lone:
+Lone (từng comment):
 - negative: tiêu cực, công kích, khiêu khích, gây war (KHÔNG coi bất đồng quan điểm đơn thuần là tiêu cực)
 - normal: bình thường, không đáng chú ý
 
-Thread (đọc CẢ chuỗi trước khi kết luận, không đánh giá reply riêng lẻ):
+Thread (đọc CẢ chuỗi, một nhãn tổng cho cả chuỗi):
 - negative: chuỗi tiêu cực/gây war
 - debate: tranh luận/tranh cãi (ưu tiên debate nếu vừa tiêu cực vừa tranh luận)
 - has_negativity: true nếu debate nhưng vẫn có yếu tố tiêu cực
 
-Mỗi lone/thread được chọn thêm:
+Reply (phân loại TỪNG reply riêng, độc lập với nhãn thread):
+- negative / normal — cùng tiêu chí như lone
+- Đọc ngữ cảnh chuỗi nhưng kết luận theo nội dung từng reply
+
+Mỗi lone / thread / reply được chọn thêm:
 - sentiment: positive | neutral | negative | unknown
 - category: opinion | attack | provoke | debate | argument | normal | other | unknown
 - severity: low | medium | high | unknown
@@ -43,12 +49,15 @@ Mỗi lone/thread được chọn thêm:
 QUY TẮC:
 - Không sửa text comment
 - Không suy diễn nội dung không có
-- Mỗi comment_id chỉ xuất hiện một lần
+- Mỗi comment_id chỉ xuất hiện một lần (không trùng giữa lone và replies)
+- Comment gốc của thread KHÔNG đưa vào lone/replies (chỉ nằm trong threads)
 - Không chắc → classified_as hoặc category = unknown
 - Giữ thứ tự comment trong thread
-- Trả về TẤT CẢ comment lone (negative + normal). Chỉ trả thread có ý nghĩa (negative/debate/unknown nếu không chắc)
+- Trả về TẤT CẢ lone (negative + normal)
+- Trả về TẤT CẢ reply trong input (negative + normal)
+- Chỉ trả thread có ý nghĩa (negative/debate/unknown nếu không chắc)
 
-OUTPUT: JSON thuần theo schema, không markdown.`;
+OUTPUT: JSON thuần theo schema (lone, replies, threads), không markdown.`;
 
 const CONTENT_BRIEF_PROMPT = `Bạn tóm tắt nội dung video/bài đăng mạng xã hội.
 
@@ -77,30 +86,36 @@ function parseModelList(value) {
         .filter(Boolean);
 }
 
-const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-const fallbackModels = parseModelList(
-    process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.6-flash,gemini-3.5-flash-lite'
-).filter((m) => m !== primaryModel);
-
 module.exports = {
-    apiKey: process.env.GEMINI_API_KEY || '',
-    model: primaryModel,
+    get apiKey() {
+        return SettingsCache.get('GEMINI_API_KEY') || '';
+    },
+    get model() {
+        return SettingsCache.get('GEMINI_MODEL') || 'gemini-3.6-flash';
+    },
     /** Thử lần lượt khi primary bị high demand / 429 / 503 */
-    fallbackModels,
-    maxRetries: Number(process.env.GEMINI_MAX_RETRIES) || 2,
-    retryDelayMs: Number(process.env.GEMINI_RETRY_DELAY_MS) || 1200,
-    enabled: process.env.GEMINI_ENABLED === 'true',
-    alertTrendThreshold: Number(process.env.ALERT_TREND_THRESHOLD) || 500,
-    alertHotThreshold: Number(process.env.ALERT_HOT_THRESHOLD) || 800,
+    get fallbackModels() {
+        const primary = this.model;
+        const raw =
+            SettingsCache.get('GEMINI_FALLBACK_MODELS') ||
+            'gemini-3.6-flash,gemini-3.5-flash-lite';
+        return parseModelList(raw).filter((m) => m !== primary);
+    },
+    get maxRetries() {
+        return Number(SettingsCache.get('GEMINI_MAX_RETRIES')) || 2;
+    },
+    get retryDelayMs() {
+        return Number(SettingsCache.get('GEMINI_RETRY_DELAY_MS')) || 1200;
+    },
+    get alertTrendThreshold() {
+        return Number(SettingsCache.get('ALERT_TREND_THRESHOLD')) || 500;
+    },
+    get alertHotThreshold() {
+        return Number(SettingsCache.get('ALERT_HOT_THRESHOLD')) || 800;
+    },
     discoverSubjectsPrompt: DISCOVER_SUBJECTS_PROMPT,
     commentAnalysisPrompt: COMMENT_ANALYSIS_PROMPT,
     contentBriefPrompt: CONTENT_BRIEF_PROMPT,
-    alertTopPostsPerSubject:
-        Number(process.env.ALERT_TOP_POSTS_PER_SUBJECT || process.env.ALERT_TOP_VIDEOS_PER_SUBJECT) ||
-        3,
-    alertTopVideosPerSubject:
-        Number(process.env.ALERT_TOP_POSTS_PER_SUBJECT || process.env.ALERT_TOP_VIDEOS_PER_SUBJECT) ||
-        3,
     /** Số comment gốc / thread tối đa mỗi lần gọi Gemini phân tích */
-    commentAnalysisChunkSize: Number(process.env.GEMINI_COMMENT_ANALYSIS_CHUNK_SIZE) || 10,
+    commentAnalysisChunkSize: 10,
 };

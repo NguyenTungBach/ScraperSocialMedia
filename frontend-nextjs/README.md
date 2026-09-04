@@ -4,10 +4,10 @@ Khung Next.js tách từ `awa-frontend-nextjs`, tối giản: login + một màn
 
 ## Tính năng hiện tại
 
-- Auth tạm thời **tắt** (`NEXT_PUBLIC_AUTH_REQUIRED=false`) — vào thẳng `/home`
-- Trang login vẫn giữ ở `/login` (bật lại bằng `NEXT_PUBLIC_AUTH_REQUIRED=true`)
+- Bắt buộc đăng nhập (JWT) — chưa có token → `/login`
 - Đăng nhập API: `POST /api/auth/login` (`user_code`, `password`) — khớp `backend-express`
-- Middleware / RouteGuard tôn trọng flag auth
+- Middleware / RouteGuard + API 401 → clear session về `/login`
+- Role: `admin` (full) / `member` (chỉ xem)
 - UI login lấy cảm hứng từ scaffold AWA
 
 ## Chạy local

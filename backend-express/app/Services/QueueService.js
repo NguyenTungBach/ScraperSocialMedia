@@ -11,7 +11,10 @@ const RETRY_DELAY_SECONDS = 60;
 
 const JOB_LOADERS = {
     SampleLogJob: () => require('../Jobs/SampleLogJob'),
-    SendMailJob: () => require('../Jobs/SendMailJob')
+    SendMailJob: () => require('../Jobs/SendMailJob'),
+    YoutubeScrapeJob: () => require('../Jobs/YoutubeScrapeJob'),
+    TikTokScrapeJob: () => require('../Jobs/TikTokScrapeJob'),
+    FacebookScrapeJob: () => require('../Jobs/FacebookScrapeJob'),
 };
 
 function nowSec() {
@@ -19,6 +22,45 @@ function nowSec() {
 }
 
 class QueueService {
+    /**
+     * Nhả job đang reserved (worker crash / tắt giữa chừng).
+     * @param {{ olderThanSec?: number }} options — 0 = nhả mọi reserved (phù hợp 1 worker)
+     * @returns {Promise<number>}
+     */
+    static async releaseOrphanedReservedJobs(options = {}) {
+        const olderThanSec = Number(
+            options.olderThanSec != null
+                ? options.olderThanSec
+                : process.env.QUEUE_RELEASE_RESERVED_ON_START_SEC ?? 0
+        );
+        const where = {
+            reserved_at: { [Op.ne]: null }
+        };
+        if (olderThanSec > 0) {
+            where.reserved_at = {
+                [Op.ne]: null,
+                [Op.lte]: nowSec() - olderThanSec
+            };
+        }
+
+        const [count] = await db.Job.update(
+            {
+                reserved_at: null,
+                available_at: nowSec()
+            },
+            { where }
+        );
+
+        const released = Number(count || 0);
+        if (released > 0) {
+            logger.info('Queue released orphaned reserved jobs', {
+                released,
+                older_than_sec: olderThanSec
+            });
+        }
+        return released;
+    }
+
     /**
      * @param {string} jobClass
      * @param {Record<string, unknown>} data
@@ -145,6 +187,8 @@ class QueueService {
                 return;
             }
 
+            await QueueService.markAsyncStatusFailedIfAny(job, error);
+
             try {
                 await db.FailedJob.create({
                     uuid: crypto.randomUUID(),
@@ -165,6 +209,34 @@ class QueueService {
             logger.error('Queue job moved to failed_jobs', {
                 job_id: jobId,
                 attempts
+            });
+        }
+    }
+
+    /**
+     * @param {import('sequelize').Model} job
+     * @param {Error} error
+     */
+    static async markAsyncStatusFailedIfAny(job, error) {
+        try {
+            const parsed = JSON.parse(job.payload || '{}');
+            const asyncStatusJobId = parsed.data?.asyncStatusJobId;
+            const ScraperAsyncService = require('./ScraperAsyncService');
+            if (asyncStatusJobId != null) {
+                await ScraperAsyncService.markFailed(
+                    Number(asyncStatusJobId),
+                    error?.message || 'Scrape job failed after max attempts'
+                );
+                return;
+            }
+            await ScraperAsyncService.markFailedByQueueJobId(
+                Number(job.id),
+                error?.message || 'Scrape job failed after max attempts'
+            );
+        } catch (markError) {
+            logger.error('Queue async scrape status update failed', {
+                job_id: Number(job.id),
+                error: markError.message
             });
         }
     }

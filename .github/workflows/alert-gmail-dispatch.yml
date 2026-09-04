@@ -9,7 +9,6 @@
 # Tuỳ chọn Variables:
 #   MAIL_PORT (mặc định 587), MAIL_ALERT_BCC, DB_SSL (mặc định true)
 #   APP_NAME, GEMINI_MODEL, ALERT_HOT_THRESHOLD, ALERT_TREND_THRESHOLD
-#   ALERT_TOP_POSTS_PER_SUBJECT (mặc định 3; alias ALERT_TOP_VIDEOS_PER_SUBJECT)
 #
 # Chạy: Actions → "Alert Gmail" → Run workflow
 
@@ -103,13 +102,11 @@ jobs:
           MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
           MAIL_MAIN: ${{ vars.MAIL_MAIN }}
           MAIL_ALERT_BCC: ${{ vars.MAIL_ALERT_BCC }}
-          GEMINI_ENABLED: 'true'
           GEMINI_API_KEY: ${{ vars.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
           GEMINI_FALLBACK_MODELS: ${{ vars.GEMINI_FALLBACK_MODELS || 'gemini-3.6-flash,gemini-3.5-flash-lite' }}
           ALERT_HOT_THRESHOLD: ${{ vars.ALERT_HOT_THRESHOLD || '8000' }}
           ALERT_TREND_THRESHOLD: ${{ vars.ALERT_TREND_THRESHOLD || '5000' }}
-          ALERT_TOP_POSTS_PER_SUBJECT: ${{ vars.ALERT_TOP_POSTS_PER_SUBJECT || vars.ALERT_TOP_VIDEOS_PER_SUBJECT || '3' }}
           ALERT_SUBJECT_ID: ${{ inputs.subject_id }}
           ALERT_TO: ${{ inputs.to }}
           ALERT_BCC: ${{ inputs.bcc }}

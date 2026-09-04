@@ -5,8 +5,10 @@
  * Quy ước tên:
  *   - API:       `${PM2_API_NAME}`
  *   - Queue:     `${PM2_API_NAME}-queue`
- *   - Scheduler: `${PM2_API_NAME}-schedule`
+ *   - Scheduler: `${PM2_API_NAME}-schedule`  (đọc general_schedules, spawn npm run app:*)
  * Chỉ cần set PM2_API_NAME (và APP_PORT).
+ * Timezone lịch: APP_TIMEZONE (mặc định Asia/Ho_Chi_Minh).
+ * Sau khi bật *-schedule, tắt crontab/GH Actions trùng để tránh chạy đôi.
  *
  * Start / reload cả ba:
  *   pm2 start ecosystem.config.cjs

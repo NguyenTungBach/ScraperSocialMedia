@@ -28,7 +28,7 @@ module.exports = {
             role: {
                 type: Sequelize.STRING(255),
                 allowNull: false,
-                comment: 'admin|driver'
+                comment: 'admin|member'
             },
             jwt_active: {
                 type: Sequelize.STRING(255),

@@ -8,25 +8,33 @@ const runFacebookSchema = z.object({
     channel_id: z
         .array(z.coerce.number().int().positive())
         .min(1, 'channel_id is required'),
-    maxResults: z.number().int().min(1).max(50).optional(),
-    commentsPerPost: z.number().int().min(0).max(100).optional(),
-    maxRepliesPerComment: z.number().int().min(0).max(50).optional(),
+    maxResults: z.number().int().min(1).optional(),
+    commentsPerPost: z.number().int().min(0).optional(),
+    maxRepliesPerComment: z.number().int().min(0).optional(),
+    subject_id: z.coerce.number().int().positive().optional(),
 });
 
 const runYoutubeSchema = z.object({
     channel_id: z
         .array(z.coerce.number().int().positive())
         .min(1, 'channel_id is required'),
-    maxResults: z.number().int().min(1).max(50).optional(),
+    maxResults: z.number().int().min(1).optional(),
+    subject_id: z.coerce.number().int().positive().optional(),
 });
 
 const runTikTokSchema = z.object({
     channel_id: z
         .array(z.coerce.number().int().positive())
         .min(1, 'channel_id is required'),
-    maxResults: z.number().int().min(1).max(50).optional(),
-    commentsPerPost: z.number().int().min(0).max(100).optional(),
-    maxRepliesPerComment: z.number().int().min(0).max(50).optional(),
+    maxResults: z.number().int().min(1).optional(),
+    commentsPerPost: z.number().int().min(0).optional(),
+    maxRepliesPerComment: z.number().int().min(0).optional(),
+    subject_id: z.coerce.number().int().positive().optional(),
+});
+
+const asyncStatusLatestSchema = z.object({
+    job_type: z.enum(['youtube_scrape', 'tiktok_scrape', 'facebook_scrape']),
+    scope_key: z.string().trim().min(1).max(255),
 });
 
 const refreshYoutubeTailSchema = z.object({
@@ -39,6 +47,9 @@ const channelCreateSchema = z.object({
     name: z.string().trim().min(1, 'name is required').max(255),
     url: z.string().trim().url('url must be a valid URL').max(512),
     type_channel: z.string().trim().max(50).optional(),
+    max_posts: z.number().int().min(0).optional(),
+    max_top_comments: z.number().int().min(0).optional(),
+    max_replies: z.number().int().min(0).optional(),
 });
 
 const channelUpdateSchema = z
@@ -46,6 +57,9 @@ const channelUpdateSchema = z
         name: z.string().trim().min(1, 'name is required').max(255).optional(),
         url: z.string().trim().url('url must be a valid URL').max(512).optional(),
         type_channel: z.string().trim().max(50).optional(),
+        max_posts: z.number().int().min(0).optional(),
+        max_top_comments: z.number().int().min(0).optional(),
+        max_replies: z.number().int().min(0).optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
         message: 'At least one field is required',
@@ -235,6 +249,19 @@ const validateRefreshYoutubeTail = async (req, res, next) => {
     }
 };
 
+const validateAsyncStatusLatest = async (req, res, next) => {
+    try {
+        const validated = asyncStatusLatestSchema.parse(req.query ?? {});
+        req.validatedData = validated ?? {};
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
 const validateListQuery = async (req, res, next) => {
     try {
         req.validatedData = listQuerySchema.parse(req.query ?? {});
@@ -361,6 +388,7 @@ module.exports = {
     validateRunYoutube,
     validateRunTikTok,
     validateRefreshYoutubeTail,
+    validateAsyncStatusLatest,
     validateListQuery,
     validateSocialPostsDashboardQuery,
     validateSubjectListQuery,

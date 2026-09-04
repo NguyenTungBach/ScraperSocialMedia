@@ -6,7 +6,9 @@ const bcrypt = require('bcryptjs');
 module.exports = (sequelize, DataTypes) => {
     class User extends Model {
         static ROLE_ADMIN = 'admin';
-        static ROLE_DRIVER = 'driver';
+        static ROLE_MEMBER = 'member';
+        /** @deprecated use ROLE_MEMBER */
+        static ROLE_DRIVER = 'member';
 
         static USER_CODE = 'user_code';
         static USER_NAME = 'user_name';

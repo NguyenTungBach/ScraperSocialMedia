@@ -6,8 +6,8 @@ const CommentAnalysisService = require('./CommentAnalysisService');
 const MailService = require('./MailService');
 const { roundScore } = require('../Helpers/PostScoreHelper');
 const { buildAlertEmail, buildNoAlertEmail } = require('../Helpers/EmailAlertBuilder');
-const geminiConfig = require('../../config/gemini');
 const mailConfig = require('../../config/mail');
+const geminiConfig = require('../../config/gemini');
 
 function groupAlertPostsBySubject(posts = []) {
     const map = new Map();
@@ -84,13 +84,13 @@ class AlertService {
             };
         }
 
-        const geminiDisabled = !geminiConfig.enabled || !geminiConfig.apiKey;
         const subjectGroups = groupAlertPostsBySubject(alertPosts);
         const subjectAnalyses = [];
         let videosAnalyzed = 0;
         let commentsVideos = 0;
         let contentBriefsAnalyzed = 0;
-        const topLimit = geminiConfig.alertTopPostsPerSubject;
+        // Mỗi subject chỉ phân tích AI top 3 bài hot nhất (tránh mail/Gemini quá dài)
+        const topLimit = 3;
 
         for (const group of subjectGroups.values()) {
             const sorted = [...group.posts].sort((a, b) => b.hot_score - a.hot_score);
@@ -112,7 +112,6 @@ class AlertService {
                     trend_score: Math.max(...sorted.map((p) => p.trend_score ?? 0)),
                 },
                 videos: analysis.videos || [],
-                geminiDisabled,
             });
         }
 
@@ -120,7 +119,6 @@ class AlertService {
             alertPosts,
             subjectAnalyses,
             thresholds,
-            geminiDisabled,
         });
 
         const subjectCount = subjectGroups.size;
@@ -147,7 +145,6 @@ class AlertService {
                 videos_analyzed: videosAnalyzed,
                 videos_with_data: commentsVideos,
                 content_briefs_analyzed: contentBriefsAnalyzed,
-                gemini_disabled: geminiDisabled,
             },
             posts: alertPosts.map((row) => ({
                 scraper_run_id: row.id,

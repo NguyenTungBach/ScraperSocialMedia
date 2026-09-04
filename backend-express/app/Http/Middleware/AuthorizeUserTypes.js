@@ -2,7 +2,7 @@ const ResponseService = require('../../Helpers/ResponseService');
 const UserType = require('../../Constants/UserType');
 
 /**
- * @param {...string} allowedRoles — `users.role` (vd. `admin`, `driver`)
+ * @param {...string} allowedRoles — `users.role` (vd. `admin`, `member`)
  *
  * `admin` luôn được phép.
  */

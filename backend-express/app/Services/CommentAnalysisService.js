@@ -54,14 +54,6 @@ class CommentAnalysisService {
             };
         }
 
-        if (!geminiConfig.enabled || !geminiConfig.apiKey) {
-            return {
-                analyzed: false,
-                reason: 'gemini_disabled',
-                scraper_run_id: scraperRunId,
-            };
-        }
-
         await this.commentRepository.setContentBriefPending(scraperRunId);
 
         try {
@@ -97,10 +89,6 @@ class CommentAnalysisService {
                 scraper_run_id: scraperRunId,
                 payload: await this.commentRepository.getAnalysisPayloadForEmail(scraperRunId),
             };
-        }
-
-        if (!geminiConfig.enabled || !geminiConfig.apiKey) {
-            return { analyzed: false, reason: 'gemini_disabled', scraper_run_id: scraperRunId };
         }
 
         const pendingComments =
@@ -170,7 +158,7 @@ class CommentAnalysisService {
     }
 
     /**
-     * Sau scrape: không làm fail luồng cào nếu Gemini lỗi / tắt.
+     * Sau scrape: không làm fail luồng cào nếu Gemini lỗi.
      */
     async analyzePostAfterScrape(scraperRunId) {
         try {
@@ -195,7 +183,7 @@ class CommentAnalysisService {
             runs = await this.commentRepository.loadRunsByIds(runIds);
         } else {
             runs = await this.commentRepository.listTopRunsForSubject(subjectId, {
-                limit: limit ?? geminiConfig.alertTopPostsPerSubject,
+                limit: limit ?? 3,
                 date_from,
                 date_to,
             });

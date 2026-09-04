@@ -1,6 +1,7 @@
 'use strict';
 
 const { Model } = require('sequelize');
+const scrapeLimits = require('../../config/scrapeLimits');
 
 module.exports = (sequelize, DataTypes) => {
     class Channel extends Model {
@@ -54,6 +55,21 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.JSON,
                 allowNull: true,
                 defaultValue: null,
+            },
+            max_posts: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: scrapeLimits.maxPosts,
+            },
+            max_top_comments: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: scrapeLimits.maxTopComments,
+            },
+            max_replies: {
+                type: DataTypes.INTEGER.UNSIGNED,
+                allowNull: false,
+                defaultValue: scrapeLimits.maxReplies,
             },
         },
         {

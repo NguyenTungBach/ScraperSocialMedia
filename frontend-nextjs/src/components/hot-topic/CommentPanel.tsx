@@ -11,8 +11,10 @@ import {
 } from '@/lib/api/comments';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { classifyLabel, hasAnalysisData } from '@/lib/utils/commentAnalysis';
-import { isCommentSupportedPlatform } from '@/lib/utils/socialPlatforms';
+import { isCommentSupportedPlatform, normalizePlatform } from '@/lib/utils/socialPlatforms';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import { CommentAnalysisModal } from './CommentAnalysisModal';
 import styles from './SubjectDetailModal.module.scss';
 
@@ -31,6 +33,7 @@ interface TopLevelComment {
   thread: CommentThreadItem | null;
 }
 
+/** Giữ thứ tự scrape (YouTube Hàng đầu = sort_order từ API relevance). */
 function buildTopLevelComments(data: ScraperRunComments): TopLevelComment[] {
   const items: TopLevelComment[] = [];
 
@@ -136,6 +139,15 @@ function CommentRootRow({ item }: { item: TopLevelComment }) {
                   <p className={styles.commentText}>
                     <b>{reply.author || 'Ẩn danh'}:</b> {reply.text}
                   </p>
+                  <CommentBadges
+                    classifiedAs={reply.classified_as}
+                    sentiment={reply.sentiment}
+                    category={reply.category}
+                    severity={reply.severity}
+                  />
+                  {reply.reason ? (
+                    <p className={styles.commentReason}>{reply.reason}</p>
+                  ) : null}
                 </div>
               ))}
               {thread?.reason ? (
@@ -175,6 +187,7 @@ export function CommentPanel({
   summary,
   onAnalyzed,
 }: CommentPanelProps) {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const [open, setOpen] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -262,8 +275,6 @@ export function CommentPanel({
         setAnalysisOpen(true);
       } else if (reason === 'no_comments') {
         MakeToast({ variant: 'warning', content: 'Chưa có comment để phân tích' });
-      } else if (reason === 'gemini_disabled') {
-        MakeToast({ variant: 'warning', content: 'Gemini chưa bật — kiểm tra GEMINI_ENABLED / API key' });
       } else {
         MakeToast({
           variant: 'warning',
@@ -335,24 +346,26 @@ export function CommentPanel({
         </button>
 
         <div className={styles.commentActionRow}>
-          <button
-            type="button"
-            className={styles.commentAnalysisBtn}
-            onClick={() => void handleAnalyze()}
-            disabled={analyzing}
-            title="Chạy Gemini trên comment pending (FB / YouTube / TikTok)"
-          >
-            {analyzing ? (
-              <Loader2 size={14} className={styles.spin} aria-hidden />
-            ) : (
-              <Sparkles size={14} aria-hidden />
-            )}
-            {analyzing
-              ? 'Đang phân tích…'
-              : hasAnalysisFromDb
-                ? 'Phân tích lại (comment thiếu kết quả)'
-                : 'Phân tích comment'}
-          </button>
+          {canMutate && (
+            <button
+              type="button"
+              className={styles.commentAnalysisBtn}
+              onClick={() => void handleAnalyze()}
+              disabled={analyzing}
+              title="Chạy Gemini trên comment pending (FB / YouTube / TikTok)"
+            >
+              {analyzing ? (
+                <Loader2 size={14} className={styles.spin} aria-hidden />
+              ) : (
+                <Sparkles size={14} aria-hidden />
+              )}
+              {analyzing
+                ? 'Đang phân tích…'
+                : hasAnalysisFromDb
+                  ? 'Phân tích lại (comment thiếu kết quả)'
+                  : 'Phân tích comment'}
+            </button>
+          )}
 
           {hasAnalysisFromDb ? (
             <button
@@ -366,7 +379,12 @@ export function CommentPanel({
         </div>
 
         <p className={styles.commentScopeHint}>
-          Mỗi lần cào tối đa 30 comment gốc · 10 reply/comment · AI phân tích theo lô 10 comment/lần
+          Giới hạn comment/reply theo cấu hình kênh
+          {normalizePlatform(platform) === 'youtube'
+            ? ' (YouTube API: tối đa 100 gốc + 100 reply/comment mỗi lần)'
+            : ''}
+          {' · '}
+          AI phân tích theo lô 10 comment/lần
         </p>
 
         {open ? (

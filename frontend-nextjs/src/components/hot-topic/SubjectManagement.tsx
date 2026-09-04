@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
-import { scraperApi } from '@/lib/api/scraper';
+import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   subjectsApi,
@@ -42,6 +42,8 @@ import {
 import { cn } from '@/lib/utils';
 import { formatMonthRangeLabel, getCurrentMonthDateRange, canGoToNextMonth, shiftMonthDateRange } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import { SubjectDetailModal } from './SubjectDetailModal';
 import { HotTopicStickyShell } from './HotTopicStickyShell';
 import { MonthDateFilterBar } from './MonthDateFilterBar';
@@ -184,6 +186,7 @@ const EMPTY_FORM: SubjectFormState = {
 };
 
 export function SubjectManagement() {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const initialRange = getCurrentMonthDateRange();
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
@@ -212,7 +215,6 @@ export function SubjectManagement() {
   const [form, setForm] = useState<SubjectFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [scrapingId, setScrapingId] = useState<number | null>(null);
 
   const [channelOptions, setChannelOptions] = useState<ChannelItem[]>([]);
 
@@ -272,6 +274,17 @@ export function SubjectManagement() {
     },
     [query, sortBy, sortDir, appliedDateFrom, appliedDateTo]
   );
+
+  const reloadAfterScrape = useCallback(() => {
+    void loadList({ page, q: query });
+  }, [loadList, page, query]);
+
+  const {
+    scrapeLocked,
+    resumed,
+    isSubjectScraping,
+    enqueueSubjectScrape,
+  } = useScraperAsyncWatcher({ onSettledReload: reloadAfterScrape });
 
   const applyDateRange = () => {
     const from = dateFrom || getCurrentMonthDateRange().date_from;
@@ -447,50 +460,13 @@ export function SubjectManagement() {
       .map((ch) => ch.id);
 
   const handleScrapeChannels = async (item: SubjectListItem) => {
-    const ytIds = youtubeChannelIds(item);
-    const ttIds = tiktokChannelIds(item);
-    const fbIds = facebookChannelIds(item);
-    if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
-      MakeToast({
-        variant: 'warning',
-        content: 'Đối tượng chưa gắn kênh YouTube/TikTok/Facebook để quét',
-      });
-      return;
-    }
-
-    setScrapingId(item.id);
-    try {
-      let count = 0;
-      let inserted = 0;
-      let updated = 0;
-      if (ytIds.length > 0) {
-        const res = await scraperApi.runYoutube({ channel_id: ytIds });
-        count += res.data?.items_count ?? 0;
-        inserted += res.data?.upsert_stats?.inserted ?? 0;
-        updated += res.data?.upsert_stats?.updated ?? 0;
-      }
-      if (ttIds.length > 0) {
-        const res = await scraperApi.runTikTok({ channel_id: ttIds });
-        count += res.data?.items_count ?? 0;
-        inserted += res.data?.upsert_stats?.inserted ?? 0;
-        updated += res.data?.upsert_stats?.updated ?? 0;
-      }
-      if (fbIds.length > 0) {
-        const res = await scraperApi.runFacebook({ channel_id: fbIds });
-        count += res.data?.items_count ?? 0;
-        inserted += res.data?.upsert_stats?.inserted ?? 0;
-        updated += res.data?.upsert_stats?.updated ?? 0;
-      }
-      MakeToast({
-        variant: 'success',
-        content: `Đã quét ${count} bài từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
-      });
-      await loadList({ page, q: query });
-    } catch (err) {
-      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-    } finally {
-      setScrapingId(null);
-    }
+    await enqueueSubjectScrape({
+      label: item.name,
+      subjectId: item.id,
+      ytIds: youtubeChannelIds(item),
+      ttIds: tiktokChannelIds(item),
+      fbIds: facebookChannelIds(item),
+    });
   };
 
   const handleDelete = async (item: SubjectListItem) => {
@@ -529,7 +505,6 @@ export function SubjectManagement() {
 
   return (
     <HotTopicStickyShell
-      onScrapeSuccess={() => loadList({ page, q: query })}
       filterBar={
         <MonthDateFilterBar
           dateFrom={dateFrom}
@@ -633,10 +608,12 @@ export function SubjectManagement() {
               <Radio size={16} aria-hidden />
               Quản lý kênh
             </Link>
-            <button type="button" className={styles.addBtn} onClick={openCreate}>
-              <Plus size={16} aria-hidden />
-              Thêm đối tượng
-            </button>
+            {canMutate && (
+              <button type="button" className={styles.addBtn} onClick={openCreate}>
+                <Plus size={16} aria-hidden />
+                Thêm đối tượng
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -848,18 +825,25 @@ export function SubjectManagement() {
                     </div>
 
                     <div className={styles.rowActions}>
-                      {(youtubeChannelIds(item).length > 0 ||
-                        tiktokChannelIds(item).length > 0 ||
-                        facebookChannelIds(item).length > 0) && (
+                      {canMutate &&
+                        (youtubeChannelIds(item).length > 0 ||
+                          tiktokChannelIds(item).length > 0 ||
+                          facebookChannelIds(item).length > 0) && (
                         <button
                           type="button"
                           className={cn(styles.iconBtn, styles.scrapeIconBtn)}
                           onClick={() => void handleScrapeChannels(item)}
-                          disabled={scrapingId === item.id}
+                          disabled={scrapeLocked}
                           aria-label={`Quét data ${title}`}
-                          title="Quét YouTube/TikTok/Facebook"
+                          title={
+                            scrapeLocked
+                              ? resumed
+                                ? 'Đang tiếp tục theo dõi job quét (sau F5)'
+                                : 'Đang có job quét chạy nền'
+                              : 'Quét YouTube/TikTok/Facebook'
+                          }
                         >
-                          {scrapingId === item.id ? (
+                          {isSubjectScraping(item.id) ? (
                             <Loader2 size={15} className={dash.spin} aria-hidden />
                           ) : (
                             <ScanLine size={15} aria-hidden />
@@ -873,33 +857,37 @@ export function SubjectManagement() {
                       >
                         Chi tiết
                       </button>
-                      <button
-                        type="button"
-                        className={styles.iconBtn}
-                        onClick={() => openEdit(item)}
-                        aria-label={`Sửa ${title}`}
-                        title="Sửa"
-                      >
-                        <Pencil size={15} aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        className={cn(styles.iconBtn, styles.deleteBtn)}
-                        onClick={() => handleDelete(item)}
-                        disabled={!item.can_delete || deletingId === item.id}
-                        aria-label={`Xóa ${title}`}
-                        title={
-                          item.can_delete
-                            ? 'Xóa'
-                            : 'Không thể xóa vì đang có subjects_scraper_runs'
-                        }
-                      >
-                        {deletingId === item.id ? (
-                          <Loader2 size={15} className={dash.spin} aria-hidden />
-                        ) : (
-                          <Trash2 size={15} aria-hidden />
-                        )}
-                      </button>
+                      {canMutate && (
+                        <>
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            onClick={() => openEdit(item)}
+                            aria-label={`Sửa ${title}`}
+                            title="Sửa"
+                          >
+                            <Pencil size={15} aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className={cn(styles.iconBtn, styles.deleteBtn)}
+                            onClick={() => handleDelete(item)}
+                            disabled={!item.can_delete || deletingId === item.id}
+                            aria-label={`Xóa ${title}`}
+                            title={
+                              item.can_delete
+                                ? 'Xóa'
+                                : 'Không thể xóa vì đang có subjects_scraper_runs'
+                            }
+                          >
+                            {deletingId === item.id ? (
+                              <Loader2 size={15} className={dash.spin} aria-hidden />
+                            ) : (
+                              <Trash2 size={15} aria-hidden />
+                            )}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </article>
                 );

@@ -9,11 +9,11 @@ require('dotenv').config();
 function resolveJwtExpiresIn() {
     const v = process.env.JWT_EXPIRES_IN;
     if (v === undefined || v === null) {
-        return '24h';
+        return '5h';
     }
     const s = String(v).trim();
     if (s === '') {
-        return '24h';
+        return '5h';
     }
     if (/^none$/i.test(s) || /^never$/i.test(s)) {
         return null;

@@ -10,6 +10,8 @@ import {
 import type { SubjectRelatedPost } from '@/lib/api/subjects';
 import { formatDateInput } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelSnapshotModal.module.scss';
 
@@ -40,6 +42,7 @@ interface PostSnapshotModalProps {
 }
 
 export function PostSnapshotModal({ post, onClose }: PostSnapshotModalProps) {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const title = post.title?.trim() || post.text?.trim() || post.post_url || `Bài #${post.id}`;
   const [date, setDate] = useState(todayLocal);
   const [loading, setLoading] = useState(true);
@@ -125,7 +128,7 @@ export function PostSnapshotModal({ post, onClose }: PostSnapshotModalProps) {
             <p className={styles.sub}>Snapshot theo ngày (metrics đã đóng băng)</p>
           </div>
           <div className={styles.headerActions}>
-            {isToday ? (
+            {canMutate && isToday ? (
               <button
                 type="button"
                 className={styles.snapshotBtn}

@@ -14,6 +14,8 @@ import { reportsApi } from '@/lib/api/reports';
 import type { SubjectRelatedPost } from '@/lib/api/subjects';
 import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import { PlatformBadge } from './PlatformBadge';
 import { ComparePostCharts, POST_METRICS } from './ComparePostCharts';
@@ -110,6 +112,7 @@ export function CompareModal({
   initialPostIds = [],
   postCandidates = [],
 }: CompareModalProps) {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const initial = defaultRange();
   const [dateFrom, setDateFrom] = useState(initial.date_from);
   const [dateTo, setDateTo] = useState(initial.date_to);
@@ -491,16 +494,18 @@ export function CompareModal({
             <RefreshCw size={16} />
             Refresh bộ lọc
           </button>
-          <button
-            type="button"
-            className={styles.mailBtn}
-            onClick={() => void sendEmail()}
-            disabled={sending || !hasCompared}
-            title="Chỉ gửi sau khi đã có kết quả so sánh"
-          >
-            {sending ? <Loader2 size={16} className={dash.spin} /> : <Mail size={16} />}
-            Gửi báo cáo về mail
-          </button>
+          {canMutate && (
+            <button
+              type="button"
+              className={styles.mailBtn}
+              onClick={() => void sendEmail()}
+              disabled={sending || !hasCompared}
+              title="Chỉ gửi sau khi đã có kết quả so sánh"
+            >
+              {sending ? <Loader2 size={16} className={dash.spin} /> : <Mail size={16} />}
+              Gửi báo cáo về mail
+            </button>
+          )}
         </div>
 
         <div className={styles.body}>

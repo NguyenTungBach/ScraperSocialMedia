@@ -53,11 +53,11 @@
       },
       "UserType": {
         "title": "UserType",
-        "description": "Role:\n- `admin`\n- `driver`\n",
+        "description": "Role:\n- `admin`\n- `member`\n",
         "type": "string",
         "enum": [
           "admin",
-          "driver"
+          "member"
         ]
       },
       "Channel": {

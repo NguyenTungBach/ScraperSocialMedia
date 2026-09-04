@@ -10,7 +10,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
-import { scraperApi } from '@/lib/api/scraper';
+import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
 import {
   socialPostsApi,
   type SocialPostItem,
@@ -37,6 +37,8 @@ import {
   getDiscussionFormulaTooltip,
 } from '@/lib/utils/metricFormulas';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import { PlatformBadge } from './PlatformBadge';
 import { HotTopicStickyShell } from './HotTopicStickyShell';
 import { MonthDateFilterBar } from './MonthDateFilterBar';
@@ -298,18 +300,25 @@ function facebookChannelIds(topic: HotTopic): number[] {
 function RankingRow({
   topic,
   scraping,
+  scrapeLocked,
+  resumed,
+  canMutate,
   onOpenDetail,
   onScrapeChannels,
 }: {
   topic: HotTopic;
   scraping: boolean;
+  scrapeLocked: boolean;
+  resumed: boolean;
+  canMutate: boolean;
   onOpenDetail: (topic: HotTopic) => void;
   onScrapeChannels: (topic: HotTopic) => void;
 }) {
   const hasScrapeChannels =
-    youtubeChannelIds(topic).length > 0 ||
-    tiktokChannelIds(topic).length > 0 ||
-    facebookChannelIds(topic).length > 0;
+    canMutate &&
+    (youtubeChannelIds(topic).length > 0 ||
+      tiktokChannelIds(topic).length > 0 ||
+      facebookChannelIds(topic).length > 0);
 
   return (
     <article className={styles.rankingRow}>
@@ -430,9 +439,15 @@ function RankingRow({
             type="button"
             className={cn(styles.scrapeIconBtn)}
             onClick={() => onScrapeChannels(topic)}
-            disabled={scraping}
+            disabled={scrapeLocked}
             aria-label={`Quét data ${topic.title}`}
-            title="Quét YouTube/TikTok/Facebook"
+            title={
+              scrapeLocked
+                ? resumed
+                  ? 'Đang tiếp tục theo dõi job quét (sau F5)'
+                  : 'Đang có job quét chạy nền'
+                : 'Quét YouTube/TikTok/Facebook'
+            }
           >
             {scraping ? (
               <Loader2 size={15} className={styles.spin} aria-hidden />
@@ -461,6 +476,7 @@ function buildYAxisLabels(maxValue: number): string[] {
 }
 
 export function HotTopicDashboard() {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const initialRange = getCurrentMonthDateRange();
   const rankedBy: RankedBy = 'discussion';
   const [showNewOnly, setShowNewOnly] = useState(false);
@@ -482,7 +498,6 @@ export function HotTopicDashboard() {
   );
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [scrapingId, setScrapingId] = useState<string | null>(null);
 
   const openDetail = useCallback((topic: HotTopic) => {
     if (!topic.subjectId) return;
@@ -565,54 +580,23 @@ export function HotTopicDashboard() {
     }
   }, [rankedBy, showNewOnly, appliedDateFrom, appliedDateTo]);
 
+  const { scrapeLocked, resumed, isSubjectScraping, enqueueSubjectScrape } =
+    useScraperAsyncWatcher({
+      onSettledReload: loadDashboard,
+    });
+
   const handleScrapeChannels = useCallback(
     async (topic: HotTopic) => {
-      const ytIds = youtubeChannelIds(topic);
-      const ttIds = tiktokChannelIds(topic);
-      const fbIds = facebookChannelIds(topic);
-      if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
-        MakeToast({
-          variant: 'warning',
-          content: 'Chủ đề chưa gắn kênh YouTube/TikTok/Facebook để quét',
-        });
-        return;
-      }
-
-      setScrapingId(topic.id);
-      try {
-        let count = 0;
-        let inserted = 0;
-        let updated = 0;
-        if (ytIds.length > 0) {
-          const res = await scraperApi.runYoutube({ channel_id: ytIds });
-          count += res.data?.items_count ?? 0;
-          inserted += res.data?.upsert_stats?.inserted ?? 0;
-          updated += res.data?.upsert_stats?.updated ?? 0;
-        }
-        if (ttIds.length > 0) {
-          const res = await scraperApi.runTikTok({ channel_id: ttIds });
-          count += res.data?.items_count ?? 0;
-          inserted += res.data?.upsert_stats?.inserted ?? 0;
-          updated += res.data?.upsert_stats?.updated ?? 0;
-        }
-        if (fbIds.length > 0) {
-          const res = await scraperApi.runFacebook({ channel_id: fbIds });
-          count += res.data?.items_count ?? 0;
-          inserted += res.data?.upsert_stats?.inserted ?? 0;
-          updated += res.data?.upsert_stats?.updated ?? 0;
-        }
-        MakeToast({
-          variant: 'success',
-          content: `Đã quét ${count} bài từ "${topic.title}" (${inserted} mới, ${updated} cập nhật)`,
-        });
-        await loadDashboard();
-      } catch (err) {
-        MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-      } finally {
-        setScrapingId(null);
-      }
+      const subjectId = Number(topic.subjectId ?? topic.id);
+      await enqueueSubjectScrape({
+        label: topic.title,
+        subjectId: Number.isFinite(subjectId) ? subjectId : undefined,
+        ytIds: youtubeChannelIds(topic),
+        ttIds: tiktokChannelIds(topic),
+        fbIds: facebookChannelIds(topic),
+      });
     },
-    [loadDashboard]
+    [enqueueSubjectScrape]
   );
 
   useEffect(() => {
@@ -650,7 +634,6 @@ export function HotTopicDashboard() {
 
   return (
     <HotTopicStickyShell
-      onScrapeSuccess={() => void loadDashboard()}
       filterBar={
         <MonthDateFilterBar
           dateFrom={dateFrom}
@@ -817,7 +800,10 @@ export function HotTopicDashboard() {
                   <RankingRow
                     key={topic.id}
                     topic={topic}
-                    scraping={scrapingId === topic.id}
+                    scraping={isSubjectScraping(topic.subjectId ?? topic.id)}
+                    scrapeLocked={scrapeLocked}
+                    resumed={resumed}
+                    canMutate={canMutate}
                     onOpenDetail={openDetail}
                     onScrapeChannels={(t) => void handleScrapeChannels(t)}
                   />

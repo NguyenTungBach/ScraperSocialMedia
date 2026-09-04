@@ -7,26 +7,43 @@ const {
     validateRunYoutube,
     validateRunTikTok,
     validateRefreshYoutubeTail,
+    validateAsyncStatusLatest,
 } = require('../../app/Http/Requests/ScraperRequest');
 
 const router = express.Router();
 const controller = new ScraperController();
 
-/** POST /api/scraper/facebook/run — cào bài + comment Facebook qua Apify */
+/** GET /api/scraper/async-health — queue / stale diagnostics */
+router.get('/async-health', controller.asyncHealth.bind(controller));
+
+/** GET /api/scraper/async-active — pending|running scrape jobs */
+router.get('/async-active', controller.listActiveAsync.bind(controller));
+
+/** GET /api/scraper/async-status?job_type=&scope_key= — latest job for scope */
+router.get(
+    '/async-status',
+    validateAsyncStatusLatest,
+    controller.showLatestAsyncStatus.bind(controller)
+);
+
+/** GET /api/scraper/async-status/:id — poll job status */
+router.get('/async-status/:id', controller.showAsyncStatus.bind(controller));
+
+/** POST /api/scraper/facebook/run — enqueue Facebook scrape (202) */
 router.post(
     '/facebook/run',
     validateRunFacebook,
     controller.runFacebook.bind(controller)
 );
 
-/** POST /api/scraper/youtube/run — cào video kênh YouTube qua Data API v3 */
+/** POST /api/scraper/youtube/run — enqueue YouTube scrape (202) */
 router.post(
     '/youtube/run',
     validateRunYoutube,
     controller.runYoutube.bind(controller)
 );
 
-/** POST /api/scraper/tiktok/run — cào video + comment TikTok qua Apify */
+/** POST /api/scraper/tiktok/run — enqueue TikTok scrape (202) */
 router.post(
     '/tiktok/run',
     validateRunTikTok,

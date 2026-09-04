@@ -1,7 +1,7 @@
 'use strict';
 
 const { toCount } = require('./PostScoreHelper');
-const { assignThreadKeys } = require('./CommentHelper');
+const { assignThreadKeys, finalizePlatformCommentOrder } = require('./CommentHelper');
 
 function pickNested(item, dottedKey) {
     if (!item || typeof item !== 'object') return undefined;
@@ -160,18 +160,23 @@ function normalizeOneTikTokComment(item, { parentId = null, sortOrder = 0 } = {}
 
 /**
  * Flatten top-level + nested replies từ dataset Comments Scraper.
- * @returns {object[]} comments đã assignThreadKeys
+ * Clockworks actor trả theo thứ tự Top mặc định của TikTok (không có sort “Mới nhất”).
+ * @returns {object[]} comments đã assignThreadKeys + sort_order nền tảng
  */
 function normalizeTikTokCommentItems(items = []) {
     const flat = [];
     let sortOrder = 0;
+    const seen = new Set();
 
     for (const item of items) {
         if (!item) continue;
 
-        const top = normalizeOneTikTokComment(item, { sortOrder: sortOrder++ });
-        if (!top) continue;
-        flat.push(top);
+        const row = normalizeOneTikTokComment(item, { sortOrder: sortOrder++ });
+        if (!row || seen.has(row.platform_comment_id)) continue;
+        seen.add(row.platform_comment_id);
+        flat.push(row);
+
+        if (row.parent_platform_comment_id) continue;
 
         const replies = Array.isArray(item.replies)
             ? item.replies
@@ -181,15 +186,17 @@ function normalizeTikTokCommentItems(items = []) {
 
         for (const reply of replies) {
             const normalizedReply = normalizeOneTikTokComment(reply, {
-                parentId: top.platform_comment_id,
+                parentId: row.platform_comment_id,
                 sortOrder: sortOrder++,
             });
-            if (normalizedReply) flat.push(normalizedReply);
+            if (!normalizedReply || seen.has(normalizedReply.platform_comment_id)) continue;
+            seen.add(normalizedReply.platform_comment_id);
+            flat.push(normalizedReply);
         }
     }
 
-    // Flat items that already carry parent id (no nesting)
-    return assignThreadKeys(flat);
+    assignThreadKeys(flat);
+    return finalizePlatformCommentOrder(flat);
 }
 
 function toTikTokVideoResponse(normalized) {

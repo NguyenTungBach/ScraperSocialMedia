@@ -17,11 +17,13 @@ import {
 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
-import { scraperApi } from '@/lib/api/scraper';
+import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS, urlPlaceholderForPlatform } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import { HotTopicHeader } from './HotTopicHeader';
 import { PlatformBadge } from './PlatformBadge';
 import { ChannelSnapshotModal } from './ChannelSnapshotModal';
@@ -31,22 +33,97 @@ import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelManagement.module.scss';
 
 const PAGE_SIZE = 20;
+/** Trần nhập chung trên FE (BE không validate max cứng cho FB/TikTok). */
+const SCRAPE_LIMIT_MAX = 1_000_000_000;
+/** Khớp YouTubeService.getPlaylistVideoIds — 1 lần playlistItems, tối đa 50. */
+const YOUTUBE_MAX_POSTS_PER_SCRAPE = 50;
+/** Khớp YouTubeService.getCommentThreads / getCommentReplies — maxResults API ≤ 100, không paginate. */
+const YOUTUBE_MAX_TOP_COMMENTS = 100;
+const YOUTUBE_MAX_REPLIES = 100;
+const DEFAULT_MAX_POSTS = 10;
+const DEFAULT_MAX_TOP_COMMENTS = 30;
+const DEFAULT_MAX_REPLIES = 10;
 
 interface ChannelFormState {
   name: string;
   url: string;
   type_channel: string;
+  max_posts: number;
+  max_top_comments: number;
+  max_replies: number;
 }
 
 const EMPTY_FORM: ChannelFormState = {
   name: '',
   url: '',
   type_channel: 'youtube',
+  max_posts: DEFAULT_MAX_POSTS,
+  max_top_comments: DEFAULT_MAX_TOP_COMMENTS,
+  max_replies: DEFAULT_MAX_REPLIES,
 };
 
+function clampScrapeLimit(value: unknown, fallback: number, max = SCRAPE_LIMIT_MAX): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+function isYoutubePlatform(platform: string): boolean {
+  return normalizePlatform(platform) === 'youtube';
+}
+
+/** Trần Max bài / lần cào theo nền tảng. */
+function maxPostsCapForPlatform(platform: string): number {
+  return isYoutubePlatform(platform) ? YOUTUBE_MAX_POSTS_PER_SCRAPE : SCRAPE_LIMIT_MAX;
+}
+
+/** Trần Max comment gốc / bài. */
+function maxTopCommentsCapForPlatform(platform: string): number {
+  return isYoutubePlatform(platform) ? YOUTUBE_MAX_TOP_COMMENTS : SCRAPE_LIMIT_MAX;
+}
+
+/** Trần Max reply / comment. */
+function maxRepliesCapForPlatform(platform: string): number {
+  return isYoutubePlatform(platform) ? YOUTUBE_MAX_REPLIES : SCRAPE_LIMIT_MAX;
+}
+
+function clampLimitsForPlatform(
+  platform: string,
+  limits: { max_posts: unknown; max_top_comments: unknown; max_replies: unknown }
+) {
+  return {
+    max_posts: clampScrapeLimit(
+      limits.max_posts,
+      DEFAULT_MAX_POSTS,
+      maxPostsCapForPlatform(platform)
+    ),
+    max_top_comments: clampScrapeLimit(
+      limits.max_top_comments,
+      DEFAULT_MAX_TOP_COMMENTS,
+      maxTopCommentsCapForPlatform(platform)
+    ),
+    max_replies: clampScrapeLimit(
+      limits.max_replies,
+      DEFAULT_MAX_REPLIES,
+      maxRepliesCapForPlatform(platform)
+    ),
+  };
+}
+
+function scrapeLimitsHint(platform: string): string {
+  const p = normalizePlatform(platform);
+  if (p === 'youtube') {
+    return `YouTube (trần API mỗi lần cào, không paginate): tối đa ${YOUTUBE_MAX_POSTS_PER_SCRAPE} bài · ${YOUTUBE_MAX_TOP_COMMENTS} comment gốc/bài · ${YOUTUBE_MAX_REPLIES} reply/comment.`;
+  }
+  if (p === 'facebook' || p === 'tiktok') {
+    return `${p === 'facebook' ? 'Facebook' : 'TikTok'}: không có trần cứng như YouTube — dùng đúng số bạn nhập.`;
+  }
+  return `Giới hạn cào theo kênh (tối đa ${SCRAPE_LIMIT_MAX.toLocaleString('vi-VN')}).`;
+}
 type FormMode = 'create' | 'edit';
 
 export function ChannelManagement() {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const [searchInput, setSearchInput] = useState('');
   const [query, setQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState('');
@@ -63,7 +140,6 @@ export function ChannelManagement() {
   const [form, setForm] = useState<ChannelFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [scrapingId, setScrapingId] = useState<number | null>(null);
   const [statsChannel, setStatsChannel] = useState<ChannelItem | null>(null);
   const [compareChannelIds, setCompareChannelIds] = useState<number[] | null>(null);
   const [compareByDayChannel, setCompareByDayChannel] = useState<ChannelItem | null>(null);
@@ -98,6 +174,26 @@ export function ChannelManagement() {
     [page, platformFilter, query]
   );
 
+  const reloadAfterScrape = useCallback(() => {
+    void loadList({ page, q: query, type_channel: platformFilter });
+  }, [loadList, page, platformFilter, query]);
+
+  const {
+    scrapeLocked,
+    resumed,
+    highlightChannelIds,
+    isChannelScraping,
+    enqueueChannelScrape,
+  } = useScraperAsyncWatcher({
+    onSettledReload: reloadAfterScrape,
+  });
+
+  const scrapingNames = useMemo(() => {
+    if (highlightChannelIds.length === 0) return [];
+    const idSet = new Set(highlightChannelIds);
+    return items.filter((ch) => idSet.has(ch.id)).map((ch) => ch.name);
+  }, [highlightChannelIds, items]);
+
   useEffect(() => {
     void loadList({ page: 1, q: query, type_channel: platformFilter });
   }, [loadList, query, platformFilter]);
@@ -120,10 +216,16 @@ export function ChannelManagement() {
   const openEdit = (item: ChannelItem) => {
     setFormMode('edit');
     setEditingId(item.id);
+    const type_channel = item.type_channel || 'youtube';
     setForm({
       name: item.name || '',
       url: item.url || '',
-      type_channel: item.type_channel || 'youtube',
+      type_channel,
+      ...clampLimitsForPlatform(type_channel, {
+        max_posts: item.max_posts,
+        max_top_comments: item.max_top_comments,
+        max_replies: item.max_replies,
+      }),
     });
     setFormOpen(true);
   };
@@ -144,11 +246,22 @@ export function ChannelManagement() {
       return;
     }
 
+    const { max_posts, max_top_comments, max_replies } = clampLimitsForPlatform(
+      form.type_channel,
+      {
+        max_posts: form.max_posts,
+        max_top_comments: form.max_top_comments,
+        max_replies: form.max_replies,
+      }
+    );
+
     setSaving(true);
     try {
       const identityLocked = formMode === 'edit';
+      const limits = { max_posts, max_top_comments, max_replies };
       const payload = {
         name,
+        ...limits,
         ...(identityLocked
           ? {}
           : {
@@ -192,33 +305,11 @@ export function ChannelManagement() {
       return;
     }
 
-    setScrapingId(item.id);
-    try {
-      const res =
-        platform === 'tiktok'
-          ? await scraperApi.runTikTok({ channel_id: [item.id] })
-          : platform === 'facebook'
-            ? await scraperApi.runFacebook({ channel_id: [item.id] })
-            : await scraperApi.runYoutube({ channel_id: [item.id] });
-      const data = res.data;
-      const count = data?.items_count ?? 0;
-      const inserted = data?.upsert_stats?.inserted ?? 0;
-      const updated = data?.upsert_stats?.updated ?? 0;
-      const label =
-        platform === 'tiktok'
-          ? 'video TikTok'
-          : platform === 'facebook'
-            ? 'bài Facebook'
-            : 'video';
-      MakeToast({
-        variant: 'success',
-        content: `Đã quét ${count} ${label} từ "${item.name}" (${inserted} mới, ${updated} cập nhật)`,
-      });
-    } catch (err) {
-      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-    } finally {
-      setScrapingId(null);
-    }
+    await enqueueChannelScrape({
+      label: item.name,
+      channelId: item.id,
+      platform,
+    });
   };
 
   const handleDelete = async (item: ChannelItem) => {
@@ -295,15 +386,30 @@ export function ChannelManagement() {
                 </option>
               ))}
             </select>
-            <button type="button" className={styles.addBtn} onClick={openCreate}>
-              <Plus size={16} aria-hidden />
-              Thêm kênh
-            </button>
+            {canMutate && (
+              <button type="button" className={styles.addBtn} onClick={openCreate}>
+                <Plus size={16} aria-hidden />
+                Thêm kênh
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       <main className={styles.main}>
+        {scrapeLocked && (
+          <div className={styles.scrapeBanner} role="status" aria-live="polite">
+            <Loader2 size={16} className={dash.spin} aria-hidden />
+            <span>
+              {resumed ? 'Đang tiếp tục theo dõi job quét' : 'Đang quét nền'}
+              {scrapingNames.length > 0
+                ? `: ${scrapingNames.join(', ')}`
+                : highlightChannelIds.length > 0
+                  ? ` (channel id: ${highlightChannelIds.join(', ')})`
+                  : '…'}
+            </span>
+          </div>
+        )}
         {error && (
           <div className={dash.emptyState} role="alert">
             {error}
@@ -387,57 +493,67 @@ export function ChannelManagement() {
                     >
                       <CalendarRange size={15} aria-hidden />
                     </button>
-                    {(normalizePlatform(item.type_channel) === 'youtube' ||
-                      normalizePlatform(item.type_channel) === 'tiktok' ||
-                      normalizePlatform(item.type_channel) === 'facebook') && (
+                    {(canMutate &&
+                      (normalizePlatform(item.type_channel) === 'youtube' ||
+                        normalizePlatform(item.type_channel) === 'tiktok' ||
+                        normalizePlatform(item.type_channel) === 'facebook')) && (
                       <button
                         type="button"
                         className={cn(styles.iconBtn, styles.scrapeIconBtn)}
                         onClick={() => void handleScrapeChannel(item)}
-                        disabled={scrapingId === item.id}
+                        disabled={scrapeLocked}
                         aria-label={`Quét data ${item.name}`}
                         title={
-                          normalizePlatform(item.type_channel) === 'tiktok'
-                            ? 'Quét data TikTok'
-                            : normalizePlatform(item.type_channel) === 'facebook'
-                              ? 'Quét data Facebook'
-                              : 'Quét data YouTube'
+                          scrapeLocked
+                            ? resumed
+                              ? 'Đang tiếp tục theo dõi job quét (sau F5)'
+                              : 'Đang có job quét chạy nền'
+                            : normalizePlatform(item.type_channel) === 'tiktok'
+                              ? 'Quét data TikTok'
+                              : normalizePlatform(item.type_channel) === 'facebook'
+                                ? 'Quét data Facebook'
+                                : 'Quét data YouTube'
                         }
                       >
-                        {scrapingId === item.id ? (
+                        {isChannelScraping(item.id) ||
+                        (scrapeLocked && highlightChannelIds.length === 0) ? (
                           <Loader2 size={15} className={dash.spin} aria-hidden />
                         ) : (
                           <ScanLine size={15} aria-hidden />
                         )}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className={styles.iconBtn}
-                      onClick={() => openEdit(item)}
-                      aria-label={`Sửa ${item.name}`}
-                      title="Sửa"
-                    >
-                      <Pencil size={15} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(styles.iconBtn, styles.deleteBtn)}
-                      onClick={() => handleDelete(item)}
-                      disabled={item.can_delete === false || deletingId === item.id}
-                      aria-label={`Xóa ${item.name}`}
-                      title={
-                        item.can_delete === false
-                          ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
-                          : 'Xóa'
-                      }
-                    >
-                      {deletingId === item.id ? (
-                        <Loader2 size={15} className={dash.spin} aria-hidden />
-                      ) : (
-                        <Trash2 size={15} aria-hidden />
-                      )}
-                    </button>
+                    {canMutate && (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.iconBtn}
+                          onClick={() => openEdit(item)}
+                          aria-label={`Sửa ${item.name}`}
+                          title="Sửa"
+                        >
+                          <Pencil size={15} aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(styles.iconBtn, styles.deleteBtn)}
+                          onClick={() => handleDelete(item)}
+                          disabled={item.can_delete === false || deletingId === item.id}
+                          aria-label={`Xóa ${item.name}`}
+                          title={
+                            item.can_delete === false
+                              ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
+                              : 'Xóa'
+                          }
+                        >
+                          {deletingId === item.id ? (
+                            <Loader2 size={15} className={dash.spin} aria-hidden />
+                          ) : (
+                            <Trash2 size={15} aria-hidden />
+                          )}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </article>
               ))
@@ -461,13 +577,12 @@ export function ChannelManagement() {
       </main>
 
       {formOpen && (
-        <div className={styles.modalOverlay} role="presentation" onClick={closeForm}>
+        <div className={styles.modalOverlay} role="presentation">
           <div
             className={styles.modal}
             role="dialog"
             aria-modal="true"
             aria-labelledby="channel-form-title"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.modalHeader}>
               <h2 id="channel-form-title">
@@ -520,9 +635,14 @@ export function ChannelManagement() {
                 <span>Nền tảng</span>
                 <select
                   value={form.type_channel}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, type_channel: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const type_channel = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      type_channel,
+                      ...clampLimitsForPlatform(type_channel, prev),
+                    }));
+                  }}
                   disabled={formMode === 'edit'}
                   title={
                     formMode === 'edit'
@@ -542,6 +662,87 @@ export function ChannelManagement() {
                   </em>
                 )}
               </label>
+              <div className={styles.limitsRow}>
+                <label className={styles.field}>
+                  <span>
+                    Max bài / lần cào
+                    {isYoutubePlatform(form.type_channel) ? (
+                      <span className={styles.limitCap}>
+                        ≤{YOUTUBE_MAX_POSTS_PER_SCRAPE}
+                      </span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxPostsCapForPlatform(form.type_channel)}
+                    value={form.max_posts}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        max_posts: clampScrapeLimit(
+                          e.target.value,
+                          DEFAULT_MAX_POSTS,
+                          maxPostsCapForPlatform(prev.type_channel)
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>
+                    Max comment gốc / bài
+                    {isYoutubePlatform(form.type_channel) ? (
+                      <span className={styles.limitCap}>
+                        ≤{YOUTUBE_MAX_TOP_COMMENTS}
+                      </span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxTopCommentsCapForPlatform(form.type_channel)}
+                    value={form.max_top_comments}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        max_top_comments: clampScrapeLimit(
+                          e.target.value,
+                          DEFAULT_MAX_TOP_COMMENTS,
+                          maxTopCommentsCapForPlatform(prev.type_channel)
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>
+                    Max reply / comment
+                    {isYoutubePlatform(form.type_channel) ? (
+                      <span className={styles.limitCap}>
+                        ≤{YOUTUBE_MAX_REPLIES}
+                      </span>
+                    ) : null}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxRepliesCapForPlatform(form.type_channel)}
+                    value={form.max_replies}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        max_replies: clampScrapeLimit(
+                          e.target.value,
+                          DEFAULT_MAX_REPLIES,
+                          maxRepliesCapForPlatform(prev.type_channel)
+                        ),
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <em className={styles.fieldHint}>{scrapeLimitsHint(form.type_channel)}</em>
               <div className={styles.modalFooter}>
                 <button type="button" className={styles.cancelBtn} onClick={closeForm} disabled={saving}>
                   Hủy

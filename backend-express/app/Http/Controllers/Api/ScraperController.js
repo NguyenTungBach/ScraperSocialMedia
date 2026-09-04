@@ -3,17 +3,39 @@
 const youtubeConfig = require('../../../../config/youtube');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
+const { ScraperAsyncType } = require('../../../Constants/ScraperAsyncStatus');
 const YouTubeTailRefreshService = require('../../../Services/YouTubeTailRefreshService');
-const YouTubeScrapeService = require('../../../Services/YouTubeScrapeService');
-const TikTokScrapeService = require('../../../Services/TikTokScrapeService');
-const FacebookScrapeService = require('../../../Services/FacebookScrapeService');
+const ScraperAsyncService = require('../../../Services/ScraperAsyncService');
+const ScraperAsyncQueueHealth = require('../../../Services/ScraperAsyncQueueHealth');
 
 class ScraperController {
     constructor() {
         this.youtubeTailRefreshService = new YouTubeTailRefreshService();
-        this.youtubeScrapeService = new YouTubeScrapeService();
-        this.tiktokScrapeService = new TikTokScrapeService();
-        this.facebookScrapeService = new FacebookScrapeService();
+    }
+
+    /**
+     * @param {import('express').Response} res
+     * @param {Error & { statusCode?: number, data?: object }} e
+     * @param {import('express').NextFunction} next
+     */
+    handleEnqueueError(res, e, next) {
+        if (e.statusCode === 409 && e.data) {
+            return ResponseService.responseJsonError(
+                res,
+                HTTP_STATUS.CONFLICT,
+                e.message,
+                null,
+                null,
+                e.data
+            );
+        }
+        if (e.statusCode === 422) {
+            return ResponseService.responseJsonError(res, HTTP_STATUS.UNPROCESSABLE_ENTITY, e.message);
+        }
+        if (e.statusCode === 400) {
+            return ResponseService.responseJsonError(res, HTTP_STATUS.BAD_REQUEST, e.message);
+        }
+        return next(e);
     }
 
     /**
@@ -21,15 +43,11 @@ class ScraperController {
      * /scraper/facebook/run:
      *   post:
      *     tags: [Scraper]
-     *     summary: Cào bài Facebook mới nhất + comments theo channel_id[]
+     *     summary: Enqueue cào bài Facebook (async) — trả 202 + async_job_id
      *     description: |
-     *       Body nhận `channel_id[]` (`type_channel=facebook`). Mỗi kênh cần có `url` page/profile.
-     *
-     *       Pha 1 — Actor `KoJrdxJCTtpon81KY` (Facebook Posts): bài mới nhất (`maxResults`) → upsert `scraper_runs`.
-     *       Pha 2 — Actor `apify/facebook-comments-scraper`: comment + reply theo post URLs → insert-only `post_comments`.
-     *
-     *       Yêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:facebook-scrape`.
-     *     security: []
+     *       Body nhận `channel_id[]` (`type_channel=facebook`). Optional `subject_id` cho scope_key.
+     *       Worker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.
+     *       CLI sync: `npm run app:facebook-scrape`.
      *     requestBody:
      *       required: true
      *       content:
@@ -37,25 +55,25 @@ class ScraperController {
      *           schema:
      *             $ref: '#/components/schemas/FacebookScrapeRequest'
      *     responses:
-     *       "200":
-     *         description: Scrape + ingest thành công (kèm upsert_stats, comment_stats, posts_run_id, comments_run_id)
-     *       "422":
-     *         description: channel_id không phải facebook hoặc thiếu url
-     *       "500":
-     *         description: Thiếu APIFY_API_TOKEN
+     *       "202":
+     *         description: Job enqueued
+     *       "409":
+     *         description: Job đã đang chạy cho cùng scope
      */
     async runFacebook(req, res, next) {
         try {
             const data = req.validatedData || {};
-            const result = await this.facebookScrapeService.scrapeChannels({
-                channel_id: data.channel_id || [],
-                maxResults: data.maxResults,
-                commentsPerPost: data.commentsPerPost,
-                maxRepliesPerComment: data.maxRepliesPerComment,
+            const result = await ScraperAsyncService.enqueue(
+                ScraperAsyncType.FACEBOOK_SCRAPE,
+                data,
+                req.user
+            );
+            return res.status(HTTP_STATUS.ACCEPTED).json({
+                code: HTTP_STATUS.ACCEPTED,
+                data: result,
             });
-            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
         } catch (error) {
-            return next(error);
+            return this.handleEnqueueError(res, error, next);
         }
     }
 
@@ -64,22 +82,11 @@ class ScraperController {
      * /scraper/youtube/run:
      *   post:
      *     tags: [Scraper]
-     *     summary: Cào video mới nhất + comment YouTube theo channel_id[]
+     *     summary: Enqueue cào video YouTube (async) — trả 202 + async_job_id
      *     description: |
-     *       Body nhận `channel_id[]` (ID bảng `channels`, `type_channel=youtube`).
-     *       URL kênh hỗ trợ: `/@handle`, `/channel/UCxxx`, `/user/name`, `/c/CustomName`.
-     *
-     *       Luồng YouTube Data API v3:
-     *       1. `channels.list` → uploads playlist + subscriberCount (`follow`)
-     *       2. `playlistItems.list` → videoId mới nhất (`maxResults`, mặc định 10)
-     *       3. `videos.list` → title, publishedAt, views, likes, commentCount
-     *       4. `commentThreads.list` (+ `comments.list` nếu cần thêm reply) → comment / reply
-     *
-     *       Upsert `scraper_runs` → link subjects qua `subject_channels` → recompute `social_posts`.
-     *       Comment insert-only vào `post_comments`. Shares không có trên API → `shares=0`.
-     *
-     *       Yêu cầu `YOUTUBE_API_KEY` trong `.env`. CLI: `npm run app:youtube-scrape`.
-     *     security: []
+     *       Body nhận `channel_id[]`. Optional `subject_id` cho scope_key.
+     *       Worker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.
+     *       CLI sync: `npm run app:youtube-scrape`.
      *     requestBody:
      *       required: true
      *       content:
@@ -87,27 +94,25 @@ class ScraperController {
      *           schema:
      *             $ref: '#/components/schemas/YoutubeScrapeRequest'
      *     responses:
-     *       "200":
-     *         description: Scrape + ingest thành công (kèm upsert_stats, comment_stats, quota_used)
-     *       "404":
-     *         description: Kênh YouTube không tồn tại
-     *       "422":
-     *         description: channel_id không hợp lệ hoặc URL không parse được
-     *       "429":
-     *         description: YouTube API quota exceeded
-     *       "500":
-     *         description: Thiếu hoặc sai YOUTUBE_API_KEY
+     *       "202":
+     *         description: Job enqueued
+     *       "409":
+     *         description: Job đã đang chạy cho cùng scope
      */
     async runYoutube(req, res, next) {
         try {
             const data = req.validatedData || {};
-            const result = await this.youtubeScrapeService.scrapeChannels({
-                channel_id: data.channel_id || [],
-                maxResults: data.maxResults,
+            const result = await ScraperAsyncService.enqueue(
+                ScraperAsyncType.YOUTUBE_SCRAPE,
+                data,
+                req.user
+            );
+            return res.status(HTTP_STATUS.ACCEPTED).json({
+                code: HTTP_STATUS.ACCEPTED,
+                data: result,
             });
-            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
         } catch (error) {
-            return next(error);
+            return this.handleEnqueueError(res, error, next);
         }
     }
 
@@ -116,15 +121,11 @@ class ScraperController {
      * /scraper/tiktok/run:
      *   post:
      *     tags: [Scraper]
-     *     summary: Cào video TikTok mới nhất + comments theo channel_id[]
+     *     summary: Enqueue cào video TikTok (async) — trả 202 + async_job_id
      *     description: |
-     *       Body nhận `channel_id[]` (`type_channel=tiktok`). Mỗi kênh cần có `url` profile.
-     *
-     *       Pha 1 — Actor `clockworks/free-tiktok-scraper`: video mới nhất (`resultsPerPage` / `maxResults`) → upsert `scraper_runs`.
-     *       Pha 2 — Actor `BDec00yAmCm1QbMEI`: comment + reply theo `postURLs` → insert-only `post_comments`.
-     *
-     *       Yêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:tiktok-scrape`.
-     *     security: []
+     *       Body nhận `channel_id[]`. Optional `subject_id` cho scope_key.
+     *       Worker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.
+     *       CLI sync: `npm run app:tiktok-scrape`.
      *     requestBody:
      *       required: true
      *       content:
@@ -132,22 +133,74 @@ class ScraperController {
      *           schema:
      *             $ref: '#/components/schemas/TikTokScrapeRequest'
      *     responses:
-     *       "200":
-     *         description: Scrape + ingest thành công (kèm upsert_stats, comment_stats, video_run_id, comments_run_id)
-     *       "422":
-     *         description: channel_id không phải tiktok hoặc thiếu url
-     *       "500":
-     *         description: Thiếu APIFY_API_TOKEN
+     *       "202":
+     *         description: Job enqueued
+     *       "409":
+     *         description: Job đã đang chạy cho cùng scope
      */
     async runTikTok(req, res, next) {
         try {
             const data = req.validatedData || {};
-            const result = await this.tiktokScrapeService.scrapeChannels({
-                channel_id: data.channel_id || [],
-                maxResults: data.maxResults,
-                commentsPerPost: data.commentsPerPost,
-                maxRepliesPerComment: data.maxRepliesPerComment,
+            const result = await ScraperAsyncService.enqueue(
+                ScraperAsyncType.TIKTOK_SCRAPE,
+                data,
+                req.user
+            );
+            return res.status(HTTP_STATUS.ACCEPTED).json({
+                code: HTTP_STATUS.ACCEPTED,
+                data: result,
             });
+        } catch (error) {
+            return this.handleEnqueueError(res, error, next);
+        }
+    }
+
+    /**
+     * GET /scraper/async-status/:id
+     */
+    async showAsyncStatus(req, res, next) {
+        try {
+            const result = await ScraperAsyncService.getStatus(Number(req.params.id));
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
+        } catch (error) {
+            if (error.statusCode === 404) {
+                return ResponseService.responseJsonError(res, HTTP_STATUS.NOT_FOUND, error.message);
+            }
+            return next(error);
+        }
+    }
+
+    /**
+     * GET /scraper/async-status?job_type=&scope_key=
+     */
+    async showLatestAsyncStatus(req, res, next) {
+        try {
+            const data = req.validatedData || {};
+            const result = await ScraperAsyncService.getLatest(data.job_type, data.scope_key);
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * GET /scraper/async-active — pending|running jobs
+     */
+    async listActiveAsync(_req, res, next) {
+        try {
+            const result = await ScraperAsyncService.listActive();
+            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    /**
+     * GET /scraper/async-health
+     */
+    async asyncHealth(_req, res, next) {
+        try {
+            const result = await ScraperAsyncQueueHealth.evaluate();
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
         } catch (error) {
             return next(error);

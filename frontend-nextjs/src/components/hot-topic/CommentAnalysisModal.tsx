@@ -58,9 +58,37 @@ function AnalysisRowDetails({ row }: { row: CommentAnalysisRow }) {
       {open ? (
         <div className={styles.threadReplies}>
           {row.replies.map((reply) => (
-            <p key={reply.id} className={styles.threadReply}>
-              <b>{reply.author || 'Ẩn danh'}:</b> {reply.text}
-            </p>
+            <div key={reply.id} className={styles.threadReply}>
+              <p>
+                <b>{reply.author || 'Ẩn danh'}:</b> {reply.text}
+              </p>
+              {reply.classified_as ||
+              (reply.sentiment && reply.sentiment !== 'unknown') ||
+              (reply.category && reply.category !== 'unknown') ? (
+                <p className={styles.replyMeta}>
+                  {reply.classified_as ? (
+                    <span
+                      className={cn(
+                        styles.badge,
+                        styles[toneClassName(reply.classified_as) as keyof typeof styles]
+                      )}
+                    >
+                      {classifyLabel(reply.classified_as)}
+                    </span>
+                  ) : null}
+                  {reply.sentiment && reply.sentiment !== 'unknown'
+                    ? ` · ${classifyLabel(reply.sentiment)}`
+                    : null}
+                  {reply.category && reply.category !== 'unknown'
+                    ? ` · ${classifyLabel(reply.category)}`
+                    : null}
+                  {reply.severity && reply.severity !== 'unknown'
+                    ? ` · ${classifyLabel(reply.severity)}`
+                    : null}
+                </p>
+              ) : null}
+              {reply.reason ? <p className={styles.rowReason}>{reply.reason}</p> : null}
+            </div>
           ))}
         </div>
       ) : null}

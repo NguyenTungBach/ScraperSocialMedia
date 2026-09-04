@@ -9,8 +9,8 @@
 # Tuỳ chọn Variables:
 #   MAIL_PORT (mặc định 587), MAIL_ALERT_BCC (BCC khi báo lỗi dịch vụ / alert)
 #   DB_PORT (mặc định 19437), DB_SSL (mặc định true)
-#   SCRAPE_MAX_POSTS / SCRAPE_MAX_TOP_COMMENTS / SCRAPE_MAX_REPLIES (chung mọi nền tảng)
 #   YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube trong DB)
+# Limit cào lấy từ channels.max_posts / max_top_comments / max_replies
 #
 # Chạy: Actions → "YouTube Scraper Cron" → Run workflow
 
@@ -99,9 +99,6 @@ jobs:
           MAIL_FROM_ADDRESS: ${{ vars.MAIL_FROM_ADDRESS }}
           MAIL_MAIN: ${{ vars.MAIL_MAIN }}
           MAIL_ALERT_BCC: ${{ vars.MAIL_ALERT_BCC }}
-          SCRAPE_MAX_POSTS: ${{ vars.SCRAPE_MAX_POSTS || '10' }}
-          SCRAPE_MAX_TOP_COMMENTS: ${{ vars.SCRAPE_MAX_TOP_COMMENTS || '30' }}
-          SCRAPE_MAX_REPLIES: ${{ vars.SCRAPE_MAX_REPLIES || '10' }}
           YOUTUBE_CHANNEL_IDS: ${{ inputs.channel_ids || vars.YOUTUBE_CHANNEL_IDS }}
         run: npm run app:youtube-scrape
 

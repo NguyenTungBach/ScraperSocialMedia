@@ -13,9 +13,9 @@ schemas:
     description: |
       Role:
       - `admin`
-      - `driver`
+      - `member`
     type: string
-    enum: [admin, driver]
+    enum: [admin, member]
   Channel:
     type: object
     properties:

@@ -11,6 +11,8 @@ import {
 import type { ChannelItem } from '@/lib/api/channels';
 import { formatDateInput } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
 import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelSnapshotModal.module.scss';
 
@@ -35,6 +37,7 @@ interface ChannelSnapshotModalProps {
 }
 
 export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalProps) {
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const [date, setDate] = useState(todayLocal);
   const [loading, setLoading] = useState(true);
   const [snapshotting, setSnapshotting] = useState(false);
@@ -114,7 +117,7 @@ export function ChannelSnapshotModal({ channel, onClose }: ChannelSnapshotModalP
             <p className={styles.sub}>Snapshot theo ngày (metrics đã đóng băng)</p>
           </div>
           <div className={styles.headerActions}>
-            {isToday ? (
+            {canMutate && isToday ? (
               <button
                 type="button"
                 className={styles.snapshotBtn}

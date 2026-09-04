@@ -1,7 +1,7 @@
 'use strict';
 
 const { toCount, normalizeApifyItem } = require('./PostScoreHelper');
-const { assignThreadKeys } = require('./CommentHelper');
+const { assignThreadKeys, finalizePlatformCommentOrder } = require('./CommentHelper');
 
 /**
  * Chuẩn hóa URL bài Facebook (bỏ query/hash) để join comment dataset.
@@ -91,18 +91,24 @@ function normalizeOneFacebookComment(item, { parentId = null, sortOrder = 0 } = 
 
 /**
  * Flatten comments (+ nested replies nếu actor trả mảng replies).
- * @returns {object[]} comments đã assignThreadKeys
+ * Giữ thứ tự Apify (viewOption RANKED_* = Phù hợp nhất / Hàng đầu trên Facebook).
+ * @returns {object[]} comments đã assignThreadKeys + sort_order nền tảng
  */
 function normalizeFacebookCommentItems(items = []) {
     const flat = [];
     let sortOrder = 0;
+    const seen = new Set();
 
     for (const item of items) {
         if (!item) continue;
 
-        const top = normalizeOneFacebookComment(item, { sortOrder: sortOrder++ });
-        if (!top) continue;
-        flat.push(top);
+        const row = normalizeOneFacebookComment(item, { sortOrder: sortOrder++ });
+        if (!row || seen.has(row.platform_comment_id)) continue;
+        seen.add(row.platform_comment_id);
+        flat.push(row);
+
+        // Chỉ bung nested replies từ comment gốc (tránh lặp khi Apify trả flat + nested)
+        if (row.parent_platform_comment_id) continue;
 
         const replies = Array.isArray(item.replies)
             ? item.replies
@@ -112,14 +118,17 @@ function normalizeFacebookCommentItems(items = []) {
 
         for (const reply of replies) {
             const normalizedReply = normalizeOneFacebookComment(reply, {
-                parentId: top.platform_comment_id,
+                parentId: row.platform_comment_id,
                 sortOrder: sortOrder++,
             });
-            if (normalizedReply) flat.push(normalizedReply);
+            if (!normalizedReply || seen.has(normalizedReply.platform_comment_id)) continue;
+            seen.add(normalizedReply.platform_comment_id);
+            flat.push(normalizedReply);
         }
     }
 
-    return assignThreadKeys(flat);
+    assignThreadKeys(flat);
+    return finalizePlatformCommentOrder(flat);
 }
 
 function toFacebookPostResponse(normalized) {

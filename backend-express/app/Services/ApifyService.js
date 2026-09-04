@@ -22,7 +22,7 @@ class ApifyService {
         if (!apifyConfig.token) {
             const err = createError(
                 500,
-                'APIFY_API_TOKEN is not configured. Add it to your .env file.'
+                'APIFY_API_TOKEN is not configured. Set it in Admin → Settings (key_scraps).'
             );
             logger.error('[apify] missing token', { operation: 'getClient' });
             fireServiceFailureAlert(err, {
@@ -133,10 +133,15 @@ class ApifyService {
             const maxReplies =
                 overrides.maxRepliesPerComment ?? apifyConfig.facebookMaxRepliesPerComment;
 
+            const resultsLimit = Number(commentsPerPost);
+            if (!Number.isFinite(resultsLimit) || resultsLimit <= 0) {
+                return { run: null, items: [], input: null };
+            }
+
             const input = {
                 ...apifyConfig.facebookCommentsDefaultInput,
                 startUrls: postURLs.map((url) => ({ url })),
-                resultsLimit: Number(commentsPerPost) || apifyConfig.facebookCommentsPerPost,
+                resultsLimit: Math.floor(resultsLimit),
                 includeNestedComments: Number(maxReplies) > 0,
             };
 
@@ -192,14 +197,22 @@ class ApifyService {
             return { run: null, items: [], input: null };
         }
 
+        const commentsPerPost =
+            overrides.commentsPerPost ?? apifyConfig.tiktokCommentsPerPost;
+        if (!Number.isFinite(Number(commentsPerPost)) || Number(commentsPerPost) <= 0) {
+            return { run: null, items: [], input: null };
+        }
+
         return this.runWithAlert('runTikTokCommentsScraper', async () => {
             const client = this.getClient();
+            const topLevel =
+                overrides.topLevelCommentsPerPost ?? Number(commentsPerPost);
             const input = {
                 ...apifyConfig.tiktokCommentsDefaultInput,
                 ...overrides,
                 postURLs,
-                commentsPerPost:
-                    overrides.commentsPerPost ?? apifyConfig.tiktokCommentsPerPost,
+                commentsPerPost: Number(commentsPerPost),
+                topLevelCommentsPerPost: Number(topLevel),
                 maxRepliesPerComment:
                     overrides.maxRepliesPerComment ?? apifyConfig.tiktokMaxRepliesPerComment,
             };

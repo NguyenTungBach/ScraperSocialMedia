@@ -148,15 +148,10 @@ function renderAnalysisTable(videoBlock) {
 }
 
 function buildSubjectAnalysisSection(subjectAnalysis) {
-    const { subjectName, subjectStats, videos = [], geminiDisabled } = subjectAnalysis;
+    const { subjectName, subjectStats, videos = [] } = subjectAnalysis;
     let html = `<div style="margin:24px 0 12px;padding-top:16px;border-top:2px solid #e2e8f0;">
       <h2 style="margin:0 0 8px;color:#0f172a;">▼ ${escapeHtml(subjectName)}</h2>
       <p style="margin:0 0 12px;color:#475569;">Hot ${formatScore(subjectStats?.hot_score)} · Trend ${formatScore(subjectStats?.trend_score)} · ${videos.length} bài viết</p>`;
-
-    if (geminiDisabled) {
-        html += `<p style="color:#b45309;">AI chưa bật — chưa phân tích comment.</p></div>`;
-        return html;
-    }
 
     if (videos.length === 0) {
         html += `<p style="color:#64748b;">Chưa có bài viết hoặc comment để phân tích.</p></div>`;
@@ -227,7 +222,7 @@ function buildNoAlertEmail({ thresholds = {}, subject_id = null } = {}) {
     `;
 }
 
-function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {}, geminiDisabled = false }) {
+function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {} }) {
     const rowsHtml = alertPosts
         .map((row) => {
             const name = row.subject?.name || `#${row.subject_id}`;
@@ -251,9 +246,7 @@ function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {
         .join('');
 
     let analysisHtml = `<h2 style="margin-top:28px;color:#0f172a;">Phân tích comment AI (top bài hot)</h2>`;
-    if (geminiDisabled) {
-        analysisHtml += `<p style="color:#b45309;">GEMINI_ENABLED=false hoặc thiếu API key — chỉ gửi bảng tổng quan.</p>`;
-    } else if (subjectAnalyses.length === 0) {
+    if (subjectAnalyses.length === 0) {
         analysisHtml += `<p style="color:#64748b;">Không có dữ liệu phân tích comment.</p>`;
     } else {
         for (const sa of subjectAnalyses) {

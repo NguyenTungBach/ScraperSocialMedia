@@ -27,6 +27,7 @@ export const en = {
     HOME: 'Home',
     SUBJECTS: 'Subjects',
     CHANNELS: 'Monitored channels',
+    USERS: 'Accounts',
   },
   LAYOUT: {
     LOGOUT: 'Logout',

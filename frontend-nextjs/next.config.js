@@ -24,7 +24,6 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: apiUrl,
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || 'Hoyocodes',
-    NEXT_PUBLIC_AUTH_REQUIRED: process.env.NEXT_PUBLIC_AUTH_REQUIRED || 'false',
   },
   eslint: {
     ignoreDuringBuilds: true,

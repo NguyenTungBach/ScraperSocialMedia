@@ -1,136 +1,47 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState } from 'react';
-import { BarChart3, BellRing, Globe, Loader2, ScanLine, Users } from 'lucide-react';
-import { alertsApi } from '@/lib/api/alerts';
-import { getApiErrorMessage } from '@/lib/api/client';
-import { channelsApi } from '@/lib/api/channels';
-import { scraperApi } from '@/lib/api/scraper';
+import { usePathname, useRouter } from 'next/navigation';
+import { BarChart3, CalendarClock, Loader2, LogOut, Settings, UserCog, Users } from 'lucide-react';
+import { authApi } from '@/lib/api/auth';
+import { isAdmin } from '@/lib/config/auth';
+import { useTranslation } from '@/hooks/useTranslation';
 import { cn } from '@/lib/utils';
+import { setLoading } from '@/lib/utils/handleLoading';
 import { MakeToast } from '@/lib/utils/toast';
+import { useAuthStore } from '@/store/auth';
+import { useLoadingStore } from '@/store/loading';
 import styles from './HotTopicDashboard.module.scss';
 
-/** Tạm ẩn: Quét YouTube, Check alert, Đăng nhập, Ngôn ngữ — đổi `true` khi cần mở lại */
-const SHOW_HEADER_UTILITY_ACTIONS = false;
-
-interface HotTopicHeaderProps {
-  /** Gọi sau khi quét YouTube thành công — dùng để reload dữ liệu trang hiện tại */
-  onScrapeSuccess?: () => void | Promise<void>;
-}
-
-export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
+export function HotTopicHeader() {
   const pathname = usePathname();
-  const [scraping, setScraping] = useState(false);
-  const [checkingAlert, setCheckingAlert] = useState(false);
+  const router = useRouter();
+  const { t } = useTranslation();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const loggingOut = useLoadingStore((state) => state.overlay.show);
+  const showUsers = isAdmin(user?.role);
+  const showSettings = showUsers;
+  const showSchedules = showUsers;
 
   const isHome = pathname === '/home' || pathname === '/';
   const isSubjectsArea =
     pathname === '/subjects' || pathname.startsWith('/subjects/') || pathname === '/channels';
+  const isUsersArea = pathname === '/users' || pathname.startsWith('/users/');
+  const isSchedulesArea = pathname === '/schedules' || pathname.startsWith('/schedules/');
+  const isSettingsArea = pathname === '/settings' || pathname.startsWith('/settings/');
 
-  const handleScrapeAll = async () => {
-    setScraping(true);
+  const handleLogout = async () => {
+    setLoading(true);
     try {
-      const [ytRes, ttRes, fbRes] = await Promise.all([
-        channelsApi.list({ type_channel: 'youtube', per_page: 100 }),
-        channelsApi.list({ type_channel: 'tiktok', per_page: 100 }),
-        channelsApi.list({ type_channel: 'facebook', per_page: 100 }),
-      ]);
-      const ytIds = (ytRes.data?.result || []).map((ch) => ch.id);
-      const ttIds = (ttRes.data?.result || []).map((ch) => ch.id);
-      const fbIds = (fbRes.data?.result || []).map((ch) => ch.id);
-
-      if (ytIds.length === 0 && ttIds.length === 0 && fbIds.length === 0) {
-        MakeToast({
-          variant: 'warning',
-          content: 'Chưa có kênh YouTube/TikTok/Facebook nào trong danh mục',
-        });
-        return;
-      }
-
-      const ok = window.confirm(
-        `Quét dữ liệu ${ytIds.length} kênh YouTube, ${ttIds.length} kênh TikTok và ${fbIds.length} kênh Facebook?`
-      );
-      if (!ok) return;
-
-      let itemsCount = 0;
-      let channelsScraped = 0;
-      let comments = 0;
-      let skipped = 0;
-
-      if (ytIds.length > 0) {
-        const scrapeRes = await scraperApi.runYoutube({ channel_id: ytIds });
-        const data = scrapeRes.data;
-        itemsCount += data?.items_count ?? 0;
-        channelsScraped += data?.channels_scraped ?? 0;
-        comments += data?.comment_stats?.videos_with_comments ?? 0;
-        skipped += data?.channels_skipped?.length ?? 0;
-      }
-      if (ttIds.length > 0) {
-        const scrapeRes = await scraperApi.runTikTok({ channel_id: ttIds });
-        const data = scrapeRes.data;
-        itemsCount += data?.items_count ?? 0;
-        channelsScraped += data?.channels_scraped ?? 0;
-        comments += data?.comment_stats?.videos_with_comments ?? 0;
-        skipped += data?.channels_skipped?.length ?? 0;
-      }
-      if (fbIds.length > 0) {
-        const scrapeRes = await scraperApi.runFacebook({ channel_id: fbIds });
-        const data = scrapeRes.data;
-        itemsCount += data?.items_count ?? 0;
-        channelsScraped += data?.channels_scraped ?? 0;
-        comments +=
-          data?.comment_stats?.posts_with_comments ??
-          data?.comment_stats?.videos_with_comments ??
-          0;
-        skipped += data?.channels_skipped?.length ?? 0;
-      }
-
-      MakeToast({
-        variant: 'success',
-        content: `Đã quét ${itemsCount} bài · ${channelsScraped} kênh${comments ? ` · ${comments} bài có comment` : ''}${skipped ? ` · bỏ qua ${skipped} kênh chưa gắn subject` : ''}`,
-      });
-      await onScrapeSuccess?.();
-    } catch (err) {
-      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+      await authApi.logout();
+    } catch {
+      // Clear local session even when API fails / endpoint missing
     } finally {
-      setScraping(false);
-    }
-  };
-
-  const handleCheckAlert = async () => {
-    setCheckingAlert(true);
-    try {
-      const res = await alertsApi.checkGmail();
-      const data = res.data;
-
-      if (data?.sent) {
-        const bccNote =
-          data.bcc_count && data.bcc_count > 0 ? ` · BCC ${data.bcc_count} người` : '';
-
-        if (data.reason === 'no_candidates_over_threshold') {
-          const hot = data.thresholds?.hot ?? '?';
-          const trend = data.thresholds?.trend ?? '?';
-          MakeToast({
-            variant: 'success',
-            content: `Đã gửi email: không có đối tượng vượt ngưỡng (hot ≥ ${hot}, trend ≥ ${trend})${bccNote}`,
-          });
-          return;
-        }
-
-        MakeToast({
-          variant: 'success',
-          content: `Đã gửi cảnh báo ${data.count} đối tượng vượt ngưỡng hot/trend${bccNote}`,
-        });
-        return;
-      }
-
-      MakeToast({ variant: 'info', content: 'Đã kiểm tra cảnh báo — không có bản ghi cần gửi' });
-    } catch (err) {
-      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-    } finally {
-      setCheckingAlert(false);
+      setLoading(false);
+      logout();
+      MakeToast({ variant: 'info', content: t('MESSAGE_APP.LOGOUT_SUCCESS') });
+      router.replace('/login');
     }
   };
 
@@ -156,52 +67,56 @@ export function HotTopicHeader({ onScrapeSuccess }: HotTopicHeaderProps) {
               <Users size={16} aria-hidden />
               Đối tượng
             </Link>
+            {showUsers && (
+              <Link
+                href="/users"
+                className={cn(styles.navLink, isUsersArea && styles.navLinkActive)}
+              >
+                <UserCog size={16} aria-hidden />
+                Tài khoản
+              </Link>
+            )}
+            {showSchedules && (
+              <Link
+                href="/schedules"
+                className={cn(styles.navLink, isSchedulesArea && styles.navLinkActive)}
+              >
+                <CalendarClock size={16} aria-hidden />
+                Lịch chạy
+              </Link>
+            )}
+            {showSettings && (
+              <Link
+                href="/settings"
+                className={cn(styles.navLink, isSettingsArea && styles.navLinkActive)}
+              >
+                <Settings size={16} aria-hidden />
+                Cài đặt
+              </Link>
+            )}
           </div>
-
-          {SHOW_HEADER_UTILITY_ACTIONS && (
-            <div className={styles.navActions}>
-              <button
-                type="button"
-                className={cn(styles.navActionBtn, styles.navActionScrape)}
-                onClick={() => void handleScrapeAll()}
-                disabled={scraping || checkingAlert}
-                title="Quét video mới nhất từ tất cả kênh YouTube/TikTok"
-              >
-                {scraping ? (
-                  <Loader2 size={16} className={styles.spin} aria-hidden />
-                ) : (
-                  <ScanLine size={16} aria-hidden />
-                )}
-                {scraping ? 'Đang quét…' : 'Quét YT/TT'}
-              </button>
-              <button
-                type="button"
-                className={cn(styles.navActionBtn, styles.navActionAlert)}
-                onClick={() => void handleCheckAlert()}
-                disabled={checkingAlert || scraping}
-                title="Kiểm tra và gửi cảnh báo Gmail khi vượt ngưỡng hot/trend"
-              >
-                {checkingAlert ? (
-                  <Loader2 size={16} className={styles.spin} aria-hidden />
-                ) : (
-                  <BellRing size={16} aria-hidden />
-                )}
-                {checkingAlert ? 'Đang kiểm tra…' : 'Check alert'}
-              </button>
-            </div>
-          )}
         </nav>
 
-        {SHOW_HEADER_UTILITY_ACTIONS && (
-          <div className={styles.headerActions}>
-            <button type="button" className={styles.loginBtn}>
-              Đăng nhập
-            </button>
-            <button type="button" className={styles.langBtn} aria-label="Ngôn ngữ">
-              <Globe size={18} aria-hidden />
-            </button>
-          </div>
-        )}
+        <div className={styles.headerActions}>
+          {user && (
+            <span className={styles.userLabel} title={String(user.user_code ?? '')}>
+              {user.user_name || user.user_code}
+            </span>
+          )}
+          <button
+            type="button"
+            className={styles.loginBtn}
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+          >
+            {loggingOut ? (
+              <Loader2 size={16} className={styles.spin} aria-hidden />
+            ) : (
+              <LogOut size={16} aria-hidden />
+            )}
+            {t('LAYOUT.LOGOUT')}
+          </button>
+        </div>
       </div>
     </header>
   );

@@ -2,10 +2,13 @@
 
 require('dotenv').config();
 const scrapeLimits = require('./scrapeLimits');
+const SettingsCache = require('../app/Services/SettingsCache');
 
 module.exports = {
-    /** Secret — bắt buộc trong .env */
-    token: process.env.APIFY_API_TOKEN || '',
+    /** Secret — lấy từ key_scraps (APIFY_API_TOKEN) */
+    get token() {
+        return SettingsCache.get('APIFY_API_TOKEN') || '';
+    },
 
     /** Actor IDs cố định trong code (không cần .env — chỉ là endpoint Apify). */
     facebookActorId: 'KoJrdxJCTtpon81KY',
@@ -27,10 +30,11 @@ module.exports = {
         ],
     },
 
+    /** RANKED_UNFILTERED = “Phù hợp nhất” (default Facebook). Không dùng RECENT_ACTIVITY. */
     facebookCommentsDefaultInput: {
         resultsLimit: scrapeLimits.maxTopComments,
         includeNestedComments: false,
-        viewOption: 'RANKED_THREADED',
+        viewOption: 'RANKED_UNFILTERED',
     },
 
     tiktokResultsPerPage: scrapeLimits.maxPosts,
@@ -59,8 +63,13 @@ module.exports = {
         proxyCountryCode: 'None',
     },
 
+    /**
+     * Clockworks TikTok Comments: không có sortBy — API trả theo Top (mặc định TikTok).
+     * topLevelCommentsPerPost giới hạn comment gốc; maxRepliesPerComment = reply/thread.
+     */
     tiktokCommentsDefaultInput: {
         commentsPerPost: scrapeLimits.maxTopComments,
+        topLevelCommentsPerPost: scrapeLimits.maxTopComments,
         maxRepliesPerComment: scrapeLimits.maxReplies,
         excludePinnedPosts: false,
         resultsPerPage: 100,

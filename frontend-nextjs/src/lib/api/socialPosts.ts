@@ -88,9 +88,7 @@ export interface SocialPostsDashboardParams {
 
 export const socialPostsApi = {
   getDashboard: (params: SocialPostsDashboardParams = {}) =>
-    apiClient.get<SocialPostsDashboard>('/social-posts/dashboard', {
-      skipAuth: true,
-      params: {
+    apiClient.get<SocialPostsDashboard>('/social-posts/dashboard', {params: {
         page: params.page ?? 1,
         per_page: params.per_page ?? 10,
         sort_by: params.sort_by ?? 'discussion',
@@ -102,9 +100,7 @@ export const socialPostsApi = {
     }) as Promise<ApiResponse<SocialPostsDashboard>>,
 
   getStats: (params: { date_from?: string; date_to?: string } = {}) =>
-    apiClient.get<SocialPostStats>('/social-posts/stats', {
-      skipAuth: true,
-      params: {
+    apiClient.get<SocialPostStats>('/social-posts/stats', {params: {
         date_from: params.date_from || undefined,
         date_to: params.date_to || undefined,
       },
@@ -113,9 +109,7 @@ export const socialPostsApi = {
   list: (params: Omit<SocialPostsDashboardParams, 'chart_limit'> = {}) =>
     apiClient.get<{ result: SocialPostItem[]; pagination: SocialPostsPagination }>(
       '/social-posts',
-      {
-        skipAuth: true,
-        params: {
+      {params: {
           page: params.page ?? 1,
           per_page: params.per_page ?? 20,
           sort_by: params.sort_by ?? 'hot_score',

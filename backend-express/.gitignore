@@ -11,6 +11,7 @@ storage/app/*
 !storage/app/.gitkeep
 # Environment variables
 .env
+.env copy
 .env.test
 .env.local
 .env.*.local

@@ -1,6 +1,8 @@
-/**
- * Temporary auth bypass — set `NEXT_PUBLIC_AUTH_REQUIRED=true` to re-enable login.
- * Default: auth OFF for local scaffold.
- */
-export const isAuthRequired = (): boolean =>
-  process.env.NEXT_PUBLIC_AUTH_REQUIRED === 'true';
+/** Role helpers — admin full access, member read-only. */
+export const ROLE_ADMIN = 'admin';
+export const ROLE_MEMBER = 'member';
+
+export const isAdmin = (role?: string | number | null): boolean =>
+  String(role ?? '').toLowerCase() === ROLE_ADMIN;
+
+export const canWrite = (role?: string | number | null): boolean => isAdmin(role);

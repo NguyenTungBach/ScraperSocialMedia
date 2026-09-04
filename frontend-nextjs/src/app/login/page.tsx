@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Login page — scaffold from awa-frontend-nextjs.
- * API: POST `/auth/login` with `user_code` + `password` (backend-express).
+ * Login — NetScope Trend (khớp giao diện màn quản lý).
+ * API: POST `/auth/login` with `user_code` + `password`.
  */
 
 import { useState } from 'react';
@@ -86,80 +86,76 @@ export default function LoginPage() {
   };
 
   return (
-    <div className={styles['login-page']}>
-      <div className={styles['login-container']}>
-        <div className={styles['form-login']}>
-          <div className={styles['show-title']}>
-            <h1 className={styles['title-login']}>{t('LOGIN.TITLE_LOGIN')}</h1>
-          </div>
+    <div className={styles.page}>
+      <div className={styles.atmosphere} aria-hidden />
 
-          <form onSubmit={handleSubmit} className={styles['form-input-account']}>
-            <div className={styles['input-user-id']}>
-              <div className={styles['input-field-col']}>
-                <div className={`${styles['input-group']} ${errors.userCode ? styles['is-invalid'] : ''}`}>
-                  <span className={styles['input-group-text']}>
-                    <User size={22} strokeWidth={2.25} fill="currentColor" className={styles['input-icon']} aria-hidden />
-                  </span>
-                  <input
-                    id="user_code"
-                    className={styles['form-control']}
-                    inputMode="numeric"
-                    autoComplete="username"
-                    placeholder={t('LOGIN.PLACEHOLDER_USER_ID')}
-                    value={userCode}
-                    disabled={loading}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, '').slice(0, 15);
-                      setUserCode(v);
-                      if (errors.userCode) setErrors((prev) => ({ ...prev, userCode: undefined }));
-                    }}
-                    aria-invalid={!!errors.userCode}
-                  />
-                </div>
-                {errors.userCode && <p className={styles['error-text']}>{errors.userCode}</p>}
-              </div>
-            </div>
-
-            <div className={styles['input-password']}>
-              <div className={styles['input-field-col']}>
-                <div className={`${styles['input-group']} ${errors.password ? styles['is-invalid'] : ''}`}>
-                  <span className={styles['input-group-text']}>
-                    <Key size={22} strokeWidth={2.25} fill="currentColor" className={styles['input-icon']} aria-hidden />
-                  </span>
-                  <input
-                    id="password"
-                    className={styles['form-control']}
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder={t('LOGIN.PLACEHOLDER_USER_PASSWORD')}
-                    value={password}
-                    disabled={loading}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                    }}
-                    aria-invalid={!!errors.password}
-                  />
-                </div>
-                {errors.password && <p className={styles['error-text']}>{errors.password}</p>}
-              </div>
-            </div>
-
-            <div className={styles['form-submit']}>
-              <button type="submit" disabled={loading} className={styles['btn-submit']}>
-                {loading ? (
-                  <>
-                    <Loader2 size={18} className={styles.spin} />
-                    {t('LOGIN.BUTTON_LOGIN_LOADING')}
-                  </>
-                ) : (
-                  t('LOGIN.BUTTON_LOGIN')
-                )}
-              </button>
-            </div>
-          </form>
+      <main className={styles.panel}>
+        <div className={styles.brand}>
+          <span className={styles.logoSocial}>NetScope</span>
+          <span className={styles.logoTrend}>Trend</span>
         </div>
-      </div>
+        <p className={styles.tagline}>base on Younet Media</p>
+        <h1 className={styles.title}>{t('LOGIN.TITLE_LOGIN')}</h1>
+        <p className={styles.subtitle}>Đăng nhập để tiếp tục theo dõi xu hướng mạng xã hội</p>
+
+        <form onSubmit={handleSubmit} className={styles.form} noValidate>
+          <label className={styles.field}>
+            <span className={styles.label}>{t('LOGIN.PLACEHOLDER_USER_ID')}</span>
+            <div className={`${styles.inputWrap} ${errors.userCode ? styles.invalid : ''}`}>
+              <User size={18} strokeWidth={2.25} className={styles.icon} aria-hidden />
+              <input
+                id="user_code"
+                className={styles.input}
+                inputMode="numeric"
+                autoComplete="username"
+                placeholder={t('LOGIN.PLACEHOLDER_USER_ID')}
+                value={userCode}
+                disabled={loading}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '').slice(0, 15);
+                  setUserCode(v);
+                  if (errors.userCode) setErrors((prev) => ({ ...prev, userCode: undefined }));
+                }}
+                aria-invalid={!!errors.userCode}
+              />
+            </div>
+            {errors.userCode && <p className={styles.error}>{errors.userCode}</p>}
+          </label>
+
+          <label className={styles.field}>
+            <span className={styles.label}>{t('LOGIN.PLACEHOLDER_USER_PASSWORD')}</span>
+            <div className={`${styles.inputWrap} ${errors.password ? styles.invalid : ''}`}>
+              <Key size={18} strokeWidth={2.25} className={styles.icon} aria-hidden />
+              <input
+                id="password"
+                className={styles.input}
+                type="password"
+                autoComplete="current-password"
+                placeholder={t('LOGIN.PLACEHOLDER_USER_PASSWORD')}
+                value={password}
+                disabled={loading}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                }}
+                aria-invalid={!!errors.password}
+              />
+            </div>
+            {errors.password && <p className={styles.error}>{errors.password}</p>}
+          </label>
+
+          <button type="submit" disabled={loading} className={styles.submit}>
+            {loading ? (
+              <>
+                <Loader2 size={18} className={styles.spin} />
+                {t('LOGIN.BUTTON_LOGIN_LOADING')}
+              </>
+            ) : (
+              t('LOGIN.BUTTON_LOGIN')
+            )}
+          </button>
+        </form>
+      </main>
     </div>
   );
 }

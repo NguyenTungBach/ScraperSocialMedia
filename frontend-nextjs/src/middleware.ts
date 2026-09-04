@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { isAuthRequired } from '@/lib/config/auth';
 import { canAccessPathname, DEFAULT_AFTER_LOGIN } from '@/lib/config/navigation';
 import { isPublicRoute } from '@/lib/config/routes';
 
@@ -22,14 +21,6 @@ export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   if (pathname.startsWith('/api')) {
-    return NextResponse.next();
-  }
-
-  // Temporary: skip all auth redirects
-  if (!isAuthRequired()) {
-    if (pathname === '/') {
-      return NextResponse.redirect(new URL(DEFAULT_AFTER_LOGIN, request.url));
-    }
     return NextResponse.next();
   }
 

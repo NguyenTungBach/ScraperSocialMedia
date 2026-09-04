@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 const logger = require('../app/Logging/logger');
+const SettingsCache = require('../app/Services/SettingsCache');
 const { findCommandBySignature, listCommands } = require('../app/Console/Kernel');
 const { flushPendingServiceFailureAlerts } = require('../app/Services/ServiceFailureAlertService');
 
@@ -16,6 +17,12 @@ async function exitWithCode(code) {
 }
 
 async function main() {
+    try {
+        await SettingsCache.load();
+    } catch (error) {
+        logger.warn('SettingsCache load failed before command', { error: error.message });
+    }
+
     const signature = process.argv[2];
     if (!signature) {
         const available = listCommands().map((CommandClass) => CommandClass.signature).filter(Boolean);

@@ -164,9 +164,23 @@ $st-red: #dc2626;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+  margin-left: auto;
+}
+
+.userLabel {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: $st-muted;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .loginBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 7px 18px;
   background: $st-navy;
   color: $st-white;
@@ -179,6 +193,11 @@ $st-red: #dc2626;
 
   &:hover {
     background: $st-navy-light;
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 }
 
@@ -1032,6 +1051,18 @@ $st-red: #dc2626;
     min-height: 56px;
     padding: 10px 16px;
     gap: 10px 12px;
+  }
+
+  .logo {
+    min-width: 0;
+  }
+
+  .logoBy {
+    display: none;
+  }
+
+  .headerActions {
+    margin-left: auto;
   }
 
   .mainNav {

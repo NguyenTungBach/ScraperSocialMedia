@@ -19,11 +19,8 @@ class GeminiService {
     }
 
     ensureEnabled() {
-        if (!geminiConfig.enabled) {
-            throw createError(503, 'Gemini is disabled. Set GEMINI_ENABLED=true in .env');
-        }
         if (!geminiConfig.apiKey) {
-            this.fail(500, 'GEMINI_API_KEY is not configured', 'ensureEnabled');
+            this.fail(500, 'GEMINI_API_KEY is not configured. Set it in Admin → Settings (key_scraps).', 'ensureEnabled');
         }
     }
 
@@ -138,9 +135,17 @@ class GeminiService {
                             },
                             required: ['negative', 'normal'],
                         },
+                        replies: {
+                            type: 'OBJECT',
+                            properties: {
+                                negative: { type: 'ARRAY', items: analysisItemSchema },
+                                normal: { type: 'ARRAY', items: analysisItemSchema },
+                            },
+                            required: ['negative', 'normal'],
+                        },
                         threads: { type: 'ARRAY', items: threadSchema },
                     },
-                    required: ['lone', 'threads'],
+                    required: ['lone', 'replies', 'threads'],
                 },
             },
         };
@@ -417,10 +422,15 @@ class GeminiService {
             throw createError(502, 'Failed to parse Gemini comment analysis JSON');
         }
 
+        const replies = parsed.replies && typeof parsed.replies === 'object' ? parsed.replies : {};
         return {
             lone: {
                 negative: Array.isArray(parsed.lone.negative) ? parsed.lone.negative : [],
                 normal: Array.isArray(parsed.lone.normal) ? parsed.lone.normal : [],
+            },
+            replies: {
+                negative: Array.isArray(replies.negative) ? replies.negative : [],
+                normal: Array.isArray(replies.normal) ? replies.normal : [],
             },
             threads: Array.isArray(parsed.threads) ? parsed.threads : [],
         };

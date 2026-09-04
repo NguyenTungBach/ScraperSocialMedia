@@ -310,10 +310,24 @@
 }
 
 .threadReply {
-  margin: 0 0 6px;
+  margin: 0 0 10px;
   font-size: 12px;
   line-height: 1.4;
   color: #334155;
+
+  p {
+    margin: 0 0 4px;
+  }
+}
+
+.replyMeta {
+  margin: 0 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #64748b;
 }
 
 .spin {

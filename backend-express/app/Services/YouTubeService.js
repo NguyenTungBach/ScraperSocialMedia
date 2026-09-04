@@ -29,7 +29,7 @@ class YouTubeService {
         if (!youtubeConfig.apiKey) {
             const err = createError(
                 500,
-                'YOUTUBE_API_KEY is not configured. Add it to your .env file.'
+                'YOUTUBE_API_KEY is not configured. Set it in Admin → Settings (key_scraps).'
             );
             this.notifyFailure(err, 'ensureApiKey');
             throw err;
@@ -270,7 +270,9 @@ class YouTubeService {
      * playlistItems.list → video IDs mới nhất (quota 1).
      */
     async getPlaylistVideoIds(playlistId, maxResults = 10) {
-        const limit = Math.min(Math.max(Number(maxResults) || 10, 1), 50);
+        const n = Number(maxResults);
+        if (!Number.isFinite(n) || n <= 0) return [];
+        const limit = Math.min(Math.floor(n), 50);
         const data = await this.request('playlistItems', {
             part: 'snippet',
             playlistId,
@@ -307,8 +309,28 @@ class YouTubeService {
     async scrapeChannelByRef(ref, { maxResults } = {}) {
         const limit =
             maxResults != null
-                ? Math.min(Math.max(Number(maxResults) || 10, 1), 50)
+                ? Number(maxResults)
                 : youtubeConfig.defaultMaxResults;
+
+        if (!Number.isFinite(Number(limit)) || Number(limit) <= 0) {
+            const {
+                channelId,
+                uploadsPlaylistId,
+                follow,
+                videoCount,
+                channelRaw,
+                quota_used: resolveQuota,
+            } = await this.getUploadsPlaylistFromRef(ref);
+            return {
+                videos: [],
+                quota_used: resolveQuota || 1,
+                channelId,
+                uploadsPlaylistId,
+                follow: follow || 0,
+                videoCount: videoCount || 0,
+                channelRaw: channelRaw || null,
+            };
+        }
 
         const {
             channelId,
@@ -352,9 +374,13 @@ class YouTubeService {
 
     /**
      * commentThreads.list → top-level comments (quota 1).
+     * order=relevance: khớp UI YouTube “Hàng đầu” / Top comments
+     * (không phải “Mới nhất” / time).
      */
     async getCommentThreads(videoId, maxResults = 20) {
-        const limit = Math.min(Math.max(Number(maxResults) || 20, 1), 100);
+        const n = Number(maxResults);
+        if (!Number.isFinite(n) || n <= 0) return [];
+        const limit = Math.min(Math.floor(n), 100);
         try {
             const data = await this.request('commentThreads', {
                 part: 'snippet,replies',
@@ -376,7 +402,9 @@ class YouTubeService {
      * comments.list → replies of a top-level comment (quota 1).
      */
     async getCommentReplies(parentId, maxResults = 10) {
-        const limit = Math.min(Math.max(Number(maxResults) || 10, 1), 100);
+        const n = Number(maxResults);
+        if (!Number.isFinite(n) || n <= 0) return [];
+        const limit = Math.min(Math.floor(n), 100);
         const data = await this.request('comments', {
             part: 'snippet',
             parentId,
@@ -393,6 +421,11 @@ class YouTubeService {
     async scrapeVideoComments(videoId, { maxTop, maxReplies } = {}) {
         const topLimit = maxTop ?? youtubeConfig.maxTopComments;
         const replyLimit = maxReplies ?? youtubeConfig.maxReplies;
+
+        if (!Number.isFinite(Number(topLimit)) || Number(topLimit) <= 0) {
+            return { comments: [], quota_used: 0, disabled: false };
+        }
+
         let quotaUsed = 0;
 
         const threads = await this.getCommentThreads(videoId, topLimit);
@@ -402,7 +435,11 @@ class YouTubeService {
             return { comments: [], quota_used: quotaUsed, disabled: false };
         }
 
-        const { normalizeYoutubeCommentItem, assignThreadKeys } = require('../Helpers/CommentHelper');
+        const {
+            normalizeYoutubeCommentItem,
+            assignThreadKeys,
+            finalizePlatformCommentOrder,
+        } = require('../Helpers/CommentHelper');
         const flat = [];
         let sortOrder = 0;
 
@@ -414,6 +451,10 @@ class YouTubeService {
             top.thread_key = topId;
             top.parent_platform_comment_id = null;
             flat.push(top);
+
+            if (!Number.isFinite(Number(replyLimit)) || Number(replyLimit) <= 0) {
+                continue;
+            }
 
             const embedded = thread?.replies?.comments || [];
             const embeddedNormalized = [];
@@ -463,7 +504,12 @@ class YouTubeService {
         }
 
         assignThreadKeys(flat);
-        return { comments: flat, quota_used: quotaUsed, disabled: false };
+        // relevance = Hàng đầu; giữ thứ tự API cho gốc, reply theo thời gian
+        return {
+            comments: finalizePlatformCommentOrder(flat),
+            quota_used: quotaUsed,
+            disabled: false,
+        };
     }
 }
 

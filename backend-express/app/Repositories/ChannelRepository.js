@@ -3,8 +3,15 @@
 const createError = require('http-errors');
 const { Op } = require('sequelize');
 const db = require('../Models');
+const scrapeLimits = require('../../config/scrapeLimits');
 const { normalizeChannelUrl } = require('../Helpers/ChannelUrlHelper');
 const { toCount } = require('../Helpers/PostScoreHelper');
+
+function toLimitInt(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.floor(n);
+}
 
 class ChannelRepository {
     constructor() {
@@ -30,6 +37,9 @@ class ChannelRepository {
             post_count:
                 Number(plain.post_count ?? plain.postCount ?? plain.video_count ?? plain.videoCount ?? 0) ||
                 0,
+            max_posts: toLimitInt(plain.max_posts, scrapeLimits.maxPosts),
+            max_top_comments: toLimitInt(plain.max_top_comments, scrapeLimits.maxTopComments),
+            max_replies: toLimitInt(plain.max_replies, scrapeLimits.maxReplies),
             scraper_runs_count: count,
             has_scraper_runs: count > 0,
             /** URL/nền tảng cố định sau khi tạo — mọi nền tảng */
@@ -89,7 +99,14 @@ class ChannelRepository {
         };
     }
 
-    async createChannel({ name, url, type_channel = 'facebook' } = {}) {
+    async createChannel({
+        name,
+        url,
+        type_channel = 'facebook',
+        max_posts,
+        max_top_comments,
+        max_replies,
+    } = {}) {
         const trimmedName = String(name || '').trim();
         const trimmedUrl = String(url || '').trim();
         if (!trimmedName) throw createError(422, 'name is required');
@@ -99,6 +116,9 @@ class ChannelRepository {
             name: trimmedName,
             url: trimmedUrl,
             type_channel: type_channel || 'facebook',
+            max_posts: toLimitInt(max_posts, scrapeLimits.maxPosts),
+            max_top_comments: toLimitInt(max_top_comments, scrapeLimits.maxTopComments),
+            max_replies: toLimitInt(max_replies, scrapeLimits.maxReplies),
         });
 
         return this.serializeChannel(row, { scraper_runs_count: 0 });
@@ -128,6 +148,18 @@ class ChannelRepository {
             if (nextType !== currentType) {
                 throw createError(422, 'Không thể sửa nền tảng sau khi kênh đã được lưu');
             }
+        }
+        if (payload.max_posts !== undefined) {
+            updates.max_posts = toLimitInt(payload.max_posts, scrapeLimits.maxPosts);
+        }
+        if (payload.max_top_comments !== undefined) {
+            updates.max_top_comments = toLimitInt(
+                payload.max_top_comments,
+                scrapeLimits.maxTopComments
+            );
+        }
+        if (payload.max_replies !== undefined) {
+            updates.max_replies = toLimitInt(payload.max_replies, scrapeLimits.maxReplies);
         }
 
         if (Object.keys(updates).length > 0) {

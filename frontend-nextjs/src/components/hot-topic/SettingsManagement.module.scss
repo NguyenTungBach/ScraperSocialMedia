@@ -1,0 +1,236 @@
+$st-navy: #0f2341;
+$st-orange: #f58220;
+$st-blue: #3b82f6;
+$st-bg: #f0f2f5;
+$st-white: #ffffff;
+$st-text: #1a2332;
+$st-muted: #6b7280;
+$st-border: #e5e7eb;
+$st-red: #dc2626;
+
+.toolbar {
+  background: $st-white;
+  border-bottom: 1px solid $st-border;
+}
+
+.toolbarInner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: $st-text;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pageDesc {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  color: $st-muted;
+}
+
+.toolbarActions {
+  display: flex;
+  gap: 8px;
+}
+
+.saveBtn {
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: $st-orange;
+  color: $st-white;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+}
+
+.main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.loadingBox,
+.errorBox {
+  padding: 32px;
+  text-align: center;
+  color: $st-muted;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.errorBox {
+  color: $st-red;
+}
+
+.formStack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section {
+  background: $st-white;
+  border: 1px solid $st-border;
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: $st-navy;
+}
+
+.sectionDesc {
+  margin: 4px 0 16px;
+  font-size: 0.8125rem;
+  color: $st-muted;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fieldsRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: $st-text;
+
+  > span {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  input {
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid $st-border;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: $st-text;
+    outline: none;
+    background: $st-white;
+    width: 100%;
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: $st-blue;
+    }
+  }
+}
+
+.secretInputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  input {
+    padding-right: 42px;
+  }
+}
+
+.revealBtn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: $st-muted;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  flex-shrink: 0;
+
+  &:hover {
+    color: $st-text;
+    background: #e5e7eb;
+  }
+}
+
+.envName {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: $st-muted;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 400;
+  color: $st-muted;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .toolbarInner,
+  .main {
+    padding: 16px;
+  }
+
+  .saveBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}

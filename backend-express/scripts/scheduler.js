@@ -1,66 +1,138 @@
 'use strict';
 
+/**
+ * PM2 schedule worker — load general_schedules from DB, register node-cron,
+ * spawn `npm run app:*` asynchronously (does not await command handle).
+ *
+ * Reload enabled rows every RELOAD_MS so FE edits apply without PM2 restart.
+ */
+
 require('dotenv').config();
 const cron = require('node-cron');
 const logger = require('../app/Logging/logger');
-const { listSchedulableCommands } = require('../app/Console/Kernel');
+const db = require('../app/Models');
+const SettingsCache = require('../app/Services/SettingsCache');
+const {
+    startSchedule,
+    recoverInterruptedSchedules,
+} = require('../app/Services/ScheduleRunner');
 
-const TIMEZONE = process.env.APP_TIMEZONE || 'Asia/Tokyo';
-const COMMANDS = listSchedulableCommands();
-const runningBySignature = new Set();
+const TIMEZONE = process.env.APP_TIMEZONE || 'Asia/Ho_Chi_Minh';
+const RELOAD_MS = Math.max(Number(process.env.SCHEDULE_RELOAD_MS) || 60_000, 15_000);
 
-async function runCommand(CommandClass) {
-    const signature = CommandClass.signature || CommandClass.name || 'unknown:command';
-    if (runningBySignature.has(signature)) {
-        logger.warn('Scheduled command is already running, skipping this tick', { signature });
+/** @type {import('node-cron').ScheduledTask[]} */
+let activeTasks = [];
+let lastFingerprint = '';
+
+function fingerprint(rows) {
+    return rows
+        .map((r) => `${r.id}|${r.cron_expression}|${r.command}|${r.enabled}|${r.updated_at}`)
+        .join(';');
+}
+
+async function loadEnabledSchedules() {
+    return db.GeneralSchedule.findAll({
+        where: { enabled: true },
+        order: [['id', 'ASC']],
+    });
+}
+
+function stopAllTasks() {
+    for (const task of activeTasks) {
+        try {
+            task.stop();
+        } catch {
+            // ignore
+        }
+    }
+    activeTasks = [];
+}
+
+function registerSchedules(rows) {
+    stopAllTasks();
+
+    for (const row of rows) {
+        const expression = String(row.cron_expression || '').trim();
+        if (!cron.validate(expression)) {
+            logger.error('Invalid schedule cron_expression, skip', {
+                id: row.id,
+                expression,
+            });
+            continue;
+        }
+
+        const scheduleId = Number(row.id);
+        const task = cron.schedule(
+            expression,
+            async () => {
+                try {
+                    await SettingsCache.ensureLoaded();
+                    const fresh = await db.GeneralSchedule.findByPk(scheduleId);
+                    if (!fresh || !fresh.enabled) {
+                        return;
+                    }
+                    await startSchedule(fresh);
+                } catch (error) {
+                    logger.error('Schedule tick failed', {
+                        id: scheduleId,
+                        error: error.message,
+                        stack: error.stack,
+                    });
+                }
+            },
+            { timezone: TIMEZONE }
+        );
+        activeTasks.push(task);
+    }
+
+    logger.info('Schedules registered', {
+        timezone: TIMEZONE,
+        count: activeTasks.length,
+        items: rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cron: r.cron_expression,
+            command: r.command,
+        })),
+    });
+}
+
+async function reloadIfChanged() {
+    const rows = await loadEnabledSchedules();
+    const fp = fingerprint(rows);
+    if (fp === lastFingerprint) {
         return;
     }
-
-    runningBySignature.add(signature);
-    try {
-        const cmd = new CommandClass();
-        const result = await cmd.handle();
-        logger.info('Scheduled command completed', { signature, result });
-    } catch (error) {
-        logger.error('Scheduled command failed', {
-            signature,
-            error: error.message,
-            stack: error.stack
-        });
-    } finally {
-        runningBySignature.delete(signature);
-    }
+    lastFingerprint = fp;
+    registerSchedules(rows);
 }
 
 function shutdown(signal) {
     logger.info('Scheduler worker shutting down', { signal });
+    stopAllTasks();
     process.exit(0);
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-for (const CommandClass of COMMANDS) {
-    const signature = CommandClass.signature || CommandClass.name || 'unknown:command';
-    const expression = CommandClass.schedule;
-    if (!expression || !cron.validate(expression)) {
-        logger.error('Invalid command schedule', { signature, expression });
+(async () => {
+    try {
+        await db.sequelize.authenticate();
+        await SettingsCache.ensureLoaded();
+        await recoverInterruptedSchedules();
+        await reloadIfChanged();
+        setInterval(() => {
+            void reloadIfChanged().catch((error) => {
+                logger.error('Schedule reload failed', { error: error.message });
+            });
+        }, RELOAD_MS);
+        logger.info('Scheduler worker started', { timezone: TIMEZONE, reloadMs: RELOAD_MS });
+    } catch (error) {
+        logger.error('Scheduler worker failed to start', {
+            error: error.message,
+            stack: error.stack,
+        });
         process.exit(1);
     }
-
-    cron.schedule(
-        expression,
-        async () => {
-            await runCommand(CommandClass);
-        },
-        { timezone: TIMEZONE }
-    );
-}
-
-logger.info('Scheduler worker started', {
-    timezone: TIMEZONE,
-    commands: COMMANDS.map((CommandClass) => ({
-        signature: CommandClass.signature || CommandClass.name || 'unknown:command',
-        schedule: CommandClass.schedule || null
-    }))
-});
+})();

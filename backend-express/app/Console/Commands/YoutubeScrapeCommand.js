@@ -1,6 +1,5 @@
 'use strict';
 
-const youtubeConfig = require('../../../config/youtube');
 const YouTubeScrapeService = require('../../Services/YouTubeScrapeService');
 const logger = require('../../Logging/logger');
 
@@ -20,8 +19,8 @@ function parseChannelIds(raw) {
 /**
  * Cào video YouTube — chạy trực tiếp trên GitHub runner (không gọi API Render).
  * Chạy: npm run app:youtube-scrape
- * Env tuỳ chọn: YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube),
- *   SCRAPE_MAX_POSTS
+ * Env tuỳ chọn: YOUTUBE_CHANNEL_IDS (vd. 1,2,3 — trống = tất cả kênh youtube)
+ * Limit cào lấy từ channels.max_posts / max_top_comments / max_replies.
  */
 class YoutubeScrapeCommand {
     static signature = 'app:youtube-scrape';
@@ -30,10 +29,9 @@ class YoutubeScrapeCommand {
 
     async handle() {
         const channel_id = parseChannelIds(process.env.YOUTUBE_CHANNEL_IDS);
-        const maxResults = youtubeConfig.defaultMaxResults;
 
         const service = new YouTubeScrapeService();
-        const result = await service.scrapeChannels({ channel_id, maxResults });
+        const result = await service.scrapeChannels({ channel_id });
 
         logger.info('[youtube-scrape] Scrape finished', {
             channels_scraped: result.channels_scraped,

@@ -2,6 +2,8 @@
  * Navigation config — slim scaffold (login + home).
  */
 
+import { isAdmin } from '@/lib/config/auth';
+
 export const DEFAULT_AFTER_LOGIN = '/home';
 
 export interface NavRouteMeta {
@@ -64,18 +66,63 @@ export const asyncNavModules: NavModule[] = [
       },
     ],
   },
+  {
+    path: '/users',
+    name: 'Users',
+    titleKey: 'ROUTER.USERS',
+    meta: { roles: ['admin'] },
+    children: [
+      {
+        path: '',
+        name: 'UsersIndex',
+        titleKey: 'ROUTER.USERS',
+      },
+    ],
+  },
+  {
+    path: '/schedules',
+    name: 'Schedules',
+    titleKey: 'ROUTER.SCHEDULES',
+    meta: { roles: ['admin'] },
+    children: [
+      {
+        path: '',
+        name: 'SchedulesIndex',
+        titleKey: 'ROUTER.SCHEDULES',
+      },
+    ],
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    titleKey: 'ROUTER.SETTINGS',
+    meta: { roles: ['admin'] },
+    children: [
+      {
+        path: '',
+        name: 'SettingsIndex',
+        titleKey: 'ROUTER.SETTINGS',
+      },
+    ],
+  },
 ];
 
 export function getPermissionNavModules(
-  _role?: string | number,
+  role?: string | number,
   _permissions: string[] = []
 ): NavModule[] {
-  return asyncNavModules.filter((route) => route.hidden !== true);
+  return asyncNavModules.filter((route) => {
+    if (route.hidden) return false;
+    if (route.meta?.roles?.includes('admin')) {
+      return isAdmin(role);
+    }
+    return true;
+  });
 }
 
 export function canAccessPathname(
   pathname: string,
-  _role?: string | number,
+  role?: string | number,
   _permissions: string[] = []
 ): boolean {
   if (pathname === '/home' || pathname.startsWith('/home/')) {
@@ -86,6 +133,15 @@ export function canAccessPathname(
   }
   if (pathname === '/channels' || pathname.startsWith('/channels/')) {
     return true;
+  }
+  if (pathname === '/users' || pathname.startsWith('/users/')) {
+    return isAdmin(role);
+  }
+  if (pathname === '/schedules' || pathname.startsWith('/schedules/')) {
+    return isAdmin(role);
+  }
+  if (pathname === '/settings' || pathname.startsWith('/settings/')) {
+    return isAdmin(role);
   }
   return asyncNavModules.some((mod) => pathname === mod.path || pathname.startsWith(`${mod.path}/`));
 }
