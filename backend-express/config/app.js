@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 module.exports = {
-    name: process.env.APP_NAME || 'ATMC Backend',
+    name: process.env.APP_NAME || 'NetScopeTrend',
     env: process.env.NODE_ENV || 'development',
     debug: process.env.APP_DEBUG === 'true',
     url: process.env.APP_URL || 'http://localhost:3000',
@@ -11,4 +11,3 @@ module.exports = {
     locale: process.env.APP_LOCALE || 'vi',
     fallback_locale: process.env.APP_FALLBACK_LOCALE || 'en'
 };
-

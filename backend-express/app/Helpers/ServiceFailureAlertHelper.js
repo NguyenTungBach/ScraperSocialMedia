@@ -1,6 +1,6 @@
 'use strict';
 
-const { escapeHtml } = require('./EmailAlertBuilder');
+const { escapeHtml, appBrandName } = require('./EmailAlertBuilder');
 
 const SERVICE_HINTS = [
     {
@@ -169,7 +169,7 @@ function buildServiceFailureEmail({
 
     return `
       <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:720px;">
-        <h2 style="color:#b91c1c;">NetScopeTrend — Lỗi dịch vụ</h2>
+        <h2 style="color:#b91c1c;">${escapeHtml(appBrandName())} — Lỗi dịch vụ</h2>
         <p>Hệ thống gặp lỗi khi gọi dịch vụ bên ngoài hoặc xử lý dữ liệu.</p>
         <p style="color:#64748b;font-size:13px;">Thời gian: ${escapeHtml(now)}</p>
         ${contextHtml}

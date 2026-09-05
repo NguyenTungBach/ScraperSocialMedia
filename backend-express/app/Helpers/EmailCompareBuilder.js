@@ -1,6 +1,6 @@
 'use strict';
 
-const { escapeHtml, renderAnalysisTable } = require('./EmailAlertBuilder');
+const { escapeHtml, renderAnalysisTable, appBrandName } = require('./EmailAlertBuilder');
 
 function fmtNum(n) {
     const v = Number(n);
@@ -214,7 +214,7 @@ function buildCompareReportEmail(payload) {
 
     return `
       <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:960px;">
-        <h2>NetScopeTrend — Báo cáo so sánh ${escapeHtml(modeLabel)}</h2>
+        <h2>${escapeHtml(appBrandName())} — Báo cáo so sánh ${escapeHtml(modeLabel)}</h2>
         <p style="color:#475569;">Khoảng ngày: <b>${escapeHtml(range)}</b> · ${entityCount} đối tượng</p>
 
         ${renderEndPeriodTable({

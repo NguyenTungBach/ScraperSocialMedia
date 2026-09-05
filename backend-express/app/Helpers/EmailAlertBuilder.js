@@ -1,11 +1,15 @@
 'use strict';
 
+const appConfig = require('../../config/app');
 const { formatScore, normalizePlatform } = require('./PostScoreHelper');
 const {
     classifyLabel,
     countAnalysisByType,
 } = require('./CommentAnalysisHelper');
 
+function appBrandName() {
+    return String(appConfig.name || 'NetScopeTrend').trim() || 'NetScopeTrend';
+}
 function escapeHtml(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -211,7 +215,7 @@ function buildNoAlertEmail({ thresholds = {}, subject_id = null } = {}) {
 
     return `
       <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:960px;">
-        <h2>NetScopeTrend — Báo cáo alert hot/trend</h2>
+        <h2>${escapeHtml(appBrandName())} — Báo cáo alert hot/trend</h2>
         <p style="padding:12px 16px;background:#f0fdf4;border-left:4px solid #22c55e;border-radius:6px;">
           <b>Không có đối tượng vượt ngưỡng</b> trong phạm vi kiểm tra lần này.
         </p>
@@ -256,7 +260,7 @@ function buildAlertEmail({ alertPosts = [], subjectAnalyses = [], thresholds = {
 
     const html = `
       <div style="font-family:Arial,sans-serif;color:#0f172a;max-width:960px;">
-        <h2>NetScopeTrend — Alert vượt ngưỡng</h2>
+        <h2>${escapeHtml(appBrandName())} — Alert vượt ngưỡng</h2>
         <p>Ngưỡng: hot_score &gt;= <b>${thresholds.hot}</b> <b>hoặc</b> trend_score &gt;= <b>${thresholds.trend}</b></p>
         <h3 style="margin-top:20px;">Bài viết vượt ngưỡng (${alertPosts.length})</h3>
         <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%;">
@@ -280,4 +284,5 @@ module.exports = {
     buildNoAlertEmail,
     escapeHtml,
     renderAnalysisTable,
+    appBrandName,
 };
