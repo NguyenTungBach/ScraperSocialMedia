@@ -3,7 +3,7 @@
   "info": {
     "title": "ScraperSocialMedia API (Express)",
     "version": "1.0.0",
-    "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).\n\nScraper:\n- Facebook / TikTok qua Apify (`APIFY_API_TOKEN`)\n- YouTube qua Data API v3 (`YOUTUBE_API_KEY`) — video + comment; `refresh-tail` chỉ cập nhật stats\n\nEndpoints cào: `POST /scraper/facebook/run`, `POST /scraper/tiktok/run`, `POST /scraper/youtube/run`\n",
+    "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).\nUI live: `/api-docs` · JSON: `/api-docs.json` · regenerate: `npm run openapi:generate`.\n\n**Auth:** JWT (`POST /auth/login`). Middleware `RequireAdminForWrites`: member chỉ GET;\nUsers / Settings / Schedules chỉ **admin**.\n\n**Scraper:**\n- Facebook / TikTok qua Apify (`APIFY_API_TOKEN` — runtime từ `key_scraps`)\n- YouTube qua Data API v3 (`YOUTUBE_API_KEY`) — video + comment; `refresh-tail` chỉ cập nhật stats\n- Scrape HTTP **async** (`202` + `async_job_id`) → poll `/scraper/async-status/:id` · cần `queue:worker`\n\n**Vận hành:** Settings (`key_scraps` + `general_settings`), Schedules (`general_schedules` + PM2 `-schedule`).\n",
     "contact": {
       "name": "ScraperSocialMedia"
     },
@@ -19,7 +19,20 @@
   ],
   "tags": [
     {
-      "name": "Auth"
+      "name": "Auth",
+      "description": "Login / password flows"
+    },
+    {
+      "name": "Users",
+      "description": "CRUD tài khoản (admin)"
+    },
+    {
+      "name": "Settings",
+      "description": "API keys + mail + ngưỡng alert (admin)"
+    },
+    {
+      "name": "Schedules",
+      "description": "Lịch cron spawn npm run app:* (admin)"
     },
     {
       "name": "Channels"
@@ -28,7 +41,8 @@
       "name": "Subjects"
     },
     {
-      "name": "Scraper"
+      "name": "Scraper",
+      "description": "Enqueue scrape + poll async status + YT refresh-tail"
     },
     {
       "name": "SocialPosts"
@@ -38,6 +52,14 @@
     },
     {
       "name": "Alerts"
+    },
+    {
+      "name": "Snapshots",
+      "description": "Snapshot metrics ngày + so sánh kênh/bài"
+    },
+    {
+      "name": "Reports",
+      "description": "Mail báo cáo so sánh"
     }
   ],
   "components": {
@@ -305,8 +327,8 @@
         "tags": [
           "Alerts"
         ],
-        "summary": "Gửi Gmail khi hot_score và trend_score vượt ngưỡng",
-        "description": "Lọc `social_posts` có `hot_score >= ALERT_HOT_THRESHOLD` **và**\n`trend_score >= ALERT_TREND_THRESHOLD`, phân tích comment AI (top video hot/subject),\nrồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).\nBCC: `MAIL_ALERT_BCC` trong `.env` và/hoặc `bcc` trong body (mảng email hoặc chuỗi phân cách bằng dấu phẩy).\n",
+        "summary": "Gửi Gmail khi bài viết vượt ngưỡng hot/trend",
+        "description": "Lọc `scraper_runs` (Facebook, YouTube, TikTok) trong tháng hiện tại có\n`hot_score >= ALERT_HOT_THRESHOLD` **hoặc** `trend_score >= ALERT_TREND_THRESHOLD`,\nphân tích comment AI (top 3 bài hot/subject), rồi gửi email tới `MAIL_MAIN` (hoặc `to` trong body).\nBCC: `MAIL_ALERT_BCC` trong `.env` và/hoặc `bcc` trong body (mảng email hoặc chuỗi phân cách bằng dấu phẩy).\n",
         "security": [],
         "requestBody": {
           "required": false,
@@ -905,7 +927,7 @@
           "Comments"
         ],
         "summary": "Danh sách comment theo scraper_run_id",
-        "description": "Trả về comment + reply đã lưu cho một bài (`scraper_runs.id`).\nDùng sau khi scrape YouTube / TikTok (hoặc khi xem chi tiết bài).\n",
+        "description": "Trả về comment + reply đã lưu cho một bài (`scraper_runs.id`).\nDùng sau khi scrape YouTube / TikTok / Facebook (hoặc khi xem chi tiết bài).\n",
         "security": [],
         "parameters": [
           {
@@ -929,14 +951,369 @@
         }
       }
     },
+    "/comments/analyze": {
+      "post": {
+        "tags": [
+          "Comments"
+        ],
+        "summary": "Phân tích comment AI cho 1 bài (FB / YT / TT)",
+        "description": "Gọi Gemini trên comment `pending` của `scraper_run_id`.\nĐã `done`/`skipped` thì bỏ qua (reason=already_done).\nĐồng thời tóm tắt content_brief nếu chưa có.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scraper_run_id"
+                ],
+                "properties": {
+                  "scraper_run_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kết quả phân tích (analyzed true/false + reason)"
+          },
+          "422": {
+            "description": "Thiếu scraper_run_id"
+          }
+        }
+      }
+    },
+    "/reports/compare-email": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Gửi mail báo cáo so sánh kênh hoặc bài",
+        "description": "Action sau luồng so sánh (không đụng alert hot/trend).\nBody: mode=channels|posts + ids + date_from/date_to.\nNgười nhận mặc định MAIL_MAIN.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "channels",
+                      "posts"
+                    ]
+                  },
+                  "channel_ids": {
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "scraper_run_ids": {
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "date_from": {
+                    "type": "string",
+                    "example": "2026-08-25"
+                  },
+                  "date_to": {
+                    "type": "string",
+                    "example": "2026-08-29"
+                  },
+                  "metric": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "bcc": {
+                    "oneOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Đã gửi mail"
+          },
+          "422": {
+            "description": "Thiếu tham số / cấu hình mail"
+          }
+        }
+      }
+    },
+    "/schedules": {
+      "get": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Danh sách lịch cron (admin)",
+        "description": "Trả paginated `general_schedules` + `allowed_commands` (các `npm run app:*` hợp lệ).\nProcess `${PM2_API_NAME}-schedule` reload từ DB mỗi `SCHEDULE_RELOAD_MS`.\n",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tìm theo name / command"
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false",
+                    "1",
+                    "0"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK (+ allowed_commands)"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Tạo lịch (admin)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "cron_expression",
+                  "command"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Snapshot metrics 5h"
+                  },
+                  "cron_expression": {
+                    "type": "string",
+                    "description": "Cron 5-field (node-cron), timezone APP_TIMEZONE",
+                    "example": "0 5 * * *"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Phải là `npm run app:*` có trong package.json",
+                    "example": "npm run app:metric-snapshot"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "422": {
+            "description": "Invalid cron / command"
+          }
+        }
+      }
+    },
+    "/schedules/{id}": {
+      "put": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Cập nhật lịch (admin)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "cron_expression": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string",
+                    "example": "npm run app:alert-gmail"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Xóa lịch (admin)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          }
+        }
+      }
+    },
+    "/schedules/{id}/run": {
+      "post": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Chạy ngay 1 lịch (admin) — spawn `npm run app:*`",
+        "description": "Spawn command không `await` trong API process (giống schedule worker).\nCập nhật `last_status` / `last_run_at` trên bản ghi.\n",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Schedule started"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          },
+          "409": {
+            "description": "Đang chạy"
+          }
+        }
+      }
+    },
     "/scraper/facebook/run": {
       "post": {
         "tags": [
           "Scraper"
         ],
-        "summary": "Cào bài Facebook mới nhất + comments theo channel_id[]",
-        "description": "Body nhận `channel_id[]` (`type_channel=facebook`). Mỗi kênh cần có `url` page/profile.\n\nPha 1 — Actor `KoJrdxJCTtpon81KY` (Facebook Posts): bài mới nhất (`maxResults`) → upsert `scraper_runs`.\nPha 2 — Actor `apify/facebook-comments-scraper`: comment + reply theo post URLs → insert-only `post_comments`.\n\nYêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:facebook-scrape`.\n",
-        "security": [],
+        "summary": "Enqueue cào bài Facebook (async) — trả 202 + async_job_id",
+        "description": "Body nhận `channel_id[]` (`type_channel=facebook`). Optional `subject_id` cho scope_key.\nWorker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.\nCLI sync: `npm run app:facebook-scrape`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -948,14 +1325,11 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, posts_run_id, comments_run_id)"
+          "202": {
+            "description": "Job enqueued"
           },
-          "422": {
-            "description": "channel_id không phải facebook hoặc thiếu url"
-          },
-          "500": {
-            "description": "Thiếu APIFY_API_TOKEN"
+          "409": {
+            "description": "Job đã đang chạy cho cùng scope"
           }
         }
       }
@@ -965,9 +1339,8 @@
         "tags": [
           "Scraper"
         ],
-        "summary": "Cào video mới nhất + comment YouTube theo channel_id[]",
-        "description": "Body nhận `channel_id[]` (ID bảng `channels`, `type_channel=youtube`).\nURL kênh hỗ trợ: `/@handle`, `/channel/UCxxx`, `/user/name`, `/c/CustomName`.\n\nLuồng YouTube Data API v3:\n1. `channels.list` → uploads playlist + subscriberCount (`follow`)\n2. `playlistItems.list` → videoId mới nhất (`maxResults`, mặc định 10)\n3. `videos.list` → title, publishedAt, views, likes, commentCount\n4. `commentThreads.list` (+ `comments.list` nếu cần thêm reply) → comment / reply\n\nUpsert `scraper_runs` → link subjects qua `subject_channels` → recompute `social_posts`.\nComment insert-only vào `post_comments`. Shares không có trên API → `shares=0`.\n\nYêu cầu `YOUTUBE_API_KEY` trong `.env`. CLI: `npm run app:youtube-scrape`.\n",
-        "security": [],
+        "summary": "Enqueue cào video YouTube (async) — trả 202 + async_job_id",
+        "description": "Body nhận `channel_id[]`. Optional `subject_id` cho scope_key.\nWorker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.\nCLI sync: `npm run app:youtube-scrape`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -979,20 +1352,11 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, quota_used)"
+          "202": {
+            "description": "Job enqueued"
           },
-          "404": {
-            "description": "Kênh YouTube không tồn tại"
-          },
-          "422": {
-            "description": "channel_id không hợp lệ hoặc URL không parse được"
-          },
-          "429": {
-            "description": "YouTube API quota exceeded"
-          },
-          "500": {
-            "description": "Thiếu hoặc sai YOUTUBE_API_KEY"
+          "409": {
+            "description": "Job đã đang chạy cho cùng scope"
           }
         }
       }
@@ -1002,9 +1366,8 @@
         "tags": [
           "Scraper"
         ],
-        "summary": "Cào video TikTok mới nhất + comments theo channel_id[]",
-        "description": "Body nhận `channel_id[]` (`type_channel=tiktok`). Mỗi kênh cần có `url` profile.\n\nPha 1 — Actor `clockworks/free-tiktok-scraper`: video mới nhất (`resultsPerPage` / `maxResults`) → upsert `scraper_runs`.\nPha 2 — Actor `BDec00yAmCm1QbMEI`: comment + reply theo `postURLs` → insert-only `post_comments`.\n\nYêu cầu `APIFY_API_TOKEN`. CLI: `npm run app:tiktok-scrape`.\n",
-        "security": [],
+        "summary": "Enqueue cào video TikTok (async) — trả 202 + async_job_id",
+        "description": "Body nhận `channel_id[]`. Optional `subject_id` cho scope_key.\nWorker chạy scrape + Gemini; FE poll `GET /scraper/async-status/:id`.\nCLI sync: `npm run app:tiktok-scrape`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -1016,14 +1379,108 @@
           }
         },
         "responses": {
+          "202": {
+            "description": "Job enqueued"
+          },
+          "409": {
+            "description": "Job đã đang chạy cho cùng scope"
+          }
+        }
+      }
+    },
+    "/scraper/async-status/{id}": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Poll trạng thái scrape async theo id",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "async_job_id trả về từ POST enqueue scrape (facebook|youtube|tiktok)/run"
+          }
+        ],
+        "responses": {
           "200": {
-            "description": "Scrape + ingest thành công (kèm upsert_stats, comment_stats, video_run_id, comments_run_id)"
+            "description": "pending | running | success | failed (+ result_json)"
+          },
+          "404": {
+            "description": "Không tìm thấy job"
+          }
+        }
+      }
+    },
+    "/scraper/async-status": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Latest async job theo job_type + scope_key",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "job_type",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "facebook_scrape",
+                "youtube_scrape",
+                "tiktok_scrape"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope_key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "vd. subject:8 hoặc channels:2,3"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest job hoặc null"
           },
           "422": {
-            "description": "channel_id không phải tiktok hoặc thiếu url"
-          },
-          "500": {
-            "description": "Thiếu APIFY_API_TOKEN"
+            "description": "Thiếu / sai query"
+          }
+        }
+      }
+    },
+    "/scraper/async-active": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Các scrape job đang pending hoặc running",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Danh sách job active"
+          }
+        }
+      }
+    },
+    "/scraper/async-health": {
+      "get": {
+        "tags": [
+          "Scraper"
+        ],
+        "summary": "Chẩn đoán queue / stale async jobs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Health snapshot (stale, pending counts, …)"
           }
         }
       }
@@ -1057,6 +1514,231 @@
             "description": "Thiếu hoặc sai YOUTUBE_API_KEY"
           }
         }
+      }
+    },
+    "/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Lấy key_scraps + general_settings (admin)",
+        "description": "Runtime config từ DB (`key_scraps`, `general_settings`).\nSecret fields trả về dạng mask (không lộ giá trị đầy đủ).\n",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK — `{ keys, settings }`"
+          },
+          "403": {
+            "description": "Không phải admin"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Cập nhật API keys / mail / ngưỡng alert (admin)",
+        "description": "Body gồm `keys` và/hoặc `settings` (object map name → value).\nChỉ chấp nhận whitelist trong `AppSettingsKeys`.\nSau update, SettingsCache refresh — không cần restart API.\n",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keys": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "APIFY_API_TOKEN, YOUTUBE_API_KEY, GEMINI_API_KEY, GEMINI_MODEL,\nGEMINI_FALLBACK_MODELS, GEMINI_MAX_RETRIES, GEMINI_RETRY_DELAY_MS\n",
+                    "example": {
+                      "GEMINI_MODEL": "gemini-3.6-flash"
+                    }
+                  },
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "ALERT_HOT_THRESHOLD, ALERT_TREND_THRESHOLD, MAIL_* …\n",
+                    "example": {
+                      "ALERT_HOT_THRESHOLD": "800",
+                      "MAIL_MAIN": "you@example.com"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "422": {
+            "description": "Validation / unknown key"
+          }
+        }
+      }
+    },
+    "/snapshots/run": {
+      "post": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Chạy snapshot metrics (kênh ∈ subject_channels)",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "snapshot_date": {
+                    "type": "string",
+                    "example": "2026-08-29"
+                  },
+                  "channel_id": {
+                    "type": "integer",
+                    "description": "Chỉ snapshot 1 kênh"
+                  },
+                  "scraper_run_id": {
+                    "type": "integer",
+                    "description": "Chỉ snapshot 1 bài (+ refresh kênh)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK hoặc needs_confirm"
+          }
+        }
+      }
+    },
+    "/snapshots/status": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Kiểm tra đã có snapshot ngày chưa",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "type": "string",
+              "example": "today"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/snapshots/channels/{id}": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Snapshot kênh (hôm nay + delta, hoặc series theo khoảng ngày)",
+        "security": []
+      }
+    },
+    "/snapshots/channels/{id}/top-posts": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Top bài theo hot_score/trend_score trong 1 ngày snapshot",
+        "security": []
+      }
+    },
+    "/snapshots/posts/{scraperRunId}": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Snapshot bài (hôm nay + delta, hoặc series)",
+        "security": []
+      }
+    },
+    "/snapshots/posts/{scraperRunId}/top-comments": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Top 10 comment like đã đóng băng theo ngày",
+        "security": []
+      }
+    },
+    "/snapshots/channels/compare": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "So sánh nhiều kênh theo khoảng ngày",
+        "security": []
+      }
+    },
+    "/snapshots/posts/compare": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "So sánh nhiều bài theo khoảng ngày",
+        "security": []
+      }
+    },
+    "/snapshots/posts/catalog": {
+      "get": {
+        "tags": [
+          "Snapshots"
+        ],
+        "summary": "Catalog bài (mọi kênh) để chọn so sánh",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "channel_id",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
     "/social-posts": {
@@ -1580,6 +2262,231 @@
           },
           "404": {
             "description": "Liên kết không tồn tại"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Danh sách users (admin)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tìm theo user_code / user_name"
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "member"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                1,
+                2
+              ]
+            },
+            "description": "1 = on, 2 = off"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK (paginated)"
+          },
+          "403": {
+            "description": "Không phải admin"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Tạo user (admin)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user_code",
+                  "user_name",
+                  "password"
+                ],
+                "properties": {
+                  "user_code": {
+                    "type": "string",
+                    "pattern": "^\\d{1,15}$",
+                    "example": "1001"
+                  },
+                  "user_name": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "example": "nguyen van a"
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "8–16 ký tự, không khoảng trắng",
+                    "example": "password1"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ],
+                    "default": "member"
+                  },
+                  "status": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "default": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Cập nhật user (admin)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user_code": {
+                    "type": "string",
+                    "pattern": "^\\d{1,15}$"
+                  },
+                  "user_name": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "password": {
+                    "type": "string",
+                    "description": "Để trống hoặc bỏ qua nếu không đổi"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  },
+                  "status": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Không tìm thấy"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Xóa user (admin)",
+        "security": [],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Không tìm thấy"
           }
         }
       }

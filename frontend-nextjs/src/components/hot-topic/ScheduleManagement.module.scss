@@ -361,15 +361,87 @@ $st-green: #16a34a;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.cronInputError {
+  border-color: $st-red !important;
+  outline-color: $st-red;
+  box-shadow: 0 0 0 1px $st-red;
+}
+
 .fieldHint {
   font-size: 0.75rem;
   color: $st-muted;
   font-style: normal;
+  line-height: 1.45;
 }
 
 .fieldHintError {
   color: $st-red;
   font-weight: 600;
+}
+
+.cronExplain {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #f1f3f4;
+  border-radius: 8px;
+  color: $st-text;
+}
+
+.cronExplainError {
+  background: #fef2f2;
+  color: $st-red;
+}
+
+.cronExplainIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #5f6368;
+}
+
+.cronExplainError .cronExplainIcon {
+  color: $st-red;
+}
+
+.cronExplainGroups {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.cronExplainGroup {
+  margin: 0 0 4px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.cronExplainLabel {
+  font-weight: 600;
+}
+
+.cronExplainItems {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+  font-weight: 400;
+  color: #3c4043;
+}
+
+.cronExplainErrorText {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+  }
 }
 
 .checkField {

@@ -156,7 +156,23 @@ class ScraperController {
     }
 
     /**
-     * GET /scraper/async-status/:id
+     * @openapi
+     * /scraper/async-status/{id}:
+     *   get:
+     *     tags: [Scraper]
+     *     summary: Poll trạng thái scrape async theo id
+     *     security: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema: { type: integer }
+     *         description: async_job_id trả về từ POST enqueue scrape (facebook|youtube|tiktok)/run
+     *     responses:
+     *       "200":
+     *         description: pending | running | success | failed (+ result_json)
+     *       "404":
+     *         description: Không tìm thấy job
      */
     async showAsyncStatus(req, res, next) {
         try {
@@ -171,7 +187,29 @@ class ScraperController {
     }
 
     /**
-     * GET /scraper/async-status?job_type=&scope_key=
+     * @openapi
+     * /scraper/async-status:
+     *   get:
+     *     tags: [Scraper]
+     *     summary: Latest async job theo job_type + scope_key
+     *     security: []
+     *     parameters:
+     *       - in: query
+     *         name: job_type
+     *         required: true
+     *         schema:
+     *           type: string
+     *           enum: [facebook_scrape, youtube_scrape, tiktok_scrape]
+     *       - in: query
+     *         name: scope_key
+     *         required: true
+     *         schema: { type: string }
+     *         description: "vd. subject:8 hoặc channels:2,3"
+     *     responses:
+     *       "200":
+     *         description: Latest job hoặc null
+     *       "422":
+     *         description: Thiếu / sai query
      */
     async showLatestAsyncStatus(req, res, next) {
         try {
@@ -184,7 +222,15 @@ class ScraperController {
     }
 
     /**
-     * GET /scraper/async-active — pending|running jobs
+     * @openapi
+     * /scraper/async-active:
+     *   get:
+     *     tags: [Scraper]
+     *     summary: Các scrape job đang pending hoặc running
+     *     security: []
+     *     responses:
+     *       "200":
+     *         description: Danh sách job active
      */
     async listActiveAsync(_req, res, next) {
         try {
@@ -196,7 +242,15 @@ class ScraperController {
     }
 
     /**
-     * GET /scraper/async-health
+     * @openapi
+     * /scraper/async-health:
+     *   get:
+     *     tags: [Scraper]
+     *     summary: Chẩn đoán queue / stale async jobs
+     *     security: []
+     *     responses:
+     *       "200":
+     *         description: Health snapshot (stale, pending counts, …)
      */
     async asyncHealth(_req, res, next) {
         try {

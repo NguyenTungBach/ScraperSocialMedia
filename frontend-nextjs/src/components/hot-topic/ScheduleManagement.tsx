@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Pencil, Play, Plus, Search, Trash2, X } from 'lucide-react';
+import { Loader2, Pencil, Play, Plus, Search, Trash2, X, Info } from 'lucide-react';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import { getApiErrorMessage } from '@/lib/api/client';
 import {
@@ -12,8 +12,10 @@ import { isAdmin } from '@/lib/config/auth';
 import { DEFAULT_AFTER_LOGIN } from '@/lib/config/navigation';
 import { cn } from '@/lib/utils';
 import {
+  CRON_FORMAT_HINT,
   describeCronExpression,
-  isCronDescriptionInvalid,
+  explainCronExpression,
+  isCronExpressionInvalid,
 } from '@/lib/utils/cronDescribe';
 import { MakeToast } from '@/lib/utils/toast';
 import { useAuthStore } from '@/store/auth';
@@ -23,6 +25,8 @@ import dash from './HotTopicDashboard.module.scss';
 import styles from './ScheduleManagement.module.scss';
 
 const PAGE_SIZE = 50;
+/** Poll while any row is `running` so success/failed appear without manual refresh. */
+const RUNNING_POLL_MS = 3000;
 
 interface ScheduleFormState {
   name: string;
@@ -82,11 +86,14 @@ export function ScheduleManagement() {
   }, [admin, router]);
 
   const loadList = useCallback(
-    async (options?: { page?: number; q?: string }) => {
+    async (options?: { page?: number; q?: string; silent?: boolean }) => {
       const nextPage = options?.page ?? page;
       const nextQ = options?.q ?? query;
-      setLoading(true);
-      setError(null);
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const res = await schedulesApi.list({
           page: nextPage,
@@ -100,10 +107,12 @@ export function ScheduleManagement() {
         setTotalPages(Math.max(1, data.pagination?.total_pages ?? 1));
         setTotalRecords(data.pagination?.total_records ?? 0);
       } catch (err) {
-        setError(getApiErrorMessage(err));
-        setItems([]);
+        if (!silent) {
+          setError(getApiErrorMessage(err));
+          setItems([]);
+        }
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [page, query]
@@ -122,6 +131,19 @@ export function ScheduleManagement() {
     }, 350);
     return () => window.clearTimeout(timer);
   }, [admin, searchInput]);
+
+  const hasRunning = useMemo(
+    () => items.some((item) => String(item.last_status || '').toLowerCase() === 'running'),
+    [items]
+  );
+
+  useEffect(() => {
+    if (!admin || !hasRunning) return;
+    const timer = window.setInterval(() => {
+      void loadList({ page, q: query, silent: true });
+    }, RUNNING_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [admin, hasRunning, loadList, page, query]);
 
   const openCreate = () => {
     setFormMode('create');
@@ -160,8 +182,11 @@ export function ScheduleManagement() {
       MakeToast({ variant: 'warning', content: 'Vui lòng nhập cron (vd: 0 17 * * *)' });
       return;
     }
-    if (isCronDescriptionInvalid(describeCronExpression(form.cron_expression))) {
-      MakeToast({ variant: 'warning', content: 'Cron sai định dạng (cần 5 field: phút giờ ngày tháng thứ)' });
+    if (isCronExpressionInvalid(form.cron_expression)) {
+      const err =
+        explainCronExpression(form.cron_expression).error ||
+        'Cron sai định dạng (cần 5 field: phút giờ ngày tháng thứ)';
+      MakeToast({ variant: 'warning', content: err });
       return;
     }
     if (!form.command.trim()) {
@@ -248,11 +273,10 @@ export function ScheduleManagement() {
     return undefined;
   }, [totalRecords]);
 
-  const cronHint = useMemo(
-    () => describeCronExpression(form.cron_expression),
+  const cronExplain = useMemo(
+    () => explainCronExpression(form.cron_expression),
     [form.cron_expression]
   );
-  const cronHintInvalid = isCronDescriptionInvalid(cronHint);
 
   if (!admin) {
     return (
@@ -474,16 +498,42 @@ export function ScheduleManagement() {
                   placeholder="0 17 * * *"
                   required
                   autoFocus={formMode === 'create'}
-                  className={styles.monoInput}
-                />
-                <em
                   className={cn(
-                    styles.fieldHint,
-                    cronHintInvalid && styles.fieldHintError
+                    styles.monoInput,
+                    form.cron_expression.trim() && !cronExplain.valid && styles.cronInputError
                   )}
-                >
-                  {cronHint}
-                </em>
+                  aria-invalid={Boolean(
+                    form.cron_expression.trim() && !cronExplain.valid
+                  )}
+                />
+                <em className={styles.fieldHint}>{CRON_FORMAT_HINT}</em>
+                {form.cron_expression.trim() ? (
+                  cronExplain.valid ? (
+                    <div className={styles.cronExplain} role="status">
+                      <Info size={16} className={styles.cronExplainIcon} aria-hidden />
+                      <ul className={styles.cronExplainGroups}>
+                        {cronExplain.groups.map((group) => (
+                          <li key={group.label} className={styles.cronExplainGroup}>
+                            <span className={styles.cronExplainLabel}>{group.label}:</span>
+                            <ul className={styles.cronExplainItems}>
+                              {group.items.map((item) => (
+                                <li key={`${group.label}-${item.text}`}>{item.text}</li>
+                              ))}
+                            </ul>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className={cn(styles.cronExplain, styles.cronExplainError)} role="alert">
+                      <Info size={16} className={styles.cronExplainIcon} aria-hidden />
+                      <p className={styles.cronExplainErrorText}>
+                        {cronExplain.error ||
+                          'Sai định dạng — cần đúng 5 field: phút giờ ngày tháng thứ.'}
+                      </p>
+                    </div>
+                  )
+                ) : null}
               </label>
               <label className={styles.field}>
                 <span>Tên lệnh</span>

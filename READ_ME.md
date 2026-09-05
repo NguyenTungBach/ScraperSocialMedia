@@ -304,8 +304,12 @@ npm run queue:worker
 npm run schedule:worker
 ```
 
-- API: theo `APP_URL` / `APP_PORT` trong `.env`
-- Swagger UI: `/api-docs`
+- API: theo `APP_URL` / `APP_PORT` trong `.env` (mặc định **3400**)
+- **Swagger UI (live):** `{APP_URL}/api-docs` — đọc JSDoc `@openapi` từ controllers lúc runtime
+- **OpenAPI JSON:** `{APP_URL}/api-docs.json`
+- Spec nguồn: `docs/openapi/openapi.yaml` + `components/*` + JSDoc controllers; regenerate file commit: `npm run openapi:generate` → `docs/openapi/generated/openapi.json`
+
+**Tags Swagger hiện có:** Auth · Users · Settings · Schedules · Channels · Subjects · Scraper (kèm async poll) · SocialPosts · Comments · Alerts · Snapshots · Reports
 
 ### Backend (production — PM2)
 
@@ -334,6 +338,10 @@ npm run dev
 | Method | Path | Mô tả | Quyền |
 |--------|------|--------|--------|
 | POST | `/api/auth/login` | Đăng nhập | public |
+| POST | `/api/auth/forget-password` | Quên mật khẩu | public |
+| PUT | `/api/auth/password-reset` | Đặt lại mật khẩu (token) | public |
+| POST | `/api/auth/confirm-password` | Xác nhận mật khẩu | auth |
+| POST | `/api/auth/change-password` | Đổi mật khẩu | auth |
 | GET | `/api/profile` | Profile user | auth |
 | GET/POST/PUT/DELETE | `/api/users` | CRUD users | **admin** |
 | GET/PUT | `/api/settings` | Xem / cập nhật key_scraps + general_settings | **admin** |
@@ -354,6 +362,8 @@ npm run dev
 | GET | `/api/scraper/async-health` | Chẩn đoán queue / stale | auth |
 | POST | `/api/scraper/youtube/refresh-tail` | Refresh stats video YT cũ | admin |
 | GET | `/api/social-posts` | Tổng hợp, sort `hot_score` DESC | auth |
+| GET | `/api/social-posts/dashboard` | Dashboard hot topic (FE `/home`) | auth |
+| GET | `/api/social-posts/stats` | Thống kê tổng quan social posts | auth |
 | GET | `/api/comments?scraper_run_id=` | Comment + thread 1 bài | auth |
 | POST | `/api/comments/analyze` | Phân tích AI 1 bài | admin |
 | POST | `/api/alerts/gmail` | Alert mail hot **hoặc** trend + AI top N | admin |
@@ -363,6 +373,7 @@ npm run dev
 | GET | `/api/snapshots/channels/:id/top-posts` | Top bài theo hot/trend 1 ngày | auth |
 | GET | `/api/snapshots/posts/:id` | Thống kê bài + series | auth |
 | GET | `/api/snapshots/posts/:id/top-comments` | Top 10 comment like đã snapshot | auth |
+| GET | `/api/snapshots/posts/catalog` | Catalog bài để chọn so sánh | auth |
 | GET | `/api/snapshots/channels/compare` | So sánh nhiều kênh | auth |
 | GET | `/api/snapshots/posts/compare` | So sánh nhiều bài | auth |
 | POST | `/api/reports/compare-email` | Gửi mail báo cáo so sánh | admin |
@@ -409,7 +420,7 @@ Content-Type: application/json
 
 | Path | Ai thấy | Mô tả |
 |------|----------|--------|
-| `/home` | auth | Dashboard hot topic / social posts |
+| `/home` | auth | Dashboard hot topic (`/social-posts/dashboard`) — xếp hạng, chart, scrape theo subject |
 | `/subjects` | auth | Quản lý đối tượng |
 | `/channels` | auth | Quản lý kênh + limit cào + scrape / snapshot |
 | `/users` | **admin** | CRUD tài khoản (admin / member) |
@@ -433,6 +444,7 @@ Member: xem dữ liệu (GET); không tạo/sửa/xoá, không scrape/alert/sett
 | `npm run app:alert-gmail` | Gửi alert vượt ngưỡng |
 | `npm run queue:worker` | Worker xử lý jobs + scrape async |
 | `npm run schedule:worker` | Đọc `general_schedules`, đăng ký node-cron |
+| `npm run openapi:generate` | Ghép YAML + JSDoc → `docs/openapi/generated/openapi.json` |
 | `npm run pm2:start` / `pm2:reload` | API + queue + schedule |
 
 ---
@@ -453,10 +465,11 @@ ScraperSocialMedia/
 │   │   ├── Models/
 │   │   ├── Repositories/
 │   │   └── Services/           # Scrape*, ScraperAsync*, Settings*, Schedule*, …
-│   ├── config/                 # apify, gemini, mail, scrapeLimits, …
+│   ├── config/                 # apify, gemini, mail, scrapeLimits, swagger, …
+│   ├── docs/openapi/           # openapi.yaml + components + generated/openapi.json
 │   ├── database/migrations|seeders/
 │   ├── routes/api/             # scraper, schedules, settings, users, …
-│   ├── scripts/                # queue-worker, scheduler, run-command
+│   ├── scripts/                # queue-worker, scheduler, run-command, generate-openapi
 │   ├── ecosystem.config.cjs    # PM2: api + queue + schedule
 │   └── server.js
 └── frontend-nextjs/
