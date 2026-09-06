@@ -267,39 +267,62 @@ class YouTubeService {
     }
 
     /**
-     * playlistItems.list → video IDs mới nhất (quota 1).
+     * playlistItems.list → video IDs mới nhất (paginate bằng pageToken / nextPageToken).
+     * Mỗi trang tối đa 50; quota = số trang.
+     * @returns {{ ids: string[], quota_used: number }}
      */
     async getPlaylistVideoIds(playlistId, maxResults = 10) {
-        const n = Number(maxResults);
-        if (!Number.isFinite(n) || n <= 0) return [];
-        const limit = Math.min(Math.floor(n), 50);
-        const data = await this.request('playlistItems', {
-            part: 'snippet',
-            playlistId,
-            maxResults: limit,
-        });
+        const target = Math.floor(Number(maxResults));
+        if (!Number.isFinite(target) || target <= 0) {
+            return { ids: [], quota_used: 0 };
+        }
 
         const ids = [];
-        for (const item of data?.items || []) {
-            const videoId = item?.snippet?.resourceId?.videoId;
-            if (videoId) ids.push(videoId);
+        let pageToken;
+        let quotaUsed = 0;
+
+        while (ids.length < target) {
+            const pageSize = Math.min(50, target - ids.length);
+            const data = await this.request('playlistItems', {
+                part: 'snippet',
+                playlistId,
+                maxResults: pageSize,
+                pageToken,
+            });
+            quotaUsed += 1;
+
+            for (const item of data?.items || []) {
+                const videoId = item?.snippet?.resourceId?.videoId;
+                if (videoId) ids.push(videoId);
+                if (ids.length >= target) break;
+            }
+
+            pageToken = data?.nextPageToken;
+            if (!pageToken) break;
         }
-        return ids;
+
+        return { ids, quota_used: quotaUsed };
     }
 
     /**
-     * videos.list batch → snippet + statistics (quota 1).
+     * videos.list → snippet + statistics.
+     * Filter `id` không dùng nextPageToken — chunk tối đa 50 ID / request.
      */
     async getVideoDetails(videoIds = []) {
         const ids = [...new Set((videoIds || []).filter(Boolean))];
         if (ids.length === 0) return [];
 
-        const data = await this.request('videos', {
-            part: 'snippet,statistics',
-            id: ids.join(','),
-        });
+        const items = [];
+        for (let i = 0; i < ids.length; i += 50) {
+            const chunk = ids.slice(i, i + 50);
+            const data = await this.request('videos', {
+                part: 'snippet,statistics',
+                id: chunk.join(','),
+            });
+            items.push(...(data?.items || []));
+        }
 
-        return data?.items || [];
+        return items;
     }
 
     /**
@@ -340,8 +363,10 @@ class YouTubeService {
             channelRaw,
             quota_used: resolveQuota,
         } = await this.getUploadsPlaylistFromRef(ref);
-        const videoIds = await this.getPlaylistVideoIds(uploadsPlaylistId, limit);
+        const { ids: videoIds, quota_used: playlistQuota } =
+            await this.getPlaylistVideoIds(uploadsPlaylistId, limit);
         const rawVideos = await this.getVideoDetails(videoIds);
+        const videosQuota = videoIds.length === 0 ? 0 : Math.ceil(videoIds.length / 50);
 
         const byId = new Map(rawVideos.map((v) => [v.id, v]));
         const ordered = videoIds.map((id) => byId.get(id)).filter(Boolean);
@@ -352,7 +377,7 @@ class YouTubeService {
 
         return {
             videos,
-            quota_used: (resolveQuota || 1) + 2,
+            quota_used: (resolveQuota || 1) + (playlistQuota || 0) + videosQuota,
             channelId,
             uploadsPlaylistId,
             follow: follow || 0,
@@ -373,45 +398,89 @@ class YouTubeService {
     }
 
     /**
-     * commentThreads.list → top-level comments (quota 1).
+     * commentThreads.list → top-level comments (paginate pageToken / nextPageToken).
      * order=relevance: khớp UI YouTube “Hàng đầu” / Top comments
      * (không phải “Mới nhất” / time).
+     * Mỗi trang tối đa 100; quota = số trang.
+     * @returns {{ items: object[], quota_used: number }}
      */
     async getCommentThreads(videoId, maxResults = 20) {
-        const n = Number(maxResults);
-        if (!Number.isFinite(n) || n <= 0) return [];
-        const limit = Math.min(Math.floor(n), 100);
+        const target = Math.floor(Number(maxResults));
+        if (!Number.isFinite(target) || target <= 0) {
+            return { items: [], quota_used: 0 };
+        }
+
+        const items = [];
+        let pageToken;
+        let quotaUsed = 0;
+
         try {
-            const data = await this.request('commentThreads', {
-                part: 'snippet,replies',
-                videoId,
-                maxResults: limit,
-                order: 'relevance',
-                textFormat: 'plainText',
-            });
-            return data?.items || [];
+            while (items.length < target) {
+                const pageSize = Math.min(100, target - items.length);
+                const data = await this.request('commentThreads', {
+                    part: 'snippet,replies',
+                    videoId,
+                    maxResults: pageSize,
+                    order: 'relevance',
+                    textFormat: 'plainText',
+                    pageToken,
+                });
+                quotaUsed += 1;
+
+                for (const item of data?.items || []) {
+                    items.push(item);
+                    if (items.length >= target) break;
+                }
+
+                pageToken = data?.nextPageToken;
+                if (!pageToken) break;
+            }
         } catch (err) {
             if (err.status === 403 || err.message?.includes('commentsDisabled')) {
-                return [];
+                return { items: [], quota_used: quotaUsed };
             }
             throw err;
         }
+
+        return { items, quota_used: quotaUsed };
     }
 
     /**
-     * comments.list → replies of a top-level comment (quota 1).
+     * comments.list → replies of a top-level comment (paginate pageToken / nextPageToken).
+     * Mỗi trang tối đa 100; quota = số trang.
+     * @returns {{ items: object[], quota_used: number }}
      */
     async getCommentReplies(parentId, maxResults = 10) {
-        const n = Number(maxResults);
-        if (!Number.isFinite(n) || n <= 0) return [];
-        const limit = Math.min(Math.floor(n), 100);
-        const data = await this.request('comments', {
-            part: 'snippet',
-            parentId,
-            maxResults: limit,
-            textFormat: 'plainText',
-        });
-        return data?.items || [];
+        const target = Math.floor(Number(maxResults));
+        if (!Number.isFinite(target) || target <= 0) {
+            return { items: [], quota_used: 0 };
+        }
+
+        const items = [];
+        let pageToken;
+        let quotaUsed = 0;
+
+        while (items.length < target) {
+            const pageSize = Math.min(100, target - items.length);
+            const data = await this.request('comments', {
+                part: 'snippet',
+                parentId,
+                maxResults: pageSize,
+                textFormat: 'plainText',
+                pageToken,
+            });
+            quotaUsed += 1;
+
+            for (const item of data?.items || []) {
+                items.push(item);
+                if (items.length >= target) break;
+            }
+
+            pageToken = data?.nextPageToken;
+            if (!pageToken) break;
+        }
+
+        return { items, quota_used: quotaUsed };
     }
 
     /**
@@ -428,8 +497,9 @@ class YouTubeService {
 
         let quotaUsed = 0;
 
-        const threads = await this.getCommentThreads(videoId, topLimit);
-        quotaUsed += 1;
+        const { items: threads, quota_used: threadsQuota } =
+            await this.getCommentThreads(videoId, topLimit);
+        quotaUsed += threadsQuota || 0;
 
         if (threads.length === 0) {
             return { comments: [], quota_used: quotaUsed, disabled: false };
@@ -470,8 +540,9 @@ class YouTubeService {
 
             const totalReplies = toCount(thread?.snippet?.totalReplyCount);
             if (totalReplies > embeddedNormalized.length && embeddedNormalized.length < replyLimit) {
-                const extra = await this.getCommentReplies(topId, replyLimit);
-                quotaUsed += 1;
+                const { items: extra, quota_used: repliesQuota } =
+                    await this.getCommentReplies(topId, replyLimit);
+                quotaUsed += repliesQuota || 0;
                 const existingIds = new Set(flat.map((c) => c.platform_comment_id));
                 for (const reply of extra) {
                     if (existingIds.has(reply.id)) continue;

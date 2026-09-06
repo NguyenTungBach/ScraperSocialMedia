@@ -64,7 +64,8 @@ export type ScraperAsyncJobStatus =
 export type ScraperAsyncJobType =
   | 'youtube_scrape'
   | 'tiktok_scrape'
-  | 'facebook_scrape';
+  | 'facebook_scrape'
+  | 'comment_analysis';
 
 export interface ScraperAsyncStatusData {
   async_job_id: number;
@@ -82,12 +83,37 @@ export interface ScraperAsyncStatusData {
     maxResults?: number;
     commentsPerPost?: number;
     maxRepliesPerComment?: number;
+    scraper_run_id?: number;
+    max_comments?: number;
+    max_replies?: number;
   } | null;
-  result_json: ScraperResultSummary | null;
+  result_json: ScraperResultSummary | CommentAnalysisResultSummary | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface CommentAnalysisResultSummary {
+  kind?: 'comment_analysis';
+  scraper_run_id?: number | null;
+  content_brief?: {
+    analyzed?: boolean;
+    reason?: string | null;
+    content_brief?: string | null;
+  };
+  comments_analysis?: {
+    analyzed?: boolean;
+    reason?: string | null;
+    model?: string | null;
+    chunks_processed?: number;
+    comments_sent?: number;
+    units_analyzed?: number;
+    units_total_pending?: number;
+    units_remaining_pending?: number;
+    max_comments?: number | null;
+    max_replies?: number | null;
+  };
 }
 
 export type TikTokScrapePayload = YoutubeScrapePayload & {
@@ -214,14 +240,20 @@ export function normalizeScraperResultJson(
   value: ScraperAsyncStatusData['result_json'] | string | null | undefined
 ): ScraperResultSummary | null {
   if (value == null) return null;
+  let parsed: ScraperResultSummary | CommentAnalysisResultSummary | null = null;
   if (typeof value === 'string') {
     try {
-      return JSON.parse(value) as ScraperResultSummary;
+      parsed = JSON.parse(value) as ScraperResultSummary | CommentAnalysisResultSummary;
     } catch {
       return null;
     }
+  } else {
+    parsed = value;
   }
-  return value;
+  if (parsed && 'kind' in parsed && parsed.kind === 'comment_analysis') {
+    return null;
+  }
+  return parsed as ScraperResultSummary;
 }
 
 export function aggregateScrapeSummaries(statuses: ScraperAsyncStatusData[]): {

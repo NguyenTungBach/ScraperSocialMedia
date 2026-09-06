@@ -52,6 +52,12 @@ function normalizeChannelIds(channelIds) {
     );
 }
 
+function clampPositiveInt(value, fallback, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
 function buildScopeKey(input) {
     const subjectId = input.subject_id != null ? Number(input.subject_id) : null;
     if (subjectId != null && Number.isFinite(subjectId) && subjectId > 0) {
@@ -124,6 +130,35 @@ function buildScrapeSummary(result) {
     return summary;
 }
 
+function buildCommentAnalysisSummary(result) {
+    if (!result || typeof result !== 'object') {
+        return null;
+    }
+    const ca = result.comments_analysis || {};
+    const brief = result.content_brief || {};
+    return {
+        kind: 'comment_analysis',
+        scraper_run_id: Number(result.scraper_run_id || ca.scraper_run_id || 0) || null,
+        content_brief: {
+            analyzed: Boolean(brief.analyzed),
+            reason: brief.reason || null,
+            content_brief: brief.content_brief ?? null,
+        },
+        comments_analysis: {
+            analyzed: Boolean(ca.analyzed),
+            reason: ca.reason || null,
+            model: ca.model || null,
+            chunks_processed: Number(ca.chunks_processed || 0),
+            comments_sent: Number(ca.comments_sent || 0),
+            units_analyzed: Number(ca.units_analyzed || 0),
+            units_total_pending: Number(ca.units_total_pending || 0),
+            units_remaining_pending: Number(ca.units_remaining_pending || 0),
+            max_comments: ca.max_comments != null ? Number(ca.max_comments) : null,
+            max_replies: ca.max_replies != null ? Number(ca.max_replies) : null,
+        },
+    };
+}
+
 class ScraperAsyncService {
     static jobClassForType(jobType) {
         if (jobType === ScraperAsyncType.YOUTUBE_SCRAPE) {
@@ -134,6 +169,9 @@ class ScraperAsyncService {
         }
         if (jobType === ScraperAsyncType.FACEBOOK_SCRAPE) {
             return require('../Jobs/FacebookScrapeJob');
+        }
+        if (jobType === ScraperAsyncType.COMMENT_ANALYSIS) {
+            return require('../Jobs/CommentAnalysisJob');
         }
         const e = new Error(`Unknown scraper async job type: ${jobType}`);
         e.statusCode = 400;
@@ -243,6 +281,78 @@ class ScraperAsyncService {
         return serializeRow(await asyncRow.reload());
     }
 
+    /**
+     * Enqueue phân tích comment AI cho 1 bài (nút UI).
+     * @param {{ scraper_run_id: number, max_comments?: number, max_replies?: number }} input
+     * @param {{ id?: number }|null} user
+     */
+    static async enqueueCommentAnalysis(input, user) {
+        const scraperRunId = Number(input.scraper_run_id);
+        if (!Number.isInteger(scraperRunId) || scraperRunId <= 0) {
+            const e = new Error('scraper_run_id is required');
+            e.statusCode = 422;
+            throw e;
+        }
+
+        const run = await db.ScraperRun.findByPk(scraperRunId, {
+            attributes: ['id'],
+        });
+        if (!run) {
+            const e = new Error('scraper_run not found');
+            e.statusCode = 404;
+            throw e;
+        }
+
+        const maxComments = clampPositiveInt(input.max_comments, 30, 1, 200);
+        const maxReplies = clampPositiveInt(input.max_replies, 10, 0, 50);
+        const scopeKey = `scraper_run:${scraperRunId}`;
+        const jobType = ScraperAsyncType.COMMENT_ANALYSIS;
+
+        await ScraperAsyncQueueHealth.evaluate();
+
+        const existing = await this.findActive(jobType, scopeKey);
+        if (existing) {
+            const e = new Error('Comment analysis already in progress for this post');
+            e.statusCode = 409;
+            e.data = serializeRow(existing);
+            throw e;
+        }
+
+        const payload = {
+            scraper_run_id: scraperRunId,
+            max_comments: maxComments,
+            max_replies: maxReplies,
+        };
+
+        const asyncRow = await db.AsyncStatusJob.create({
+            job_type: jobType,
+            scope_key: scopeKey,
+            status: ScraperAsyncStatus.PENDING,
+            requested_by_user_id: user?.id != null ? Number(user.id) : null,
+            payload_json: payload,
+        });
+
+        const JobClass = this.jobClassForType(jobType);
+        const queued = await JobClass.dispatch({
+            asyncStatusJobId: Number(asyncRow.id),
+            ...payload,
+        });
+
+        await asyncRow.update({
+            queue_job_id: Number(queued.id),
+        });
+
+        logger.info('[ScraperAsync] enqueued comment analysis', {
+            async_job_id: Number(asyncRow.id),
+            queue_job_id: Number(queued.id),
+            scraper_run_id: scraperRunId,
+            max_comments: maxComments,
+            max_replies: maxReplies,
+        });
+
+        return serializeRow(await asyncRow.reload());
+    }
+
     static async getStatus(asyncJobId) {
         await ScraperAsyncQueueHealth.evaluate();
 
@@ -307,22 +417,35 @@ class ScraperAsyncService {
         if (!row) {
             return null;
         }
-        const summary = buildScrapeSummary(result);
+        const summary =
+            row.job_type === ScraperAsyncType.COMMENT_ANALYSIS
+                ? buildCommentAnalysisSummary(result)
+                : buildScrapeSummary(result);
         await row.update({
             status: ScraperAsyncStatus.COMPLETED,
             finished_at: new Date(),
             error_message: null,
             result_json: summary,
         });
-        logger.info('[ScraperAsync] completed', {
-            async_job_id: Number(asyncStatusJobId),
-            items_count: summary?.items_count ?? 0,
-            inserted: summary?.upsert_stats?.inserted ?? 0,
-            updated: summary?.upsert_stats?.updated ?? 0,
-            comments_inserted: summary?.comment_stats?.inserted ?? 0,
-            ai_briefs: summary?.comment_stats?.ai_briefs_analyzed ?? 0,
-            ai_comments: summary?.comment_stats?.ai_comments_analyzed ?? 0,
-        });
+        if (row.job_type === ScraperAsyncType.COMMENT_ANALYSIS) {
+            logger.info('[ScraperAsync] comment analysis completed', {
+                async_job_id: Number(asyncStatusJobId),
+                scraper_run_id: summary?.scraper_run_id ?? null,
+                analyzed: summary?.comments_analysis?.analyzed ?? false,
+                units_analyzed: summary?.comments_analysis?.units_analyzed ?? 0,
+                units_remaining: summary?.comments_analysis?.units_remaining_pending ?? 0,
+            });
+        } else {
+            logger.info('[ScraperAsync] completed', {
+                async_job_id: Number(asyncStatusJobId),
+                items_count: summary?.items_count ?? 0,
+                inserted: summary?.upsert_stats?.inserted ?? 0,
+                updated: summary?.upsert_stats?.updated ?? 0,
+                comments_inserted: summary?.comment_stats?.inserted ?? 0,
+                ai_briefs: summary?.comment_stats?.ai_briefs_analyzed ?? 0,
+                ai_comments: summary?.comment_stats?.ai_comments_analyzed ?? 0,
+            });
+        }
         return serializeRow(await row.reload());
     }
 
@@ -359,4 +482,5 @@ class ScraperAsyncService {
 module.exports = ScraperAsyncService;
 module.exports.buildScopeKey = buildScopeKey;
 module.exports.buildScrapeSummary = buildScrapeSummary;
+module.exports.buildCommentAnalysisSummary = buildCommentAnalysisSummary;
 module.exports.serializeRow = serializeRow;

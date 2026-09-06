@@ -138,6 +138,8 @@ class YouTubeScrapeService {
             ai_briefs_analyzed: 0,
             ai_comments_analyzed: 0,
             ai_skipped: 0,
+            ai_aborted: false,
+            ai_error: null,
         };
         const channelsSkipped = [];
         const affectedSubjectIds = new Set();
@@ -229,10 +231,12 @@ class YouTubeScrapeService {
             const runByVideoId = new Map(
                 (ingest.saved_runs || []).map((r) => [r.platform_post_id, r.id])
             );
+            const channelRunIds = [];
 
             for (const video of videos) {
                 const scraperRunId = runByVideoId.get(video.platform_post_id);
                 if (!scraperRunId) continue;
+                channelRunIds.push(scraperRunId);
 
                 if (channelMaxTopComments > 0) {
                     try {
@@ -268,16 +272,32 @@ class YouTubeScrapeService {
                     }
                 }
 
-                const ai =
-                    await this.commentAnalysisService.analyzePostAfterScrape(scraperRunId);
-                if (ai?.content_brief?.analyzed) commentTotals.ai_briefs_analyzed += 1;
-                if (ai?.comments_analysis?.analyzed) {
-                    commentTotals.ai_comments_analyzed += 1;
-                } else if (ai?.comments_analysis?.reason === 'already_done') {
-                    commentTotals.ai_skipped += 1;
-                }
-
                 allVideos.push(toYoutubeVideoResponse(video));
+            }
+
+            // AI sau khi cào xong hết bài + comment/reply của kênh
+            if (channel.is_use_ai !== false && channelRunIds.length > 0) {
+                const aiSummary =
+                    await this.commentAnalysisService.analyzeRunsAfterChannelScrape(
+                        channelRunIds,
+                        { stopOnError: true }
+                    );
+                commentTotals.ai_briefs_analyzed += aiSummary.ai_briefs_analyzed || 0;
+                commentTotals.ai_comments_analyzed += aiSummary.ai_comments_analyzed || 0;
+                commentTotals.ai_skipped += aiSummary.ai_skipped || 0;
+                if (aiSummary.ai_aborted) {
+                    commentTotals.ai_aborted = true;
+                    commentTotals.ai_error = aiSummary.ai_error;
+                    logger.warn('[youtube-scrape] AI aborted for channel; continue next channel', {
+                        channel_id: channel.id,
+                        error: aiSummary.ai_error,
+                    });
+                }
+            } else if (channel.is_use_ai === false) {
+                logger.info('[youtube-scrape] Skip AI (is_use_ai=false)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
             }
 
             channelsScraped += 1;

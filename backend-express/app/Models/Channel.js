@@ -71,6 +71,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false,
                 defaultValue: scrapeLimits.maxReplies,
             },
+            is_use_ai: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: true,
+            },
         },
         {
             sequelize,

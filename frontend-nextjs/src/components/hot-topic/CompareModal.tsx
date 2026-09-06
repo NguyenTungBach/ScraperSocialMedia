@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GitCompareArrows, Loader2, Mail, RefreshCw, X } from 'lucide-react';
+import { GitCompareArrows, Loader2, RefreshCw, X } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import {
@@ -10,12 +10,9 @@ import {
   type PostCatalogItem,
   type PostDailySnapshotRow,
 } from '@/lib/api/snapshots';
-import { reportsApi } from '@/lib/api/reports';
 import type { SubjectRelatedPost } from '@/lib/api/subjects';
 import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
 import { MakeToast } from '@/lib/utils/toast';
-import { canWrite } from '@/lib/config/auth';
-import { useAuthStore } from '@/store/auth';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import { PlatformBadge } from './PlatformBadge';
 import { ComparePostCharts, POST_METRICS } from './ComparePostCharts';
@@ -112,7 +109,6 @@ export function CompareModal({
   initialPostIds = [],
   postCandidates = [],
 }: CompareModalProps) {
-  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
   const initial = defaultRange();
   const [dateFrom, setDateFrom] = useState(initial.date_from);
   const [dateTo, setDateTo] = useState(initial.date_to);
@@ -141,7 +137,6 @@ export function CompareModal({
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingPostCatalog, setLoadingPostCatalog] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
   const [channelRows, setChannelRows] = useState<ChannelDailySnapshotRow[]>([]);
   const [postRows, setPostRows] = useState<PostDailySnapshotRow[]>([]);
   const [hasCompared, setHasCompared] = useState(false);
@@ -401,41 +396,6 @@ export function CompareModal({
     }
   }, [mode, selectedChannelIds, selectedPostIds, dateFrom, dateTo]);
 
-  const sendEmail = async () => {
-    if (!hasCompared) {
-      MakeToast({ variant: 'warning', content: 'Hãy chạy so sánh trước khi gửi mail' });
-      return;
-    }
-    setSending(true);
-    try {
-      const res = await reportsApi.sendCompareEmail(
-        mode === 'channels'
-          ? {
-              mode: 'channels',
-              channel_ids: selectedChannelIds,
-              date_from: dateFrom,
-              date_to: dateTo,
-              metric: 'views_sum',
-            }
-          : {
-              mode: 'posts',
-              scraper_run_ids: selectedPostIds,
-              date_from: dateFrom,
-              date_to: dateTo,
-              metric: 'views',
-            }
-      );
-      MakeToast({
-        variant: 'success',
-        content: `Đã gửi báo cáo tới ${res.data?.to || 'MAIL_MAIN'}`,
-      });
-    } catch (err) {
-      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-    } finally {
-      setSending(false);
-    }
-  };
-
   const title = mode === 'channels' ? 'So sánh kênh' : 'So sánh bài / video';
   const channelNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -458,8 +418,8 @@ export function CompareModal({
             </h2>
             <p className={styles.sub}>
               {mode === 'posts'
-                ? 'Chọn ≥ 2 bài + khoảng ngày → biểu đồ chỉ số → gửi mail báo cáo'
-                : 'Chọn ≥ 2 kênh + khoảng ngày → biểu đồ tất cả chỉ số → gửi mail báo cáo'}
+                ? 'Chọn ≥ 2 bài + khoảng ngày → biểu đồ chỉ số'
+                : 'Chọn ≥ 2 kênh + khoảng ngày → biểu đồ tất cả chỉ số'}
             </p>
           </div>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Đóng">
@@ -494,18 +454,6 @@ export function CompareModal({
             <RefreshCw size={16} />
             Refresh bộ lọc
           </button>
-          {canMutate && (
-            <button
-              type="button"
-              className={styles.mailBtn}
-              onClick={() => void sendEmail()}
-              disabled={sending || !hasCompared}
-              title="Chỉ gửi sau khi đã có kết quả so sánh"
-            >
-              {sending ? <Loader2 size={16} className={dash.spin} /> : <Mail size={16} />}
-              Gửi báo cáo về mail
-            </button>
-          )}
         </div>
 
         <div className={styles.body}>

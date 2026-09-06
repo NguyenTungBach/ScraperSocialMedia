@@ -316,8 +316,10 @@ export function useScraperAsyncWatcher(options?: {
         const res = await listActiveScraperJobs();
         if (cancelled || cancelledRef.current) return;
 
-        const active = (res.data ?? []).filter((row) =>
-          isScraperAsyncInProgress(row.status)
+        const active = (res.data ?? []).filter(
+          (row) =>
+            isScraperAsyncInProgress(row.status) &&
+            row.job_type !== 'comment_analysis'
         );
         if (active.length === 0) return;
 
@@ -413,8 +415,10 @@ export function useScraperAsyncWatcher(options?: {
           });
           try {
             const res = await listActiveScraperJobs();
-            const active = (res.data ?? []).filter((row) =>
-              isScraperAsyncInProgress(row.status)
+            const active = (res.data ?? []).filter(
+              (row) =>
+                isScraperAsyncInProgress(row.status) &&
+                row.job_type !== 'comment_analysis'
             );
             if (active.length > 0) {
               setEnqueueing(false);
@@ -487,8 +491,10 @@ export function useScraperAsyncWatcher(options?: {
           });
           try {
             const activeRes = await listActiveScraperJobs();
-            const active = (activeRes.data ?? []).filter((row) =>
-              isScraperAsyncInProgress(row.status)
+            const active = (activeRes.data ?? []).filter(
+              (row) =>
+                isScraperAsyncInProgress(row.status) &&
+                row.job_type !== 'comment_analysis'
             );
             if (active.length > 0) {
               setEnqueueing(false);

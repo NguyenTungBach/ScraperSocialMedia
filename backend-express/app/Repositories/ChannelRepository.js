@@ -13,6 +13,16 @@ function toLimitInt(value, fallback) {
     return Math.floor(n);
 }
 
+function toBool(value, fallback = true) {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const s = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+    if (['0', 'false', 'no', 'off'].includes(s)) return false;
+    return fallback;
+}
+
 class ChannelRepository {
     constructor() {
         this.channelModel = db.Channel;
@@ -40,6 +50,7 @@ class ChannelRepository {
             max_posts: toLimitInt(plain.max_posts, scrapeLimits.maxPosts),
             max_top_comments: toLimitInt(plain.max_top_comments, scrapeLimits.maxTopComments),
             max_replies: toLimitInt(plain.max_replies, scrapeLimits.maxReplies),
+            is_use_ai: toBool(plain.is_use_ai, true),
             scraper_runs_count: count,
             has_scraper_runs: count > 0,
             /** URL/nền tảng cố định sau khi tạo — mọi nền tảng */
@@ -106,6 +117,7 @@ class ChannelRepository {
         max_posts,
         max_top_comments,
         max_replies,
+        is_use_ai,
     } = {}) {
         const trimmedName = String(name || '').trim();
         const trimmedUrl = String(url || '').trim();
@@ -119,6 +131,7 @@ class ChannelRepository {
             max_posts: toLimitInt(max_posts, scrapeLimits.maxPosts),
             max_top_comments: toLimitInt(max_top_comments, scrapeLimits.maxTopComments),
             max_replies: toLimitInt(max_replies, scrapeLimits.maxReplies),
+            is_use_ai: toBool(is_use_ai, true),
         });
 
         return this.serializeChannel(row, { scraper_runs_count: 0 });
@@ -160,6 +173,9 @@ class ChannelRepository {
         }
         if (payload.max_replies !== undefined) {
             updates.max_replies = toLimitInt(payload.max_replies, scrapeLimits.maxReplies);
+        }
+        if (payload.is_use_ai !== undefined) {
+            updates.is_use_ai = toBool(payload.is_use_ai, true);
         }
 
         if (Object.keys(updates).length > 0) {

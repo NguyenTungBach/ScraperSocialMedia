@@ -2,14 +2,13 @@
 
 const createError = require('http-errors');
 const CommentRepository = require('../../../Repositories/CommentRepository');
-const CommentAnalysisService = require('../../../Services/CommentAnalysisService');
+const ScraperAsyncService = require('../../../Services/ScraperAsyncService');
 const ResponseService = require('../../../Helpers/ResponseService');
 const HTTP_STATUS = require('../../../Constants/HttpStatus');
 
 class CommentController {
     constructor() {
         this.commentRepository = new CommentRepository();
-        this.commentAnalysisService = new CommentAnalysisService();
     }
 
     /**
@@ -53,11 +52,11 @@ class CommentController {
      * /comments/analyze:
      *   post:
      *     tags: [Comments]
-     *     summary: Phân tích comment AI cho 1 bài (FB / YT / TT)
+     *     summary: Enqueue phân tích comment AI (async) cho 1 bài
      *     description: |
-     *       Gọi Gemini trên comment `pending` của `scraper_run_id`.
-     *       Đã `done`/`skipped` thì bỏ qua (reason=already_done).
-     *       Đồng thời tóm tắt content_brief nếu chưa có.
+     *       Xếp hàng Gemini trên comment `pending` của `scraper_run_id` (queue worker).
+     *       Giới hạn mỗi lần: `max_comments` (comment gốc) + `max_replies` (reply/thread).
+     *       Trả HTTP 202 + async_job_id — FE poll GET /scraper/async-status/:id.
      *     security: []
      *     requestBody:
      *       required: true
@@ -68,9 +67,13 @@ class CommentController {
      *             required: [scraper_run_id]
      *             properties:
      *               scraper_run_id: { type: integer, minimum: 1 }
+     *               max_comments: { type: integer, minimum: 1, maximum: 200, default: 30 }
+     *               max_replies: { type: integer, minimum: 0, maximum: 50, default: 10 }
      *     responses:
-     *       "200":
-     *         description: Kết quả phân tích (analyzed true/false + reason)
+     *       "202":
+     *         description: Job enqueued
+     *       "409":
+     *         description: Đã có job comment_analysis đang chạy cho bài này
      *       "422":
      *         description: Thiếu scraper_run_id
      */
@@ -82,14 +85,41 @@ class CommentController {
                 throw createError(422, 'scraper_run_id is required');
             }
 
-            const data = await this.commentAnalysisService.analyzePostIfNeeded(scraperRunId);
-            const comments = await this.commentRepository.getCommentsByScraperRunId(scraperRunId);
+            const result = await ScraperAsyncService.enqueueCommentAnalysis(
+                {
+                    scraper_run_id: scraperRunId,
+                    max_comments: body.max_comments,
+                    max_replies: body.max_replies,
+                },
+                req.user || null
+            );
 
-            return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, {
-                ...data,
-                comments,
-            });
+            return ResponseService.responseJson(res, HTTP_STATUS.ACCEPTED, result);
         } catch (error) {
+            if (error.statusCode === 409 && error.data) {
+                return ResponseService.responseJsonError(
+                    res,
+                    HTTP_STATUS.CONFLICT,
+                    error.message,
+                    null,
+                    null,
+                    error.data
+                );
+            }
+            if (error.statusCode === 422) {
+                return ResponseService.responseJsonError(
+                    res,
+                    HTTP_STATUS.UNPROCESSABLE_ENTITY,
+                    error.message
+                );
+            }
+            if (error.statusCode === 404) {
+                return ResponseService.responseJsonError(
+                    res,
+                    HTTP_STATUS.NOT_FOUND,
+                    error.message
+                );
+            }
             return next(error);
         }
     }

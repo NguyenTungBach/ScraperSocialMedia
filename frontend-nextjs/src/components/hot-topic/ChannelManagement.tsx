@@ -33,13 +33,8 @@ import dash from './HotTopicDashboard.module.scss';
 import styles from './ChannelManagement.module.scss';
 
 const PAGE_SIZE = 20;
-/** Trần nhập chung trên FE (BE không validate max cứng cho FB/TikTok). */
+/** Trần nhập chung trên FE (BE không validate max cứng; YouTube paginate theo trang). */
 const SCRAPE_LIMIT_MAX = 1_000_000_000;
-/** Khớp YouTubeService.getPlaylistVideoIds — 1 lần playlistItems, tối đa 50. */
-const YOUTUBE_MAX_POSTS_PER_SCRAPE = 50;
-/** Khớp YouTubeService.getCommentThreads / getCommentReplies — maxResults API ≤ 100, không paginate. */
-const YOUTUBE_MAX_TOP_COMMENTS = 100;
-const YOUTUBE_MAX_REPLIES = 100;
 const DEFAULT_MAX_POSTS = 10;
 const DEFAULT_MAX_TOP_COMMENTS = 30;
 const DEFAULT_MAX_REPLIES = 10;
@@ -51,6 +46,7 @@ interface ChannelFormState {
   max_posts: number;
   max_top_comments: number;
   max_replies: number;
+  is_use_ai: boolean;
 }
 
 const EMPTY_FORM: ChannelFormState = {
@@ -60,6 +56,7 @@ const EMPTY_FORM: ChannelFormState = {
   max_posts: DEFAULT_MAX_POSTS,
   max_top_comments: DEFAULT_MAX_TOP_COMMENTS,
   max_replies: DEFAULT_MAX_REPLIES,
+  is_use_ai: true,
 };
 
 function clampScrapeLimit(value: unknown, fallback: number, max = SCRAPE_LIMIT_MAX): number {
@@ -72,19 +69,19 @@ function isYoutubePlatform(platform: string): boolean {
   return normalizePlatform(platform) === 'youtube';
 }
 
-/** Trần Max bài / lần cào theo nền tảng. */
-function maxPostsCapForPlatform(platform: string): number {
-  return isYoutubePlatform(platform) ? YOUTUBE_MAX_POSTS_PER_SCRAPE : SCRAPE_LIMIT_MAX;
+/** Trần Max bài / lần cào theo nền tảng (YouTube đã paginate — không còn hard-cap 50). */
+function maxPostsCapForPlatform(_platform: string): number {
+  return SCRAPE_LIMIT_MAX;
 }
 
-/** Trần Max comment gốc / bài. */
-function maxTopCommentsCapForPlatform(platform: string): number {
-  return isYoutubePlatform(platform) ? YOUTUBE_MAX_TOP_COMMENTS : SCRAPE_LIMIT_MAX;
+/** Trần Max comment gốc / bài (YouTube đã paginate — không còn hard-cap 100). */
+function maxTopCommentsCapForPlatform(_platform: string): number {
+  return SCRAPE_LIMIT_MAX;
 }
 
-/** Trần Max reply / comment. */
-function maxRepliesCapForPlatform(platform: string): number {
-  return isYoutubePlatform(platform) ? YOUTUBE_MAX_REPLIES : SCRAPE_LIMIT_MAX;
+/** Trần Max reply / comment (YouTube đã paginate — không còn hard-cap 100). */
+function maxRepliesCapForPlatform(_platform: string): number {
+  return SCRAPE_LIMIT_MAX;
 }
 
 function clampLimitsForPlatform(
@@ -113,10 +110,10 @@ function clampLimitsForPlatform(
 function scrapeLimitsHint(platform: string): string {
   const p = normalizePlatform(platform);
   if (p === 'youtube') {
-    return `YouTube (trần API mỗi lần cào, không paginate): tối đa ${YOUTUBE_MAX_POSTS_PER_SCRAPE} bài · ${YOUTUBE_MAX_TOP_COMMENTS} comment gốc/bài · ${YOUTUBE_MAX_REPLIES} reply/comment.`;
+    return 'YouTube paginate theo trang 50 bài / 100 comment·reply — tổng = số bạn nhập (tốn quota theo số trang).';
   }
   if (p === 'facebook' || p === 'tiktok') {
-    return `${p === 'facebook' ? 'Facebook' : 'TikTok'}: không có trần cứng như YouTube — dùng đúng số bạn nhập.`;
+    return `${p === 'facebook' ? 'Facebook' : 'TikTok'}: không có trần cứng — dùng đúng số bạn nhập.`;
   }
   return `Giới hạn cào theo kênh (tối đa ${SCRAPE_LIMIT_MAX.toLocaleString('vi-VN')}).`;
 }
@@ -226,6 +223,7 @@ export function ChannelManagement() {
         max_top_comments: item.max_top_comments,
         max_replies: item.max_replies,
       }),
+      is_use_ai: item.is_use_ai !== false,
     });
     setFormOpen(true);
   };
@@ -258,7 +256,7 @@ export function ChannelManagement() {
     setSaving(true);
     try {
       const identityLocked = formMode === 'edit';
-      const limits = { max_posts, max_top_comments, max_replies };
+      const limits = { max_posts, max_top_comments, max_replies, is_use_ai: form.is_use_ai };
       const payload = {
         name,
         ...limits,
@@ -666,11 +664,6 @@ export function ChannelManagement() {
                 <label className={styles.field}>
                   <span>
                     Max bài / lần cào
-                    {isYoutubePlatform(form.type_channel) ? (
-                      <span className={styles.limitCap}>
-                        ≤{YOUTUBE_MAX_POSTS_PER_SCRAPE}
-                      </span>
-                    ) : null}
                   </span>
                   <input
                     type="number"
@@ -692,11 +685,6 @@ export function ChannelManagement() {
                 <label className={styles.field}>
                   <span>
                     Max comment gốc / bài
-                    {isYoutubePlatform(form.type_channel) ? (
-                      <span className={styles.limitCap}>
-                        ≤{YOUTUBE_MAX_TOP_COMMENTS}
-                      </span>
-                    ) : null}
                   </span>
                   <input
                     type="number"
@@ -718,11 +706,6 @@ export function ChannelManagement() {
                 <label className={styles.field}>
                   <span>
                     Max reply / comment
-                    {isYoutubePlatform(form.type_channel) ? (
-                      <span className={styles.limitCap}>
-                        ≤{YOUTUBE_MAX_REPLIES}
-                      </span>
-                    ) : null}
                   </span>
                   <input
                     type="number"
@@ -742,6 +725,17 @@ export function ChannelManagement() {
                   />
                 </label>
               </div>
+
+              <label className={styles.fieldCheckbox}>
+                <input
+                  type="checkbox"
+                  checked={form.is_use_ai}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, is_use_ai: e.target.checked }))
+                  }
+                />
+                <span>Dùng AI phân tích comment sau khi cào</span>
+              </label>
               <em className={styles.fieldHint}>{scrapeLimitsHint(form.type_channel)}</em>
               <div className={styles.modalFooter}>
                 <button type="button" className={styles.cancelBtn} onClick={closeForm} disabled={saving}>

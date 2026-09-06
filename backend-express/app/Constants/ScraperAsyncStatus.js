@@ -12,6 +12,7 @@ const ScraperAsyncType = {
     YOUTUBE_SCRAPE: 'youtube_scrape',
     TIKTOK_SCRAPE: 'tiktok_scrape',
     FACEBOOK_SCRAPE: 'facebook_scrape',
+    COMMENT_ANALYSIS: 'comment_analysis',
 };
 
 const ACTIVE_STATUSES = [ScraperAsyncStatus.PENDING, ScraperAsyncStatus.RUNNING];

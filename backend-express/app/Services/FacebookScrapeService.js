@@ -143,6 +143,8 @@ class FacebookScrapeService {
             ai_briefs_analyzed: 0,
             ai_comments_analyzed: 0,
             ai_skipped: 0,
+            ai_aborted: false,
+            ai_error: null,
         };
         const channelsSkipped = [];
         const affectedSubjectIds = new Set();
@@ -283,7 +285,39 @@ class FacebookScrapeService {
                         channel_id: channel.id,
                     });
                 }
-                channelsScraped += 1;
+
+            const channelRunIds = [
+                ...new Set(
+                    (ingest.saved_runs || [])
+                        .map((r) => Number(r.id))
+                        .filter((n) => n > 0)
+                ),
+            ];
+            if (channel.is_use_ai !== false && channelRunIds.length > 0) {
+                const aiSummary =
+                    await this.commentAnalysisService.analyzeRunsAfterChannelScrape(
+                        channelRunIds,
+                        { stopOnError: true }
+                    );
+                commentTotals.ai_briefs_analyzed += aiSummary.ai_briefs_analyzed || 0;
+                commentTotals.ai_comments_analyzed += aiSummary.ai_comments_analyzed || 0;
+                commentTotals.ai_skipped += aiSummary.ai_skipped || 0;
+                if (aiSummary.ai_aborted) {
+                    commentTotals.ai_aborted = true;
+                    commentTotals.ai_error = aiSummary.ai_error;
+                    logger.warn('[facebook-scrape] AI aborted for channel; continue next channel', {
+                        channel_id: channel.id,
+                        error: aiSummary.ai_error,
+                    });
+                }
+            } else if (channel.is_use_ai === false) {
+                logger.info('[facebook-scrape] Skip AI (is_use_ai=false)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
+            }
+
+            channelsScraped += 1;
                 continue;
             }
 
@@ -341,12 +375,38 @@ class FacebookScrapeService {
                     commentTotals.posts_with_comments += 1;
                 }
 
-                const ai = await this.commentAnalysisService.analyzePostAfterScrape(saved.id);
-                if (ai?.content_brief?.analyzed) commentTotals.ai_briefs_analyzed += 1;
-                if (ai?.comments_analysis?.analyzed) commentTotals.ai_comments_analyzed += 1;
-                else if (ai?.comments_analysis?.reason === 'already_done') {
-                    commentTotals.ai_skipped += 1;
+            }
+
+
+            const channelRunIds = [
+                ...new Set(
+                    (ingest.saved_runs || [])
+                        .map((r) => Number(r.id))
+                        .filter((n) => n > 0)
+                ),
+            ];
+            if (channel.is_use_ai !== false && channelRunIds.length > 0) {
+                const aiSummary =
+                    await this.commentAnalysisService.analyzeRunsAfterChannelScrape(
+                        channelRunIds,
+                        { stopOnError: true }
+                    );
+                commentTotals.ai_briefs_analyzed += aiSummary.ai_briefs_analyzed || 0;
+                commentTotals.ai_comments_analyzed += aiSummary.ai_comments_analyzed || 0;
+                commentTotals.ai_skipped += aiSummary.ai_skipped || 0;
+                if (aiSummary.ai_aborted) {
+                    commentTotals.ai_aborted = true;
+                    commentTotals.ai_error = aiSummary.ai_error;
+                    logger.warn('[facebook-scrape] AI aborted for channel; continue next channel', {
+                        channel_id: channel.id,
+                        error: aiSummary.ai_error,
+                    });
                 }
+            } else if (channel.is_use_ai === false) {
+                logger.info('[facebook-scrape] Skip AI (is_use_ai=false)', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
             }
 
             channelsScraped += 1;

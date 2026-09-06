@@ -33,7 +33,12 @@ const runTikTokSchema = z.object({
 });
 
 const asyncStatusLatestSchema = z.object({
-    job_type: z.enum(['youtube_scrape', 'tiktok_scrape', 'facebook_scrape']),
+    job_type: z.enum([
+        'youtube_scrape',
+        'tiktok_scrape',
+        'facebook_scrape',
+        'comment_analysis',
+    ]),
     scope_key: z.string().trim().min(1).max(255),
 });
 
@@ -50,6 +55,7 @@ const channelCreateSchema = z.object({
     max_posts: z.number().int().min(0).optional(),
     max_top_comments: z.number().int().min(0).optional(),
     max_replies: z.number().int().min(0).optional(),
+    is_use_ai: z.boolean().optional(),
 });
 
 const channelUpdateSchema = z
@@ -60,6 +66,7 @@ const channelUpdateSchema = z
         max_posts: z.number().int().min(0).optional(),
         max_top_comments: z.number().int().min(0).optional(),
         max_replies: z.number().int().min(0).optional(),
+        is_use_ai: z.boolean().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
         message: 'At least one field is required',

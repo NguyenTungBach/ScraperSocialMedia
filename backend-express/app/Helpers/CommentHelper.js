@@ -191,6 +191,40 @@ function flattenAnalysisUnits(units = []) {
     return units.flatMap((unit) => unit.comments);
 }
 
+/**
+ * Cắt đơn vị phân tích theo limit (chỉ dùng path nút/API analyze).
+ * @param {Array} units
+ * @param {{ maxComments?: number|null, maxReplies?: number|null }} options
+ *   — null/undefined = không cắt
+ */
+function limitAnalysisUnits(units = [], { maxComments = null, maxReplies = null } = {}) {
+    const hasCommentCap =
+        maxComments != null && Number.isFinite(Number(maxComments)) && Number(maxComments) > 0;
+    const hasReplyCap =
+        maxReplies != null && Number.isFinite(Number(maxReplies)) && Number(maxReplies) >= 0;
+
+    let selected = units;
+    if (hasCommentCap) {
+        selected = units.slice(0, Math.floor(Number(maxComments)));
+    }
+
+    if (!hasReplyCap) {
+        return selected;
+    }
+
+    const replyCap = Math.floor(Number(maxReplies));
+    return selected.map((unit) => {
+        if (unit.type !== 'thread' || !Array.isArray(unit.comments) || unit.comments.length <= 1) {
+            return unit;
+        }
+        const [root, ...replies] = unit.comments;
+        return {
+            ...unit,
+            comments: [root, ...replies.slice(0, replyCap)],
+        };
+    });
+}
+
 module.exports = {
     toCount,
     normalizeYoutubeCommentItem,
@@ -201,4 +235,5 @@ module.exports = {
     groupCommentsIntoAnalysisUnits,
     chunkAnalysisUnits,
     flattenAnalysisUnits,
+    limitAnalysisUnits,
 };

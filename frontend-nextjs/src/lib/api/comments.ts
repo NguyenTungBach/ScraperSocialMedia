@@ -1,4 +1,9 @@
 import { apiClient, type ApiResponse } from './client';
+import {
+  getLatestScraperAsyncStatus,
+  waitForScraperAsyncJob,
+  type ScraperAsyncStatusData,
+} from './scraper';
 
 export interface PostCommentItem {
   id: number;
@@ -58,21 +63,33 @@ export interface CommentSummary {
   analyzed: boolean;
 }
 
-export interface CommentAnalyzeResult {
-  scraper_run_id: number;
-  content_brief: {
-    analyzed: boolean;
-    reason?: string;
-    content_brief?: string | null;
-  };
-  comments_analysis: {
-    analyzed: boolean;
-    reason?: string;
-    scraper_run_id: number;
-    model?: string;
-  };
-  comments: ScraperRunComments;
+export interface CommentAnalyzeEnqueueResult {
+  async_job_id: number;
+  job_type: 'comment_analysis';
+  scope_key: string;
+  status: string;
+  queue_job_id: number | null;
+  attempts: number;
+  error_message: string | null;
+  payload_json?: {
+    scraper_run_id?: number;
+    max_comments?: number;
+    max_replies?: number;
+  } | null;
+  result_json?: unknown;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
+
+export interface CommentAnalyzeLimits {
+  max_comments?: number;
+  max_replies?: number;
+}
+
+export const DEFAULT_ANALYZE_MAX_COMMENTS = 30;
+export const DEFAULT_ANALYZE_MAX_REPLIES = 10;
 
 export const commentsApi = {
   getByScraperRun: (scraperRunId: number) =>
@@ -80,11 +97,21 @@ export const commentsApi = {
       params: { scraper_run_id: scraperRunId },
     }) as Promise<ApiResponse<ScraperRunComments>>,
 
-  analyze: (scraperRunId: number) =>
-    apiClient.post<CommentAnalyzeResult>(
-      '/comments/analyze',
-      { scraper_run_id: scraperRunId },
-      {timeout: 1_800_000,
-      }
-    ) as Promise<ApiResponse<CommentAnalyzeResult>>,
+  /** Enqueue phân tích comment (async) — trả async_job_id để poll. */
+  analyze: (scraperRunId: number, limits?: CommentAnalyzeLimits) =>
+    apiClient.post<CommentAnalyzeEnqueueResult>('/comments/analyze', {
+      scraper_run_id: scraperRunId,
+      max_comments: limits?.max_comments ?? DEFAULT_ANALYZE_MAX_COMMENTS,
+      max_replies: limits?.max_replies ?? DEFAULT_ANALYZE_MAX_REPLIES,
+    }) as Promise<ApiResponse<CommentAnalyzeEnqueueResult>>,
+
+  getLatestAnalysisJob: (scraperRunId: number) =>
+    getLatestScraperAsyncStatus('comment_analysis', `scraper_run:${scraperRunId}`),
+
+  waitForAnalysisJob: (
+    asyncJobId: number,
+    options?: Parameters<typeof waitForScraperAsyncJob>[1]
+  ) => waitForScraperAsyncJob(asyncJobId, options),
 };
+
+export type { ScraperAsyncStatusData };

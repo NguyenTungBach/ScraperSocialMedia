@@ -427,6 +427,21 @@ $st-red: #dc2626;
   line-height: 1.4;
 }
 
+.fieldCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: $st-text;
+  cursor: pointer;
+
+  input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+    accent-color: $st-orange;
+  }
+}
+
 .limitsRow {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

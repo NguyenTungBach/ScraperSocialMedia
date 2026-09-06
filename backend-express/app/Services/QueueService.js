@@ -15,6 +15,7 @@ const JOB_LOADERS = {
     YoutubeScrapeJob: () => require('../Jobs/YoutubeScrapeJob'),
     TikTokScrapeJob: () => require('../Jobs/TikTokScrapeJob'),
     FacebookScrapeJob: () => require('../Jobs/FacebookScrapeJob'),
+    CommentAnalysisJob: () => require('../Jobs/CommentAnalysisJob'),
 };
 
 function nowSec() {

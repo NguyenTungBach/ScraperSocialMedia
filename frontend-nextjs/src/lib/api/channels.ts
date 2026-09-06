@@ -11,6 +11,7 @@ export interface ChannelItem {
   max_posts?: number;
   max_top_comments?: number;
   max_replies?: number;
+  is_use_ai?: boolean;
   scraper_runs_count?: number;
   has_scraper_runs?: boolean;
   /** Luôn false — URL cố định sau khi lưu (mọi nền tảng) */
@@ -42,6 +43,7 @@ export interface ChannelPayload {
   max_posts?: number;
   max_top_comments?: number;
   max_replies?: number;
+  is_use_ai?: boolean;
 }
 
 export const channelsApi = {

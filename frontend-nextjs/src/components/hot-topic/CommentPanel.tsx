@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Loader2, Sparkles } from 'lucide-react';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   commentsApi,
+  DEFAULT_ANALYZE_MAX_COMMENTS,
+  DEFAULT_ANALYZE_MAX_REPLIES,
   type CommentThreadItem,
   type PostCommentItem,
   type ScraperRunComments,
 } from '@/lib/api/comments';
-import { getApiErrorMessage } from '@/lib/api/client';
+import { ApiRequestError, getApiErrorMessage } from '@/lib/api/client';
+import {
+  isScraperAsyncInProgress,
+  type CommentAnalysisResultSummary,
+  type ScraperAsyncStatusData,
+} from '@/lib/api/scraper';
 import { classifyLabel, hasAnalysisData } from '@/lib/utils/commentAnalysis';
 import { isCommentSupportedPlatform, normalizePlatform } from '@/lib/utils/socialPlatforms';
 import { MakeToast } from '@/lib/utils/toast';
@@ -19,6 +26,32 @@ import { CommentAnalysisModal } from './CommentAnalysisModal';
 import styles from './SubjectDetailModal.module.scss';
 
 const COMMENT_PAGE_SIZE = 10;
+
+function clampAnalyzeLimit(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+function commentAnalysisFromResult(
+  resultJson: ScraperAsyncStatusData['result_json']
+): CommentAnalysisResultSummary['comments_analysis'] | null {
+  if (!resultJson || typeof resultJson !== 'object') return null;
+  if ('kind' in resultJson && resultJson.kind === 'comment_analysis') {
+    return resultJson.comments_analysis ?? null;
+  }
+  return null;
+}
+
+function contentBriefFromResult(
+  resultJson: ScraperAsyncStatusData['result_json']
+): string | null {
+  if (!resultJson || typeof resultJson !== 'object') return null;
+  if ('kind' in resultJson && resultJson.kind === 'comment_analysis') {
+    const brief = resultJson.content_brief?.content_brief;
+    return typeof brief === 'string' && brief.trim() ? brief : null;
+  }
+  return null;
+}
 
 function toneClass(classified?: string | null) {
   if (classified === 'negative') return styles.commentBadgeNegative;
@@ -197,11 +230,20 @@ export function CommentPanel({
   const [localBrief, setLocalBrief] = useState(contentBrief);
   const [localBriefStatus, setLocalBriefStatus] = useState(contentBriefStatus);
   const [commentPage, setCommentPage] = useState(1);
+  const [maxComments, setMaxComments] = useState(DEFAULT_ANALYZE_MAX_COMMENTS);
+  const [maxReplies, setMaxReplies] = useState(DEFAULT_ANALYZE_MAX_REPLIES);
+  const analysePollCancelRef = useRef(false);
+  const analysePollGenRef = useRef(0);
 
   useEffect(() => {
     setLocalBrief(contentBrief);
     setLocalBriefStatus(contentBriefStatus);
   }, [contentBrief, contentBriefStatus]);
+
+  useEffect(() => {
+    setMaxComments(DEFAULT_ANALYZE_MAX_COMMENTS);
+    setMaxReplies(DEFAULT_ANALYZE_MAX_REPLIES);
+  }, [scraperRunId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,6 +264,118 @@ export function CommentPanel({
     if (total === 0 || !isCommentSupportedPlatform(platform)) return;
     void load();
   }, [scraperRunId, total, platform, load]);
+
+  const finishAnalysisJob = useCallback(
+    async (status: ScraperAsyncStatusData) => {
+      await load();
+      const brief = contentBriefFromResult(status.result_json);
+      if (brief) {
+        setLocalBrief(brief);
+        setLocalBriefStatus('done');
+      }
+
+      if (status.status === 'failed' || status.status === 'stale') {
+        MakeToast({
+          variant: 'danger',
+          content: status.error_message || 'Phân tích comment thất bại',
+        });
+        return;
+      }
+
+      const ca = commentAnalysisFromResult(status.result_json);
+      if (ca?.analyzed) {
+        const remaining = Number(ca.units_remaining_pending || 0);
+        MakeToast({
+          variant: 'success',
+          content:
+            remaining > 0
+              ? `Đã phân tích ${ca.units_analyzed ?? 0} comment — còn ${remaining} chưa xử lý`
+              : 'Đã phân tích comment bằng AI',
+        });
+        setAnalysisOpen(true);
+      } else if (ca?.reason === 'already_done') {
+        MakeToast({ variant: 'success', content: 'Bài này đã phân tích trước đó' });
+        setAnalysisOpen(true);
+      } else if (ca?.reason === 'no_comments') {
+        MakeToast({ variant: 'warning', content: 'Chưa có comment để phân tích' });
+      } else {
+        MakeToast({
+          variant: 'warning',
+          content: ca?.reason
+            ? `Bỏ qua: ${ca.reason}`
+            : 'Không có comment pending để phân tích',
+        });
+      }
+      onAnalyzed?.();
+    },
+    [load, onAnalyzed]
+  );
+
+  const pollAnalysisJob = useCallback(
+    async (asyncJobId: number) => {
+      const generation = ++analysePollGenRef.current;
+      setAnalyzing(true);
+      try {
+        const status = await commentsApi.waitForAnalysisJob(asyncJobId, {
+          intervalMs: 2500,
+          isCancelled: () =>
+            analysePollCancelRef.current || generation !== analysePollGenRef.current,
+        });
+        if (
+          analysePollCancelRef.current ||
+          generation !== analysePollGenRef.current
+        ) {
+          return;
+        }
+        await finishAnalysisJob(status);
+      } catch (err) {
+        if (
+          analysePollCancelRef.current ||
+          generation !== analysePollGenRef.current
+        ) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('cancelled')) return;
+        MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+      } finally {
+        if (generation === analysePollGenRef.current) {
+          setAnalyzing(false);
+        }
+      }
+    },
+    [finishAnalysisJob]
+  );
+
+  useEffect(() => {
+    analysePollCancelRef.current = false;
+    let cancelled = false;
+
+    const resume = async () => {
+      if (!canMutate) return;
+      try {
+        const res = await commentsApi.getLatestAnalysisJob(scraperRunId);
+        const job = res.data;
+        if (!job || cancelled || analysePollCancelRef.current) return;
+        if (!isScraperAsyncInProgress(job.status)) return;
+        MakeToast({
+          variant: 'warning',
+          content: 'Đang có job phân tích comment — tiếp tục theo dõi',
+        });
+        await pollAnalysisJob(job.async_job_id);
+      } catch {
+        // ignore resume errors
+      }
+    };
+
+    void resume();
+
+    return () => {
+      cancelled = true;
+      analysePollCancelRef.current = true;
+      analysePollGenRef.current += 1;
+    };
+  }, [scraperRunId, canMutate, pollAnalysisJob]);
 
   const topLevelComments = useMemo(
     () => (data ? buildTopLevelComments(data) : []),
@@ -253,38 +407,55 @@ export function CommentPanel({
   }, [data, summary?.analyzed]);
 
   const handleAnalyze = async () => {
+    const commentsLimit = clampAnalyzeLimit(
+      maxComments,
+      1,
+      200,
+      DEFAULT_ANALYZE_MAX_COMMENTS
+    );
+    const repliesLimit = clampAnalyzeLimit(
+      maxReplies,
+      0,
+      50,
+      DEFAULT_ANALYZE_MAX_REPLIES
+    );
+    setMaxComments(commentsLimit);
+    setMaxReplies(repliesLimit);
     setAnalyzing(true);
+
     try {
-      const res = await commentsApi.analyze(scraperRunId);
-      const result = res.data;
-      if (result?.comments) {
-        setData(result.comments);
-      } else {
-        await load();
+      const res = await commentsApi.analyze(scraperRunId, {
+        max_comments: commentsLimit,
+        max_replies: repliesLimit,
+      });
+      const asyncJobId = res.data?.async_job_id;
+      if (asyncJobId == null) {
+        throw new Error('Missing async_job_id from analyze response');
       }
-      if (result?.content_brief?.content_brief) {
-        setLocalBrief(result.content_brief.content_brief);
-        setLocalBriefStatus('done');
-      }
-      const reason = result?.comments_analysis?.reason;
-      if (result?.comments_analysis?.analyzed) {
-        MakeToast({ variant: 'success', content: 'Đã phân tích comment bằng AI' });
-        setAnalysisOpen(true);
-      } else if (reason === 'already_done') {
-        MakeToast({ variant: 'success', content: 'Bài này đã phân tích trước đó' });
-        setAnalysisOpen(true);
-      } else if (reason === 'no_comments') {
-        MakeToast({ variant: 'warning', content: 'Chưa có comment để phân tích' });
-      } else {
+      MakeToast({
+        variant: 'success',
+        content: `Đã xếp hàng phân tích (tối đa ${commentsLimit} comment · ${repliesLimit} reply/thread)`,
+      });
+      await pollAnalysisJob(asyncJobId);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 409) {
         MakeToast({
           variant: 'warning',
-          content: reason ? `Bỏ qua: ${reason}` : 'Không có comment pending để phân tích',
+          content: 'Đang có job phân tích comment cho bài này — vui lòng đợi',
         });
+        try {
+          const latest = await commentsApi.getLatestAnalysisJob(scraperRunId);
+          if (latest.data && isScraperAsyncInProgress(latest.data.status)) {
+            await pollAnalysisJob(latest.data.async_job_id);
+            return;
+          }
+        } catch {
+          // fall through
+        }
+        setAnalyzing(false);
+        return;
       }
-      onAnalyzed?.();
-    } catch (err) {
       MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
-    } finally {
       setAnalyzing(false);
     }
   };
@@ -347,24 +518,52 @@ export function CommentPanel({
 
         <div className={styles.commentActionRow}>
           {canMutate && (
-            <button
-              type="button"
-              className={styles.commentAnalysisBtn}
-              onClick={() => void handleAnalyze()}
-              disabled={analyzing}
-              title="Chạy Gemini trên comment pending (FB / YouTube / TikTok)"
-            >
-              {analyzing ? (
-                <Loader2 size={14} className={styles.spin} aria-hidden />
-              ) : (
-                <Sparkles size={14} aria-hidden />
-              )}
-              {analyzing
-                ? 'Đang phân tích…'
-                : hasAnalysisFromDb
-                  ? 'Phân tích lại (comment thiếu kết quả)'
-                  : 'Phân tích comment'}
-            </button>
+            <>
+              <div className={styles.commentLimitFields}>
+                <div className={styles.commentLimitField}>
+                  <label htmlFor={`analyze-max-comments-${scraperRunId}`}>Comment</label>
+                  <input
+                    id={`analyze-max-comments-${scraperRunId}`}
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={maxComments}
+                    disabled={analyzing}
+                    onChange={(e) => setMaxComments(Number(e.target.value))}
+                  />
+                </div>
+                <div className={styles.commentLimitField}>
+                  <label htmlFor={`analyze-max-replies-${scraperRunId}`}>Reply</label>
+                  <input
+                    id={`analyze-max-replies-${scraperRunId}`}
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={maxReplies}
+                    disabled={analyzing}
+                    onChange={(e) => setMaxReplies(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.commentAnalysisBtn}
+                onClick={() => void handleAnalyze()}
+                disabled={analyzing}
+                title="Xếp hàng Gemini trên comment pending (theo giới hạn Comment / Reply)"
+              >
+                {analyzing ? (
+                  <Loader2 size={14} className={styles.spin} aria-hidden />
+                ) : (
+                  <Sparkles size={14} aria-hidden />
+                )}
+                {analyzing
+                  ? 'Đang phân tích…'
+                  : hasAnalysisFromDb
+                    ? 'Phân tích lại (comment thiếu kết quả)'
+                    : 'Phân tích comment'}
+              </button>
+            </>
           )}
 
           {hasAnalysisFromDb ? (
@@ -379,12 +578,13 @@ export function CommentPanel({
         </div>
 
         <p className={styles.commentScopeHint}>
-          Giới hạn comment/reply theo cấu hình kênh
+          Phân tích AI (queue): tối đa Comment gốc + Reply/thread chưa có kết quả · mặc định{' '}
+          {DEFAULT_ANALYZE_MAX_COMMENTS}+{DEFAULT_ANALYZE_MAX_REPLIES}
           {normalizePlatform(platform) === 'youtube'
-            ? ' (YouTube API: tối đa 100 gốc + 100 reply/comment mỗi lần)'
-            : ''}
+            ? ' · Lưu comment theo cấu hình kênh (YouTube API tối đa 100 gốc + 100 reply/comment)'
+            : ' · Lưu comment theo cấu hình kênh'}
           {' · '}
-          AI phân tích theo lô 10 comment/lần
+          Gemini theo lô 10 đơn vị/lần
         </p>
 
         {open ? (
