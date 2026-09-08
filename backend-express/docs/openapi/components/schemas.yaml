@@ -121,7 +121,9 @@ schemas:
       channel_ids:
         type: array
         items: { type: integer, minimum: 1 }
-        description: ID kênh trong bảng channels
+        description: >
+          ID kênh trong bảng channels. Quan hệ N–N qua subject_channels
+          (1 subject có thể nhiều kênh). UI hiện tại thường chỉ gửi 1 kênh (1–1).
   ScraperChannelIds:
     type: object
     required: [channel_id]

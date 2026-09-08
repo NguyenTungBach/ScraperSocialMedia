@@ -1,11 +1,11 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "ScraperSocialMedia API (Express)",
+    "title": "NetScopeTrend API (Express)",
     "version": "1.0.0",
     "description": "OpenAPI path keys **không** có tiền tố `/api` vì `servers.url` trong `config/swagger.js` đã là `.../api`.\n\nKhai báo operation trong controller bằng JSDoc `@openapi` (đọc bởi `swagger-jsdoc`).\nUI live: `/api-docs` · JSON: `/api-docs.json` · regenerate: `npm run openapi:generate`.\n\n**Auth:** JWT (`POST /auth/login`). Middleware `RequireAdminForWrites`: member chỉ GET;\nUsers / Settings / Schedules chỉ **admin**.\n\n**Scraper:**\n- Facebook / TikTok qua Apify (`APIFY_API_TOKEN` — runtime từ `key_scraps`)\n- YouTube qua Data API v3 (`YOUTUBE_API_KEY`) — video + comment; `refresh-tail` chỉ cập nhật stats\n- Scrape HTTP **async** (`202` + `async_job_id`) → poll `/scraper/async-status/:id` · cần `queue:worker`\n\n**Vận hành:** Settings (`key_scraps` + `general_settings`), Schedules (`general_schedules` + PM2 `-schedule`).\n",
     "contact": {
-      "name": "ScraperSocialMedia"
+      "name": "NetScopeTrend"
     },
     "license": {
       "name": "MIT"

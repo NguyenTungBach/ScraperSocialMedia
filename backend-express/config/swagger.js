@@ -62,12 +62,12 @@ const openApiDefinition = loadOpenApiFiles();
 const defaultDefinition = {
     openapi: '3.0.3',
     info: {
-        title: 'ScraperSocialMedia API',
+        title: 'NetScopeTrend API',
         version: '1.0.0',
         description:
-            'ScraperSocialMedia Backend API — scrape async (FB/TikTok Apify, YouTube Data API), subjects/channels, social_posts, comments+Gemini, snapshots, alerts, settings, schedules, users',
+            'NetScopeTrend Backend API — scrape async (FB/TikTok Apify, YouTube Data API), subjects/channels, social_posts, comments+Gemini, snapshots, alerts, settings, schedules, users',
         contact: {
-            name: 'ScraperSocialMedia'
+            name: 'NetScopeTrend'
         },
         license: {
             name: 'MIT'

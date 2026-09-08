@@ -57,7 +57,7 @@ function resolveFrom() {
     const expandedAddr = expandEnvPlaceholders(setting('MAIL_FROM_ADDRESS') || '');
     const { displayName: parsedName, email: parsedEmail } = splitDisplayNameAndEmail(expandedAddr);
     const expandedFromName = expandEnvPlaceholders(setting('MAIL_FROM_NAME') || '').trim();
-    const fromName = expandedFromName || parsedName || 'Hoyocodes';
+    const fromName = expandedFromName || parsedName || 'NetScopeTrend';
     const fromAddress = (parsedEmail || expandedAddr.trim()).trim();
     return { fromName, fromAddress };
 }

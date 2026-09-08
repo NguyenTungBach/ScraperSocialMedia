@@ -85,7 +85,7 @@ jobs:
       - name: Run alert Gmail
         env:
           NODE_ENV: production
-          APP_NAME: ${{ vars.APP_NAME || 'ScraperSocialMedia' }}
+          APP_NAME: ${{ vars.APP_NAME || 'NetScopeTrend' }}
           DB_CONNECTION: mysql
           DB_HOST: ${{ vars.DB_HOST }}
           DB_PORT: ${{ vars.DB_PORT || '19437' }}

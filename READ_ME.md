@@ -1,8 +1,10 @@
-# ScraperSocialMedia
+# NetScopeTrend
 
 Hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, YouTube, TikTok): cào bài + comment → lưu DB → tính chỉ số hot/trend & engagement → AI phân tích → cảnh báo mail khi vượt ngưỡng.
 
-**Stack:** Backend Express (MySQL/Sequelize) · Frontend Next.js · Apify (FB/TikTok) · YouTube Data API · Gemini · SMTP/Gmail (hoặc SES) · PM2 (API + queue + schedule).
+> Tên dự án sản phẩm: **NetScopeTrend**. Thư mục repo lịch sử có thể vẫn mang tên `ScraperSocialMedia`.
+
+**Stack:** Backend Express (MySQL/Sequelize) · Frontend Next.js · Apify (FB/TikTok) · YouTube Data API · Gemini · SMTP/Gmail · PM2 (API + queue + schedule).
 
 ---
 
@@ -16,24 +18,40 @@ Hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, 
 
 ### Luồng nghiệp vụ (hiện tại)
 
+Thứ tự sử dụng hệ thống:
+
 ```
-[Channels] ──POST /scraper/*/run (202)──► async_status_jobs + jobs (queue)
+1. Tạo kênh (channels)
+   · name, url, type_channel (facebook | youtube | tiktok)
+   · limit cào: max_posts / max_top_comments / max_replies
+
+2. Tạo đối tượng theo dõi (subjects)
+   · name (+ normalized_name tuỳ chọn)
+   · Gắn kênh qua subject_channels — **thiết kế N–N** (1 đối tượng có thể nhiều kênh; API `channel_ids[]`)
+   · **Hiện tại (UI):** chỉ chọn / vận hành **1–1** (1 đối tượng ↔ 1 kênh); BE không ép cứng 1 kênh
+
+3. Cào theo kênh ──POST /scraper/*/run (202)──► async_status_jobs + jobs
                     │                         │
                     │                    queue-worker
                     ▼                         ▼
-              scraper_runs (metrics bài) + channels.followers
-                              │
-                              ├─ match subject (name / normalized_name / subject_channels)
-                              │         ↓
-                              │   subjects_scraper_runs
-                              │         ↓
-                              │   social_posts (1 row / subject):
-                              │     · engagement = SUM metrics bài (theo cửa sổ)
-                              │     · follow = SUM(channels.followers) qua subject_channels
-                              │
-                              └─ Gemini: content_brief + phân tích comment (chunk 10/lần)
-                                        ↓ (khi hot hoặc trend ≥ ngưỡng — luồng alert)
-                                   Gmail/SES alert (+ AI top bài/subject)
+              Lưu dữ liệu:
+                · scraper_runs: likes, comments, shares, angry_count, views
+                  (cột follow trên bài luôn = 0)
+                · channels.followers: page likes / YT subs / TT fans
+                · post_comments / comment_threads: comment + reply
+
+4. Liên kết & tính điểm (sau khi có dữ liệu bài)
+                · Link bài → subject qua subject_channels (không match theo tên)
+                  → subjects_scraper_runs
+                · recomputeSocialPost → social_posts (1 row / subject, tháng hiện tại):
+                    engagement = SUM metrics bài
+                    follow = channels.followers của kênh gắn
+                    hot_score / trend_score (aggregate theo platform)
+                · Hot/trend từng bài: tính lúc đọc API (không cột lưu trên scraper_runs);
+                  snapshot ngày mới lưu hot/trend vào post_daily_snapshots
+
+5. (Tuỳ chọn) Gemini: content_brief + phân tích comment
+   → Alert Gmail khi hot hoặc trend ≥ ngưỡng
 
 [general_schedules] ──PM2 *-schedule──► spawn `npm run app:*` (scrape / snapshot / alert)
 [key_scraps + general_settings] ──SettingsCache──► Apify / YouTube / Gemini / Mail / Alert thresholds
@@ -50,13 +68,13 @@ Hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, 
 | **Cào dữ liệu** | Facebook (Apify), YouTube (Data API v3), TikTok (Apify). Limit **theo từng kênh**: `channels.max_posts` / `max_top_comments` / `max_replies` (default tạo kênh: **10 / 30 / 10** từ `config/scrapeLimits.js`). API scrape **async** (HTTP **202** + `async_job_id`); CLI sync: `npm run app:*-scrape`. Có `youtube/refresh-tail` cập nhật stats video cũ. |
 | **Queue scrape** | `POST /api/scraper/{facebook\|youtube\|tiktok}/run` enqueue job → bảng `async_status_jobs` + `jobs`. FE poll `GET /api/scraper/async-status/:id` (và `async-active` / `async-health`). Cần process `${PM2_API_NAME}-queue` (`npm run queue:worker`). 409 nếu cùng `scope_key` đang pending/running. |
 | **Chỉ số** | **Bài** (`scraper_runs`): likes, comments, shares, angry, views (`follow` cột luôn 0). **Kênh** (`channels.followers`): page likes / YT subscribers / TT fans. **Subject** (`social_posts`): SUM engagement bài + `follow` = SUM followers kênh gắn. Tính **hot_score**, **trend_score**; suy ra Thảo luận / Tương tác / Cảm xúc (công thức bên dưới). |
-| **Đối tượng & kênh** | CRUD `subjects`, `channels`; gắn N–N subject ↔ channel; discover subject qua Gemini. FE chỉnh limit cào từng kênh. |
+| **Đối tượng & kênh** | CRUD `subjects`, `channels`. Quan hệ **N–N** qua `subject_channels` (1 đối tượng ↔ nhiều kênh; API `channel_ids[]`). **Hiện tại UI chỉ dùng 1–1** (một đối tượng gắn một kênh). Discover subject qua Gemini. FE chỉnh limit cào từng kênh. |
 | **Comment + AI** | Lưu comment/thread; Gemini gắn sentiment, category, severity, reason; **content brief** cho bài. Chunk **10 đơn vị**/lần. Tự chạy sau scrape; nút **Phân tích comment** trên UI (FB/YT/TT). FE: danh sách + bảng phân tích **10 mục/trang**. |
 | **Snapshot metrics** | 3 bảng ngày: `channel_daily_snapshots`, `post_daily_snapshots` (kèm hot/trend), `post_top_comments_daily`. Chỉ kênh ∈ `subject_channels`. CLI `npm run app:metric-snapshot`; lịch mặc định mỗi 5h; FE nút Snapshot + thống kê kênh. |
 | **So sánh + mail** | UI so sánh nhiều kênh/bài theo khoảng ngày (snapshot); gửi báo cáo mail (`POST /reports/compare-email`) — tách khỏi alert hot/trend. |
 | **Alert** | `POST /api/alerts/gmail`: mail khi bài vượt ngưỡng **hot hoặc trend** (tháng hiện tại); AI **top 3 bài hot/subject**. CLI `npm run app:alert-gmail`. Ngưỡng đọc từ `general_settings` (Admin → Settings). |
 | **Lịch chạy (PM2)** | Bảng `general_schedules` + process `${PM2_API_NAME}-schedule`: đến giờ **spawn** `npm run app:*` (không `await` trong worker). Reload từ DB mỗi `SCHEDULE_RELOAD_MS` (mặc định 60s). FE admin `/schedules` (CRUD + Run now). Timezone `APP_TIMEZONE=Asia/Ho_Chi_Minh`. Seed mặc định: snapshot 5h, alert 17:00, scrape FB/YT/TT 05:00, YT refresh-tail 2 ngày/lần. Sau khi bật PM2 schedule, **tắt crontab/GH Actions trùng**. |
-| **Cấu hình runtime (Settings)** | API keys Apify/YouTube/Gemini → `key_scraps`; ngưỡng alert + SMTP/SES → `general_settings`. Seed lần đầu từ `.env`; **runtime đọc DB** (SettingsCache), không đọc lại các biến đó từ `.env`. FE admin `/settings`. |
+| **Cấu hình runtime (Settings)** | API keys Apify/YouTube/Gemini → `key_scraps`; ngưỡng alert + SMTP → `general_settings`. Seed lần đầu từ `.env`; **runtime đọc DB** (SettingsCache), không đọc lại các biến đó từ `.env`. FE admin `/settings`. |
 | **Phân quyền** | Role `admin` (full) \| `member` (chỉ đọc GET). Middleware `RequireAdminForWrites`: mọi POST/PUT/DELETE cần admin. CRUD users / settings / schedules chỉ admin. FE: `/users`, `/schedules`, `/settings` ẩn với member. |
 | **Hệ thống** | Auth JWT; BE API (tìm kiếm, paginate, CRUD); FE: home, subjects, channels, users, schedules, settings; queue/jobs; migrate + seed DB. |
 
@@ -143,7 +161,7 @@ Ngưỡng nhãn up/down mail so sánh: `COMPARE_UPTREND_PCT`, `COMPARE_DOWNTREND
    · content_brief (Gemini) nếu chưa có
    · phân tích comment pending / thiếu kết quả (Gemini, chunk 10 đơn vị/lần)
 
-5. buildAlertEmail → gửi SMTP/SES tới MAIL_MAIN (hoặc body.to)
+5. buildAlertEmail → gửi SMTP tới MAIL_MAIN (hoặc body.to)
    · BCC: MAIL_ALERT_BCC + body.bcc (dedupe, bỏ trùng người nhận chính)
 ```
 
@@ -202,9 +220,10 @@ Ngưỡng nhãn up/down mail so sánh: `COMPARE_UPTREND_PCT`, `COMPARE_DOWNTREND
 ```
 users
 channels ◄── subject_channels ──► subjects ◄── social_posts (1:1 subject)
-   │                                  │
+   │           (thiết kế N–N; UI hiện tại 1–1) │
    │                                  └── subjects_scraper_runs ──┐
    └──────────────────────────────► scraper_runs ◄────────────────┘
+                                      (link qua channel gắn subject, không match theo tên)
                                          │
                          ┌───────────────┼───────────────┐
                          ▼               ▼               ▼
@@ -223,9 +242,9 @@ general_schedules           (cron expression + npm run app:*)
 |------|--------|--------------|
 | `subjects` | Đối tượng theo dõi (người/chủ đề) | `name`, `normalized_name`, `item_type`, `status`, `source` |
 | `channels` | Catalog kênh MXH | `name`, `url`, `type_channel`, `followers`, `post_count`, `max_posts`, `max_top_comments`, `max_replies`, `raw_data` |
-| `subject_channels` | N–N subject ↔ channel | `subject_id`, `channel_id` |
+| `subject_channels` | **N–N** subject ↔ channel (thiết kế đầy đủ); **UI hiện tại chỉ 1–1** | `subject_id`, `channel_id` |
 | `scraper_runs` | **1 dòng = 1 bài/video** | `platform`, `platform_post_id`, `post_url`, `title`, `text`, metrics, `posted_at`, `channel_id`, `raw_data`, `content_brief*` |
-| `subjects_scraper_runs` | N–N subject ↔ bài khớp | `subject_id`, `scraper_run_id` |
+| `subjects_scraper_runs` | Liên kết bài ↔ subject (qua kênh đã gắn) | `subject_id`, `scraper_run_id` |
 | `social_posts` | **Cache 1 row / subject** (tháng lịch hiện tại) | engagement SUM; `follow` = SUM followers kênh; `trend_score`, `hot_score`, `posts_count` |
 | `post_comments` | Comment (kèm reply) theo bài | `scraper_run_id`, author/text/likes, sentiment/category/severity, `analysis_status` |
 | `comment_threads` | Thread comment + kết quả AI | `scraper_run_id`, `thread_key`, `classified_as`, `analysis_status`, … |
@@ -241,7 +260,7 @@ general_schedules           (cron expression + npm run app:*)
 | `jobs` / `failed_jobs` | Hàng đợi job (queue worker) |
 | `async_status_jobs` | Trạng thái scrape async (`pending`/`running`/`success`/`failed`) + `scope_key`, `result_json` |
 | `key_scraps` | API keys runtime (`APIFY_API_TOKEN`, `YOUTUBE_API_KEY`, `GEMINI_*`) |
-| `general_settings` | Alert thresholds + cấu hình mail SMTP/SES |
+| `general_settings` | Alert thresholds + cấu hình mail SMTP |
 | `general_schedules` | Lịch cron: `cron_expression`, `command` (`npm run app:*`), `enabled`, `last_status` |
 
 ```bash
@@ -330,6 +349,7 @@ npm run dev
 ```
 
 - `NEXT_PUBLIC_API_URL` trỏ tới backend `/api`
+- Next.js 14 App Router; **UI chủ yếu Client Component** — trình duyệt gọi REST API (dev: `npm run dev`; production: `npm run build` rồi `npm run start`)
 
 ---
 
@@ -421,7 +441,7 @@ Content-Type: application/json
 | Path | Ai thấy | Mô tả |
 |------|----------|--------|
 | `/home` | auth | Dashboard hot topic (`/social-posts/dashboard`) — xếp hạng, chart, scrape theo subject |
-| `/subjects` | auth | Quản lý đối tượng |
+| `/subjects` | auth | Quản lý đối tượng (N–N kênh trên API; UI hiện tại gắn 1 kênh) |
 | `/channels` | auth | Quản lý kênh + limit cào + scrape / snapshot |
 | `/users` | **admin** | CRUD tài khoản (admin / member) |
 | `/schedules` | **admin** | CRUD lịch cron + Run now |
@@ -452,7 +472,7 @@ Member: xem dữ liệu (GET); không tạo/sửa/xoá, không scrape/alert/sett
 ## Thư mục
 
 ```
-ScraperSocialMedia/
+NetScopeTrend/
 ├── READ_ME.md
 ├── .github/workflows/          # cron GH (tắt khi dùng PM2 schedule)
 ├── backend-express/

@@ -37,6 +37,7 @@ const SERVICE_HINTS = [
         name: 'Database',
         test(text) {
             if (/sequelize/i.test(text)) return true;
+            if (/deadlock/i.test(text)) return true;
             if (/ECONNREFUSED.*3306|mysql|ER_/i.test(text)) return true;
             if (/database error|connection.*refused/i.test(text)) return true;
             return false;

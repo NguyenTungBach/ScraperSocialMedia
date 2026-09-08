@@ -6,6 +6,7 @@ const db = require('../Models');
 const logger = require('../Logging/logger');
 const ScheduleStatus = require('../Constants/ScheduleStatus');
 const { validateAllowedCommand } = require('../Helpers/ScheduleCommandHelper');
+const { resolveScheduleLastError } = require('../Helpers/ScheduleExitErrorHelper');
 
 const BACKEND_ROOT = path.join(__dirname, '../..');
 
@@ -54,12 +55,16 @@ async function startSchedule(schedule, options = {}) {
     });
 
     let child;
+    /** @type {string} */
+    let stderrBuffer = '';
+    const STDERR_CAP = 65536;
+
     try {
         child = spawn(validated.command, {
             shell: true,
             cwd: BACKEND_ROOT,
             env: process.env,
-            stdio: ['ignore', 'inherit', 'inherit'],
+            stdio: ['ignore', 'inherit', 'pipe'],
             windowsHide: true,
         });
     } catch (error) {
@@ -71,6 +76,17 @@ async function startSchedule(schedule, options = {}) {
         });
         logger.error('Schedule spawn failed', { id, error: error.message });
         return { started: false, reason: error.message, schedule: await reloadPlain(id) };
+    }
+
+    if (child.stderr) {
+        child.stderr.on('data', (chunk) => {
+            const text = chunk.toString();
+            stderrBuffer += text;
+            if (stderrBuffer.length > STDERR_CAP) {
+                stderrBuffer = stderrBuffer.slice(-STDERR_CAP);
+            }
+            process.stderr.write(chunk);
+        });
     }
 
     child.on('error', async (error) => {
@@ -98,7 +114,7 @@ async function startSchedule(schedule, options = {}) {
         const ok = code === 0;
         const last_error = ok
             ? null
-            : `Process exited with code ${code}${signal ? ` signal ${signal}` : ''}`;
+            : resolveScheduleLastError({ code, signal, stderr: stderrBuffer });
         try {
             await db.GeneralSchedule.update(
                 {

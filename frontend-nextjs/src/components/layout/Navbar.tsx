@@ -127,7 +127,7 @@ export function Navbar() {
           <Menu size={22} aria-hidden />
         </button>
         <div className={styles['show-logo']}>
-          <Image src="/logo.png" alt="Hoyocodes" width={90} height={40} priority />
+          <Image src="/logo.png" alt="NetScopeTrend" width={90} height={40} priority />
         </div>
         <div className={styles['show-menu']}>
           <NavModules modules={navModules} t={t} />

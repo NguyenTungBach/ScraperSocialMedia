@@ -39,7 +39,7 @@ const swaggerSpec = swaggerJsdoc(swaggerConfig);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   explorer: true,
   customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'ScraperSocialMedia API Documentation',
+  customSiteTitle: 'NetScopeTrend API Documentation',
   swaggerOptions: {
     persistAuthorization: true,
     displayRequestDuration: true,
@@ -51,13 +51,13 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     urls: [
       {
         url: '/api-docs.json',
-        name: 'ScraperSocialMedia API'
+        name: 'NetScopeTrend API'
       }
     ]
   },
   customCssUrl: null,
   customfavIcon: null,
-  customSiteTitle: 'ScraperSocialMedia API Documentation'
+  customSiteTitle: 'NetScopeTrend API Documentation'
 }));
 
 // OpenAPI specification JSON endpoint

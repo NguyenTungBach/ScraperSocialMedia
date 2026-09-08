@@ -4,7 +4,14 @@ require('dotenv').config();
 const logger = require('../app/Logging/logger');
 const SettingsCache = require('../app/Services/SettingsCache');
 const { findCommandBySignature, listCommands } = require('../app/Console/Kernel');
-const { flushPendingServiceFailureAlerts } = require('../app/Services/ServiceFailureAlertService');
+const {
+    fireServiceFailureAlert,
+    flushPendingServiceFailureAlerts,
+} = require('../app/Services/ServiceFailureAlertService');
+const {
+    formatCommandFailureForSchedule,
+    writeScheduleExitError,
+} = require('../app/Helpers/ScheduleExitErrorHelper');
 
 async function exitWithCode(code) {
     // Alert Apify/YouTube/Gemini fire-and-forget — phải chờ SMTP xong trước khi kill process.
@@ -47,6 +54,15 @@ async function main() {
             signature,
             error: error.message,
             stack: error.stack,
+        });
+        const scheduleMessage =
+            formatCommandFailureForSchedule(error.message) || error.message || 'Command execution failed';
+        writeScheduleExitError(scheduleMessage);
+        fireServiceFailureAlert(error, {
+            source: 'schedule-cli',
+            command: signature,
+            operation: signature,
+            service: /deadlock/i.test(String(error.message || '')) ? 'Database' : undefined,
         });
         await exitWithCode(1);
     }

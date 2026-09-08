@@ -1,7 +1,7 @@
 {
-  "name": "scraper-social-media-backend",
+  "name": "netscope-trend-backend",
   "version": "1.0.0",
-  "description": "ScraperSocialMedia Backend — Gemini subjects, Apify scraper, social_posts, Gmail alerts",
+  "description": "NetScopeTrend Backend — Gemini subjects, Apify scraper, social_posts, Gmail alerts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

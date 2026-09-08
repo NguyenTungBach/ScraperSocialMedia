@@ -30,6 +30,7 @@ const ChannelRepository = require('./ChannelRepository');
 const CommentRepository = require('./CommentRepository');
 const geminiConfig = require('../../config/gemini');
 const { qualifyCol } = require('../Helpers/DialectHelper');
+const { withDeadlockRetry } = require('../Helpers/DbDeadlockHelper');
 
 const NEW_WITHIN_HOURS = 48;
 
@@ -1184,7 +1185,13 @@ class ScraperRepository {
      * Lưu từng item Apify vào scraper_runs, gắn subjects qua subject_channels, cập nhật social_posts.
      * @param {{ run: object, items: object[], channels: Array<{id,url}> }} params
      */
-    async ingestApifyItems({ run, items, channels = [] }) {
+    async ingestApifyItems(params = {}) {
+        return withDeadlockRetry(() => this._ingestApifyItemsOnce(params), {
+            label: 'ingestApifyItems',
+        });
+    }
+
+    async _ingestApifyItemsOnce({ run, items, channels = [] }) {
         const now = new Date();
         const affectedSubjectIds = new Set();
         const channelList = Array.isArray(channels) ? channels : [];
@@ -1322,7 +1329,13 @@ class ScraperRepository {
      *   videos — raw videos.list items HOẶC đã normalize (có platform_post_id)
      *   channel — khi scrape 1 kênh, ưu tiên gán channel_id này
      */
-    async ingestYoutubeItems({ videos = [], channels = [], channel = null } = {}) {
+    async ingestYoutubeItems(params = {}) {
+        return withDeadlockRetry(() => this._ingestYoutubeItemsOnce(params), {
+            label: 'ingestYoutubeItems',
+        });
+    }
+
+    async _ingestYoutubeItemsOnce({ videos = [], channels = [], channel = null } = {}) {
         const now = new Date();
         const affectedSubjectIds = new Set();
         const channelList = Array.isArray(channels) ? channels : [];
@@ -1480,7 +1493,13 @@ class ScraperRepository {
      * Lưu video TikTok vào scraper_runs (mirror YouTube ingest, source=apify).
      * @param {{ videos: object[], channels?: Array, channel?: object, run?: object }} params
      */
-    async ingestTikTokItems({ videos = [], channels = [], channel = null, run = null } = {}) {
+    async ingestTikTokItems(params = {}) {
+        return withDeadlockRetry(() => this._ingestTikTokItemsOnce(params), {
+            label: 'ingestTikTokItems',
+        });
+    }
+
+    async _ingestTikTokItemsOnce({ videos = [], channels = [], channel = null, run = null } = {}) {
         const now = new Date();
         const affectedSubjectIds = new Set();
         const channelList = Array.isArray(channels) ? channels : [];
@@ -1677,7 +1696,13 @@ class ScraperRepository {
      * Cập nhật stats tail từ videos.list — không cào comment, không insert mới.
      * @param {{ rows: object[], rawVideos: object[] }} params
      */
-    async updateYoutubeTailStats({ rows = [], rawVideos = [] } = {}) {
+    async updateYoutubeTailStats(params = {}) {
+        return withDeadlockRetry(() => this._updateYoutubeTailStatsOnce(params), {
+            label: 'updateYoutubeTailStats',
+        });
+    }
+
+    async _updateYoutubeTailStatsOnce({ rows = [], rawVideos = [] } = {}) {
         const now = new Date();
         const affectedSubjectIds = new Set();
         const byVideoId = new Map((rawVideos || []).map((v) => [String(v.id), v]));

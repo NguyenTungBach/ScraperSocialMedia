@@ -1,38 +1,38 @@
-# Hoyocodes — Next.js frontend (scaffold)
+# NetScopeTrend — Next.js frontend
 
-Khung Next.js tách từ `awa-frontend-nextjs`, tối giản: login + một màn home đã đăng nhập.
+Giao diện quản trị cho hệ thống **theo dõi & phân tích nội dung mạng xã hội** (Facebook, YouTube, TikTok).
 
-## Tính năng hiện tại
+## Luồng nghiệp vụ trên UI
 
-- Bắt buộc đăng nhập (JWT) — chưa có token → `/login`
-- Đăng nhập API: `POST /api/auth/login` (`user_code`, `password`) — khớp `backend-express`
-- Middleware / RouteGuard + API 401 → clear session về `/login`
-- Role: `admin` (full) / `member` (chỉ xem)
-- UI login lấy cảm hứng từ scaffold AWA
+1. **Kênh** (`/channels`) — tạo kênh: tên, link, nền tảng, số lượng cào (`max_posts` / `max_top_comments` / `max_replies`); chạy scrape / snapshot theo kênh.
+2. **Đối tượng** (`/subjects`) — tạo đối tượng theo dõi: tên + gắn kênh.
+   - **Thiết kế:** 1 đối tượng **N–N** kênh (`subject_channels`, API `channel_ids[]`).
+   - **Hiện tại trên UI:** chỉ chọn / vận hành **1–1** (một đối tượng ↔ một kênh).
+3. Sau khi có kênh (và thường đã gắn đối tượng), hệ thống **cào bài / comment / reply** theo `channel_id`.
+4. Backend lưu metrics quan trọng (`views`, `likes`, `shares`, `angry_count`, `comments` trên bài; **followers** trên kênh) rồi tính **hot_score** / **trend_score** (aggregate theo đối tượng trên dashboard).
+
+## Trang chính
+
+| Path | Ai thấy | Mô tả |
+|------|---------|--------|
+| `/home` | auth | Dashboard hot topic, chart, scrape theo subject |
+| `/subjects` | auth | Quản lý đối tượng (N–N kênh trên API; UI hiện tại 1–1) |
+| `/channels` | auth | Quản lý kênh + limit cào + scrape / snapshot |
+| `/users` | admin | CRUD tài khoản |
+| `/schedules` | admin | Lịch cron + Run now |
+| `/settings` | admin | API keys, mail, ngưỡng alert |
+| `/login` | public | Đăng nhập |
 
 ## Chạy local
 
 ```bash
-cd frontend-nextjs
-cp .env.example .env
 npm install
-npm run dev
+# NEXT_PUBLIC_API_URL trỏ backend /api ; NEXT_PUBLIC_APP_NAME=NetScopeTrend
+npm run dev      # phát triển (Next.js dev server)
+npm run build    # build production
+npm run start    # chạy bản build (sau build)
 ```
 
-Mặc định FE: `http://localhost:3000`, API: `http://127.0.0.1:3400/api` (cần `backend-express` chạy).
+Frontend dùng **Next.js 14 App Router** nhưng phần lớn màn hình là **Client Component** (`'use client'`): trình duyệt render UI và gọi REST API backend (không tách riêng luồng SSR/CSR trong vận hành hàng ngày).
 
-## Cấu trúc
-
-```
-src/
-  app/
-    login/          # Trang đăng nhập
-    (app)/          # Layout shell (Navbar) — không có trong URL
-      home/         # Màn chính sau login
-  components/       # UI + providers
-  lib/api/          # client, auth
-  lib/config/       # routes (public/protected)
-  lib/utils/        # token, validate, toast
-  store/auth.ts     # Zustand session
-  middleware.ts     # Auth redirect
-```
+Chi tiết hệ thống (API, DB, công thức điểm): xem `../READ_ME.md`.
