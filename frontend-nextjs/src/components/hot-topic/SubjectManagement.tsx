@@ -20,6 +20,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
+import { ConfirmActionModal } from '@/components/common/ConfirmActionModal/ConfirmActionModal';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   subjectsApi,
@@ -215,6 +216,7 @@ export function SubjectManagement() {
   const [form, setForm] = useState<SubjectFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [scrapeConfirmItem, setScrapeConfirmItem] = useState<SubjectListItem | null>(null);
 
   const [channelOptions, setChannelOptions] = useState<ChannelItem[]>([]);
 
@@ -832,7 +834,7 @@ export function SubjectManagement() {
                         <button
                           type="button"
                           className={cn(styles.iconBtn, styles.scrapeIconBtn)}
-                          onClick={() => void handleScrapeChannels(item)}
+                          onClick={() => setScrapeConfirmItem(item)}
                           disabled={scrapeLocked}
                           aria-label={`Quét data ${title}`}
                           title={
@@ -982,6 +984,28 @@ export function SubjectManagement() {
         onClose={() => {
           setDetailOpen(false);
           setDetailSubjectId(null);
+        }}
+      />
+
+      <ConfirmActionModal
+        open={scrapeConfirmItem != null}
+        title="Xác nhận quét data"
+        message={
+          scrapeConfirmItem ? (
+            <>
+              Bạn có chắc muốn quét dữ liệu cho đối tượng{' '}
+              <strong>{scrapeConfirmItem.name}</strong>? Job sẽ chạy nền trên các kênh
+              YouTube/TikTok/Facebook đã gắn.
+            </>
+          ) : null
+        }
+        confirmLabel="Quét data"
+        onClose={() => setScrapeConfirmItem(null)}
+        onConfirm={async () => {
+          if (!scrapeConfirmItem) return;
+          const item = scrapeConfirmItem;
+          setScrapeConfirmItem(null);
+          await handleScrapeChannels(item);
         }}
       />
     </HotTopicStickyShell>

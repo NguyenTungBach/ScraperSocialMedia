@@ -173,6 +173,9 @@ class ScraperAsyncService {
         if (jobType === ScraperAsyncType.COMMENT_ANALYSIS) {
             return require('../Jobs/CommentAnalysisJob');
         }
+        if (jobType === ScraperAsyncType.POST_REFRESH) {
+            return require('../Jobs/PostRefreshJob');
+        }
         const e = new Error(`Unknown scraper async job type: ${jobType}`);
         e.statusCode = 400;
         throw e;
@@ -348,6 +351,76 @@ class ScraperAsyncService {
             scraper_run_id: scraperRunId,
             max_comments: maxComments,
             max_replies: maxReplies,
+        });
+
+        return serializeRow(await asyncRow.reload());
+    }
+
+    /**
+     * Enqueue cào lại metrics 1 bài (nút UI).
+     * @param {{ scraper_run_id: number }} input
+     * @param {{ id?: number }|null} user
+     */
+    static async enqueuePostRefresh(input, user) {
+        const scraperRunId = Number(input.scraper_run_id);
+        if (!Number.isInteger(scraperRunId) || scraperRunId <= 0) {
+            const e = new Error('scraper_run_id is required');
+            e.statusCode = 422;
+            throw e;
+        }
+
+        const run = await db.ScraperRun.findByPk(scraperRunId, {
+            attributes: ['id', 'platform', 'title', 'text'],
+        });
+        if (!run) {
+            const e = new Error('scraper_run not found');
+            e.statusCode = 404;
+            throw e;
+        }
+
+        const scopeKey = `scraper_run:${scraperRunId}`;
+        const jobType = ScraperAsyncType.POST_REFRESH;
+
+        await ScraperAsyncQueueHealth.evaluate();
+
+        const existing = await this.findActive(jobType, scopeKey);
+        if (existing) {
+            const e = new Error('Post refresh already in progress for this post');
+            e.statusCode = 409;
+            e.data = serializeRow(existing);
+            throw e;
+        }
+
+        const plain = run.get ? run.get({ plain: true }) : run;
+        const payload = {
+            scraper_run_id: scraperRunId,
+            platform: plain.platform,
+            post_title: String(plain.title || plain.text || '').trim().slice(0, 255) || null,
+        };
+
+        const asyncRow = await db.AsyncStatusJob.create({
+            job_type: jobType,
+            scope_key: scopeKey,
+            status: ScraperAsyncStatus.PENDING,
+            requested_by_user_id: user?.id != null ? Number(user.id) : null,
+            payload_json: payload,
+        });
+
+        const JobClass = this.jobClassForType(jobType);
+        const queued = await JobClass.dispatch({
+            asyncStatusJobId: Number(asyncRow.id),
+            scraper_run_id: scraperRunId,
+        });
+
+        await asyncRow.update({
+            queue_job_id: Number(queued.id),
+        });
+
+        logger.info('[ScraperAsync] enqueued post refresh', {
+            async_job_id: Number(asyncRow.id),
+            queue_job_id: Number(queued.id),
+            scraper_run_id: scraperRunId,
+            platform: plain.platform,
         });
 
         return serializeRow(await asyncRow.reload());

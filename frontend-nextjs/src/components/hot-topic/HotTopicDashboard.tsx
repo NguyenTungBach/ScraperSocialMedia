@@ -9,6 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import { ConfirmActionModal } from '@/components/common/ConfirmActionModal/ConfirmActionModal';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
 import {
@@ -498,6 +499,7 @@ export function HotTopicDashboard() {
   );
   const [detailSubjectId, setDetailSubjectId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [scrapeConfirmTopic, setScrapeConfirmTopic] = useState<HotTopic | null>(null);
 
   const openDetail = useCallback((topic: HotTopic) => {
     if (!topic.subjectId) return;
@@ -805,7 +807,7 @@ export function HotTopicDashboard() {
                     resumed={resumed}
                     canMutate={canMutate}
                     onOpenDetail={openDetail}
-                    onScrapeChannels={(t) => void handleScrapeChannels(t)}
+                    onScrapeChannels={setScrapeConfirmTopic}
                   />
                 ))
               )}
@@ -820,6 +822,28 @@ export function HotTopicDashboard() {
         onClose={closeDetail}
         dateFrom={appliedDateFrom}
         dateTo={appliedDateTo}
+      />
+
+      <ConfirmActionModal
+        open={scrapeConfirmTopic != null}
+        title="Xác nhận quét data"
+        message={
+          scrapeConfirmTopic ? (
+            <>
+              Bạn có chắc muốn quét dữ liệu cho đối tượng{' '}
+              <strong>{scrapeConfirmTopic.title}</strong>? Job sẽ chạy nền trên các kênh
+              YouTube/TikTok/Facebook đã gắn.
+            </>
+          ) : null
+        }
+        confirmLabel="Quét data"
+        onClose={() => setScrapeConfirmTopic(null)}
+        onConfirm={async () => {
+          if (!scrapeConfirmTopic) return;
+          const topic = scrapeConfirmTopic;
+          setScrapeConfirmTopic(null);
+          await handleScrapeChannels(topic);
+        }}
       />
     </HotTopicStickyShell>
   );

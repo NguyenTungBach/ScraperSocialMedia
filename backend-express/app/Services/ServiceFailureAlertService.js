@@ -11,8 +11,38 @@ const logger = require('../Logging/logger');
 
 const LOG_PREFIX = '[service-failure-alert]';
 
+/** Tránh spam mail cùng lỗi (vd. queue retry Apify quota). */
+const DEFAULT_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
+const alertCooldownMs = Number(process.env.SERVICE_ALERT_COOLDOWN_MS) || DEFAULT_ALERT_COOLDOWN_MS;
+/** @type {Map<string, number>} */
+const recentAlertSentAt = new Map();
+
 /** Promise đang gửi mail — CLI phải await trước process.exit kẻo mail bị cắt. */
 const pendingAlerts = new Set();
+
+function buildAlertDedupeKey(label, errorMessage) {
+    const msg = String(errorMessage || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .slice(0, 200);
+    return `${label}|${msg}`;
+}
+
+function isAlertWithinCooldown(key) {
+    const lastSentAt = recentAlertSentAt.get(key);
+    if (!lastSentAt) return false;
+    return Date.now() - lastSentAt < alertCooldownMs;
+}
+
+function markAlertSent(key) {
+    recentAlertSentAt.set(key, Date.now());
+    if (recentAlertSentAt.size <= 200) return;
+    const cutoff = Date.now() - alertCooldownMs;
+    for (const [k, sentAt] of recentAlertSentAt) {
+        if (sentAt < cutoff) recentAlertSentAt.delete(k);
+    }
+}
 
 /**
  * Gửi mail bất đồng bộ — gọi tại tầng dịch vụ (Apify, YouTube, Gemini, DB…).
@@ -39,7 +69,8 @@ async function flushPendingServiceFailureAlerts() {
 
 class ServiceFailureAlertService {
     /**
-     * Gửi Gmail khi command/API gọi dịch vụ bị lỗi. Không cooldown — mỗi lần lỗi gửi một lần.
+     * Gửi Gmail khi command/API gọi dịch vụ bị lỗi.
+     * Cùng label + message trong SERVICE_ALERT_COOLDOWN_MS (mặc định 15 phút) chỉ gửi một lần.
      *
      * @param {Error|object|string|null|undefined} error
      * @param {{ command?: string, url?: string, method?: string, source?: string }} [context]
@@ -74,6 +105,15 @@ class ServiceFailureAlertService {
             context.source ||
             'service-call';
 
+        const dedupeKey = buildAlertDedupeKey(label, errorMessage);
+        if (isAlertWithinCooldown(dedupeKey)) {
+            logger.warn(`${LOG_PREFIX} skip duplicate email (cooldown)`, {
+                label,
+                cooldown_ms: alertCooldownMs,
+            });
+            return { notified: false, reason: 'cooldown' };
+        }
+
         const html = buildServiceFailureEmail({
             services,
             context,
@@ -94,6 +134,8 @@ class ServiceFailureAlertService {
             logger.error(`${LOG_PREFIX} send failed`, { label, services });
             return { notified: false, reason: 'send_failed' };
         }
+
+        markAlertSent(dedupeKey);
 
         logger.info(`${LOG_PREFIX} email sent`, {
             to: recipient,

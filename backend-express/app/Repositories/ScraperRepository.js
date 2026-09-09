@@ -920,6 +920,19 @@ class ScraperRepository {
         }
     }
 
+    buildScraperRunTextSearchWhere(keyword) {
+        const term = String(keyword || '').trim();
+        if (!term) return null;
+        const likeOp = db.sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
+        const pattern = `%${term}%`;
+        return {
+            [Op.or]: [
+                { title: { [likeOp]: pattern } },
+                { post_url: { [likeOp]: pattern } },
+            ],
+        };
+    }
+
     async countSubjectPostsByPlatform(subjectId, { date_from, date_to } = {}) {
         const sequelize = db.sequelize;
         const range = resolvePostedAtRange({ date_from, date_to });
@@ -1042,7 +1055,15 @@ class ScraperRepository {
      */
     async getSubjectDetail(
         id,
-        { page = 1, per_page = 20, sort_by = 'posted_at', platform = null, date_from, date_to } = {}
+        {
+            page = 1,
+            per_page = 20,
+            sort_by = 'posted_at',
+            platform = null,
+            date_from,
+            date_to,
+            q = null,
+        } = {}
     ) {
         const subject = await this.subjectModel.findByPk(id, {
             include: [
@@ -1063,6 +1084,10 @@ class ScraperRepository {
         const scraperRunWhere = { ...postedAtWhere };
         if (platformFilter) {
             scraperRunWhere.platform = platformFilter;
+        }
+        const textSearchWhere = this.buildScraperRunTextSearchWhere(q);
+        if (textSearchWhere) {
+            Object.assign(scraperRunWhere, textSearchWhere);
         }
 
         const scraperRunInclude = {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Loader2, Sparkles } from 'lucide-react';
+import { ConfirmActionModal } from '@/components/common/ConfirmActionModal/ConfirmActionModal';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import {
   commentsApi,
@@ -232,6 +233,7 @@ export function CommentPanel({
   const [commentPage, setCommentPage] = useState(1);
   const [maxComments, setMaxComments] = useState(DEFAULT_ANALYZE_MAX_COMMENTS);
   const [maxReplies, setMaxReplies] = useState(DEFAULT_ANALYZE_MAX_REPLIES);
+  const [analyzeConfirmOpen, setAnalyzeConfirmOpen] = useState(false);
   const analysePollCancelRef = useRef(false);
   const analysePollGenRef = useRef(0);
 
@@ -548,7 +550,7 @@ export function CommentPanel({
               <button
                 type="button"
                 className={styles.commentAnalysisBtn}
-                onClick={() => void handleAnalyze()}
+                onClick={() => setAnalyzeConfirmOpen(true)}
                 disabled={analyzing}
                 title="Xếp hàng Gemini trên comment pending (theo giới hạn Comment / Reply)"
               >
@@ -630,6 +632,36 @@ export function CommentPanel({
         contentBrief={localBrief}
         contentBriefStatus={localBriefStatus}
         initialData={data}
+      />
+
+      <ConfirmActionModal
+        open={analyzeConfirmOpen}
+        title={hasAnalysisFromDb ? 'Xác nhận phân tích lại' : 'Xác nhận phân tích comment'}
+        message={
+          hasAnalysisFromDb ? (
+            <>
+              Bạn có chắc muốn phân tích lại comment chưa có kết quả cho bài{' '}
+              <strong>{videoTitle || 'này'}</strong>? Giới hạn: tối đa{' '}
+              {clampAnalyzeLimit(maxComments, 1, 200, DEFAULT_ANALYZE_MAX_COMMENTS)} comment gốc
+              và{' '}
+              {clampAnalyzeLimit(maxReplies, 0, 50, DEFAULT_ANALYZE_MAX_REPLIES)} reply/thread.
+            </>
+          ) : (
+            <>
+              Bạn có chắc muốn phân tích comment cho bài{' '}
+              <strong>{videoTitle || 'này'}</strong>? Giới hạn: tối đa{' '}
+              {clampAnalyzeLimit(maxComments, 1, 200, DEFAULT_ANALYZE_MAX_COMMENTS)} comment gốc
+              và{' '}
+              {clampAnalyzeLimit(maxReplies, 0, 50, DEFAULT_ANALYZE_MAX_REPLIES)} reply/thread.
+            </>
+          )
+        }
+        confirmLabel="Phân tích"
+        onClose={() => setAnalyzeConfirmOpen(false)}
+        onConfirm={async () => {
+          setAnalyzeConfirmOpen(false);
+          await handleAnalyze();
+        }}
       />
     </>
   );

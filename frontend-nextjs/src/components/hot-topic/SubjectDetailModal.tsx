@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   CalendarRange,
@@ -9,6 +9,8 @@ import {
   GitCompareArrows,
   Loader2,
   MessageCircle,
+  RefreshCw,
+  Search,
   Share2,
   ThumbsUp,
   TrendingDown,
@@ -16,7 +18,7 @@ import {
   X,
   Angry,
 } from 'lucide-react';
-import { getApiErrorMessage } from '@/lib/api/client';
+import { ApiRequestError, getApiErrorMessage } from '@/lib/api/client';
 import {
   subjectsApi,
   type SubjectDetail,
@@ -43,7 +45,7 @@ import {
   getSentimentFormulaTooltip,
   getTrendScoreFormulaTooltip,
 } from '@/lib/utils/metricFormulas';
-import { getCurrentMonthDateRange } from '@/lib/utils/dateRange';
+import { getCurrentMonthDateRange, canGoToNextMonth, shiftMonthDateRange } from '@/lib/utils/dateRange';
 import { cn } from '@/lib/utils';
 import type { ChannelItem } from '@/lib/api/channels';
 import { PlatformBadge } from './PlatformBadge';
@@ -51,6 +53,16 @@ import { CommentPanel } from './CommentPanel';
 import { CompareModal, subjectPostsToCandidates } from './CompareModal';
 import { ComparePostByDayModal } from './ComparePostByDayModal';
 import { PostSnapshotModal } from './PostSnapshotModal';
+import { ConfirmActionModal } from '@/components/common/ConfirmActionModal/ConfirmActionModal';
+import {
+  isScraperAsyncInProgress,
+  normalizeScraperResultJson,
+  scraperApi,
+  type ScraperAsyncStatusData,
+} from '@/lib/api/scraper';
+import { canWrite } from '@/lib/config/auth';
+import { useAuthStore } from '@/store/auth';
+import { MakeToast } from '@/lib/utils/toast';
 import styles from './SubjectDetailModal.module.scss';
 
 const PER_PAGE_OPTIONS = [5, 10, 20] as const;
@@ -93,6 +105,7 @@ function PostCard({
   onCompareByDay,
   onStats,
   onCommentAnalyzed,
+  onPostRefreshed,
 }: {
   post: SubjectRelatedPost;
   channelMap: Map<number, ChannelItem>;
@@ -100,11 +113,149 @@ function PostCard({
   onCompareByDay: (post: SubjectRelatedPost) => void;
   onStats: (post: SubjectRelatedPost) => void;
   onCommentAnalyzed?: () => void;
+  onPostRefreshed?: () => void;
 }) {
   const preview = post.title?.trim() || post.text?.trim() || '(Không có nội dung)';
   const channel = post.channel_id ? channelMap.get(post.channel_id) : null;
   const platform = resolvePostPlatform(post, channelMap);
   const platformMeta = getPlatformMeta(platform);
+  const canMutate = canWrite(useAuthStore((s) => s.user?.role));
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshPollCancelRef = useRef(false);
+  const refreshPollGenRef = useRef(0);
+  const pollRefreshJobRef = useRef<(asyncJobId: number) => Promise<void>>(async () => {});
+
+  const finishRefreshJob = useCallback(
+    async (status: ScraperAsyncStatusData) => {
+      if (status.status === 'failed' || status.status === 'stale') {
+        MakeToast({
+          variant: 'danger',
+          content: status.error_message || 'Cào lại bài thất bại',
+        });
+        return;
+      }
+
+      const summary = normalizeScraperResultJson(status.result_json);
+      const updated = summary?.upsert_stats?.updated ?? 0;
+      MakeToast({
+        variant: 'success',
+        content:
+          updated > 0
+            ? 'Đã cập nhật số liệu bài viết'
+            : 'Đã cào lại bài viết',
+      });
+      onPostRefreshed?.();
+    },
+    [onPostRefreshed]
+  );
+
+  const pollRefreshJob = useCallback(
+    async (asyncJobId: number) => {
+      const generation = ++refreshPollGenRef.current;
+      setRefreshing(true);
+      try {
+        const status = await scraperApi.waitForPostRefreshJob(asyncJobId, {
+          intervalMs: 2500,
+          isCancelled: () =>
+            refreshPollCancelRef.current || generation !== refreshPollGenRef.current,
+        });
+        if (
+          refreshPollCancelRef.current ||
+          generation !== refreshPollGenRef.current
+        ) {
+          return;
+        }
+        await finishRefreshJob(status);
+      } catch (err) {
+        if (
+          refreshPollCancelRef.current ||
+          generation !== refreshPollGenRef.current
+        ) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('cancelled')) return;
+        MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+      } finally {
+        if (
+          generation === refreshPollGenRef.current ||
+          refreshPollCancelRef.current
+        ) {
+          setRefreshing(false);
+        }
+      }
+    },
+    [finishRefreshJob]
+  );
+
+  pollRefreshJobRef.current = pollRefreshJob;
+
+  const handleRefreshPost = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await scraperApi.refreshPost(post.id);
+      const asyncJobId = res.data?.async_job_id;
+      if (asyncJobId == null) {
+        throw new Error('Missing async_job_id from refresh response');
+      }
+      MakeToast({
+        variant: 'success',
+        content: 'Đã xếp hàng cào lại bài viết',
+      });
+      await pollRefreshJob(asyncJobId);
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 409) {
+        MakeToast({
+          variant: 'warning',
+          content: 'Đang có job cào lại bài này — vui lòng đợi',
+        });
+        try {
+          const latest = await scraperApi.getLatestPostRefreshJob(post.id);
+          if (latest.data && isScraperAsyncInProgress(latest.data.status)) {
+            await pollRefreshJob(latest.data.async_job_id);
+            return;
+          }
+        } catch {
+          // fall through
+        }
+        setRefreshing(false);
+        return;
+      }
+      MakeToast({ variant: 'danger', content: getApiErrorMessage(err) });
+      setRefreshing(false);
+    }
+  }, [pollRefreshJob, post.id]);
+
+  useEffect(() => {
+    refreshPollCancelRef.current = false;
+    let cancelled = false;
+
+    const resume = async () => {
+      if (!canMutate) return;
+      try {
+        const res = await scraperApi.getLatestPostRefreshJob(post.id);
+        const job = res.data;
+        if (!job || cancelled || refreshPollCancelRef.current) return;
+        if (!isScraperAsyncInProgress(job.status)) return;
+        MakeToast({
+          variant: 'warning',
+          content: 'Đang có job cào lại bài — tiếp tục theo dõi',
+        });
+        await pollRefreshJobRef.current(job.async_job_id);
+      } catch {
+        // ignore resume errors
+      }
+    };
+
+    void resume();
+
+    return () => {
+      cancelled = true;
+      refreshPollCancelRef.current = true;
+      refreshPollGenRef.current += 1;
+    };
+  }, [canMutate, post.id]);
 
   return (
     <article
@@ -121,6 +272,22 @@ function PostCard({
           ) : null}
         </div>
         <div className={styles.postHeaderRight}>
+          {canMutate ? (
+            <button
+              type="button"
+              className={styles.postCompareBtn}
+              onClick={() => setRefreshConfirmOpen(true)}
+              disabled={refreshing}
+              title="Cào lại likes, views, shares… từ nền tảng gốc"
+            >
+              {refreshing ? (
+                <Loader2 size={14} className={styles.spin} aria-hidden />
+              ) : (
+                <RefreshCw size={14} aria-hidden />
+              )}
+              {refreshing ? 'Đang cào…' : 'Cào lại bài'}
+            </button>
+          ) : null}
           <button
             type="button"
             className={styles.postCompareBtn}
@@ -240,6 +407,24 @@ function PostCard({
         contentBriefStatus={post.content_brief_status}
         onAnalyzed={onCommentAnalyzed}
       />
+
+      <ConfirmActionModal
+        open={refreshConfirmOpen}
+        title="Xác nhận cào lại bài"
+        message={
+          <>
+            Bạn có chắc muốn cào lại số liệu (likes, comments, shares, views) cho bài{' '}
+            <strong>{preview}</strong>? Hệ thống sẽ lấy dữ liệu mới từ nền tảng gốc —{' '}
+            <strong>không</strong> cào comment và không chạy phân tích AI.
+          </>
+        }
+        confirmLabel="Cào lại"
+        onClose={() => setRefreshConfirmOpen(false)}
+        onConfirm={async () => {
+          setRefreshConfirmOpen(false);
+          await handleRefreshPost();
+        }}
+      />
     </article>
   );
 }
@@ -291,6 +476,8 @@ export function SubjectDetailModal({
     externalDateFrom || initialRange.date_from
   );
   const [appliedDateTo, setAppliedDateTo] = useState(externalDateTo || initialRange.date_to);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [compareSeed, setCompareSeed] = useState<{
     initialPostIds: number[];
   } | null>(null);
@@ -305,6 +492,7 @@ export function SubjectDetailModal({
       platform?: string;
       date_from?: string;
       date_to?: string;
+      q?: string;
     }) => {
       if (!subjectId) return;
       const nextPage = options?.page ?? page;
@@ -313,6 +501,7 @@ export function SubjectDetailModal({
       const nextPlatform = options?.platform ?? platformFilter;
       const nextFrom = options?.date_from ?? appliedDateFrom;
       const nextTo = options?.date_to ?? appliedDateTo;
+      const nextQ = options?.q ?? searchQuery;
 
       setLoading(true);
       setError(null);
@@ -323,6 +512,7 @@ export function SubjectDetailModal({
           per_page: nextPerPage,
           sort_by: nextSort,
           platform: nextPlatform || undefined,
+          q: nextQ || undefined,
           date_from: nextFrom,
           date_to: nextTo,
         });
@@ -336,6 +526,7 @@ export function SubjectDetailModal({
         if (options?.platform !== undefined) setPlatformFilter(nextPlatform);
         if (options?.date_from !== undefined) setAppliedDateFrom(nextFrom);
         if (options?.date_to !== undefined) setAppliedDateTo(nextTo);
+        if (options?.q !== undefined) setSearchQuery(nextQ);
       } catch (err) {
         setError(getApiErrorMessage(err));
         setDetail(null);
@@ -343,7 +534,7 @@ export function SubjectDetailModal({
         setLoading(false);
       }
     },
-    [subjectId, sortBy, perPage, platformFilter, page, appliedDateFrom, appliedDateTo]
+    [subjectId, sortBy, perPage, platformFilter, page, appliedDateFrom, appliedDateTo, searchQuery]
   );
 
   useEffect(() => {
@@ -354,6 +545,8 @@ export function SubjectDetailModal({
       setPlatformFilter('');
       setSortBy('posted_at');
       setPerPage(DEFAULT_PER_PAGE);
+      setSearchInput('');
+      setSearchQuery('');
       return;
     }
     const range = getCurrentMonthDateRange();
@@ -363,8 +556,11 @@ export function SubjectDetailModal({
     setDateTo(to);
     setAppliedDateFrom(from);
     setAppliedDateTo(to);
-    void load({ page: 1, sort: 'posted_at', platform: '', date_from: from, date_to: to });
-  }, [open, subjectId, externalDateFrom, externalDateTo]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSearchInput('');
+    setSearchQuery('');
+    void load({ page: 1, sort: 'posted_at', platform: '', q: '', date_from: from, date_to: to });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, subjectId, externalDateFrom, externalDateTo]);
 
   useEffect(() => {
     if (!open) return;
@@ -413,6 +609,15 @@ export function SubjectDetailModal({
     return groupPostsByPlatform(detail.posts, channelMap);
   }, [detail?.posts, platformFilter, channelMap]);
 
+  const canNextMonth = useMemo(
+    () => canGoToNextMonth(appliedDateFrom),
+    [appliedDateFrom]
+  );
+
+  const handlePostDataChanged = useCallback(() => {
+    void load({ page, sort: sortBy, platform: platformFilter, q: searchQuery });
+  }, [load, page, sortBy, platformFilter, searchQuery]);
+
   if (!open) return null;
 
   const aggregate = detail?.aggregate;
@@ -424,17 +629,17 @@ export function SubjectDetailModal({
 
   const handlePlatformChange = (nextPlatform: string) => {
     setPlatformFilter(nextPlatform);
-    void load({ page: 1, platform: nextPlatform, sort: sortBy });
+    void load({ page: 1, platform: nextPlatform, sort: sortBy, q: searchQuery });
   };
 
   const handleSortChange = (nextSort: SubjectPostsSortBy) => {
     setSortBy(nextSort);
-    void load({ page: 1, sort: nextSort, platform: platformFilter });
+    void load({ page: 1, sort: nextSort, platform: platformFilter, q: searchQuery });
   };
 
   const handlePerPageChange = (nextPerPage: PostsPerPage) => {
     setPerPage(nextPerPage);
-    void load({ page: 1, per_page: nextPerPage, platform: platformFilter });
+    void load({ page: 1, per_page: nextPerPage, platform: platformFilter, q: searchQuery });
   };
 
   const handleApplyDates = () => {
@@ -442,28 +647,57 @@ export function SubjectDetailModal({
     const to = dateTo || getCurrentMonthDateRange().date_to;
     setDateFrom(from);
     setDateTo(to);
-    void load({ page: 1, date_from: from, date_to: to });
+    void load({ page: 1, date_from: from, date_to: to, q: searchQuery });
+  };
+
+  const handleApplySearch = () => {
+    const q = searchInput.trim();
+    void load({ page: 1, q });
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleApplySearch();
+    }
   };
 
   const handleResetMonth = () => {
     const range = getCurrentMonthDateRange();
     setDateFrom(range.date_from);
     setDateTo(range.date_to);
-    void load({ page: 1, date_from: range.date_from, date_to: range.date_to });
+    void load({ page: 1, date_from: range.date_from, date_to: range.date_to, q: searchQuery });
+  };
+
+  const goToAdjacentMonth = (deltaMonths: number) => {
+    if (deltaMonths > 0 && !canGoToNextMonth(appliedDateFrom)) return;
+    const range = shiftMonthDateRange(appliedDateFrom, deltaMonths);
+    setDateFrom(range.date_from);
+    setDateTo(range.date_to);
+    void load({
+      page: 1,
+      date_from: range.date_from,
+      date_to: range.date_to,
+      q: searchQuery,
+    });
   };
 
   const goToPage = (nextPage: number) => {
     if (nextPage < 1 || nextPage > totalPages || postsLoading) return;
-    void load({ page: nextPage, sort: sortBy, platform: platformFilter });
+    void load({ page: nextPage, sort: sortBy, platform: platformFilter, q: searchQuery });
   };
 
   const renderPosts = () => {
     if (!detail?.posts?.length) {
+      const searchHint = searchQuery
+        ? `Không có bài viết nào khớp “${searchQuery}” trong khoảng đã chọn.`
+        : null;
       return (
         <div className={styles.empty}>
-          {platformFilter
-            ? `Chưa có bài viết nào trên ${getPlatformMeta(platformFilter).label} trong khoảng đã chọn.`
-            : 'Chưa có bài viết nào trong khoảng thời gian đã chọn.'}
+          {searchHint ||
+            (platformFilter
+              ? `Chưa có bài viết nào trên ${getPlatformMeta(platformFilter).label} trong khoảng đã chọn.`
+              : 'Chưa có bài viết nào trong khoảng thời gian đã chọn.')}
         </div>
       );
     }
@@ -474,8 +708,8 @@ export function SubjectDetailModal({
         setCompareSeed({ initialPostIds: [post.id] }),
       onCompareByDay: (post: SubjectRelatedPost) => setCompareByDayPost(post),
       onStats: (post: SubjectRelatedPost) => setStatsPost(post),
-      onCommentAnalyzed: () =>
-        void load({ page, sort: sortBy, platform: platformFilter }),
+      onCommentAnalyzed: handlePostDataChanged,
+      onPostRefreshed: handlePostDataChanged,
     };
 
     if (platformFilter) {
@@ -675,63 +909,103 @@ export function SubjectDetailModal({
                 Bài viết liên quan{' '}
                 <em>({totalRecords})</em>
               </h3>
-              <div className={styles.postsToolbarRight}>
-                <div className={styles.dateRangeFilter}>
-                  <label>
-                    Từ
+              <div className={styles.postsToolbarPanel}>
+                <div className={styles.postsToolbarControls}>
+                  <div className={styles.postSearchBox}>
+                    <Search size={15} aria-hidden />
                     <input
-                      type="date"
-                      value={dateFrom}
+                      type="search"
+                      value={searchInput}
                       disabled={postsLoading}
-                      onChange={(e) => setDateFrom(e.target.value)}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onKeyDown={handleSearchKeyDown}
+                      placeholder="Tìm theo tiêu đề hoặc URL…"
+                      aria-label="Tìm bài viết theo tiêu đề hoặc URL"
                     />
-                  </label>
-                  <label>
-                    Đến
-                    <input
-                      type="date"
-                      value={dateTo}
+                    <button
+                      type="button"
+                      className={styles.postSearchBtn}
                       disabled={postsLoading}
-                      onChange={(e) => setDateTo(e.target.value)}
-                    />
-                  </label>
-                  <button type="button" disabled={postsLoading} onClick={handleApplyDates}>
-                    Áp dụng
-                  </button>
-                  <button type="button" disabled={postsLoading} onClick={handleResetMonth}>
-                    Tháng này
-                  </button>
+                      onClick={handleApplySearch}
+                    >
+                      Tìm
+                    </button>
+                  </div>
+                  <div className={styles.dateRangeFilter}>
+                    <button
+                      type="button"
+                      disabled={postsLoading}
+                      onClick={() => goToAdjacentMonth(-1)}
+                      title="Tháng trước"
+                    >
+                      Tháng trước
+                    </button>
+                    <label>
+                      Từ
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        disabled={postsLoading}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Đến
+                      <input
+                        type="date"
+                        value={dateTo}
+                        disabled={postsLoading}
+                        onChange={(e) => setDateTo(e.target.value)}
+                      />
+                    </label>
+                    <button type="button" disabled={postsLoading} onClick={handleApplyDates}>
+                      Áp dụng
+                    </button>
+                    <button type="button" disabled={postsLoading} onClick={handleResetMonth}>
+                      Tháng này
+                    </button>
+                    <button
+                      type="button"
+                      disabled={postsLoading || !canNextMonth}
+                      onClick={() => goToAdjacentMonth(1)}
+                      title={canNextMonth ? 'Tháng sau' : 'Chưa có dữ liệu tháng tương lai'}
+                    >
+                      Tháng sau
+                    </button>
+                  </div>
                 </div>
-                <label>
-                  Hiển thị
-                  <select
-                    value={perPage}
-                    disabled={postsLoading}
-                    onChange={(e) =>
-                      handlePerPageChange(Number(e.target.value) as PostsPerPage)
-                    }
-                  >
-                    {PER_PAGE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n} / trang
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Sắp xếp
-                  <select
-                    value={sortBy}
-                    disabled={postsLoading}
-                    onChange={(e) => handleSortChange(e.target.value as SubjectPostsSortBy)}
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className={styles.postsToolbarMeta}>
+                  <label>
+                    Hiển thị
+                    <select
+                      value={perPage}
+                      disabled={postsLoading}
+                      onChange={(e) =>
+                        handlePerPageChange(Number(e.target.value) as PostsPerPage)
+                      }
+                    >
+                      {PER_PAGE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n} / trang
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Sắp xếp
+                    <select
+                      value={sortBy}
+                      disabled={postsLoading}
+                      onChange={(e) => handleSortChange(e.target.value as SubjectPostsSortBy)}
+                    >
+                      {SORT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
             </div>
 

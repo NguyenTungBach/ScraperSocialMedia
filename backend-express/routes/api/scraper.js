@@ -7,6 +7,7 @@ const {
     validateRunYoutube,
     validateRunTikTok,
     validateRefreshYoutubeTail,
+    validateRefreshPost,
     validateAsyncStatusLatest,
 } = require('../../app/Http/Requests/ScraperRequest');
 
@@ -55,6 +56,13 @@ router.post(
     '/youtube/refresh-tail',
     validateRefreshYoutubeTail,
     controller.refreshYoutubeTail.bind(controller)
+);
+
+/** POST /api/scraper/post/refresh — cào lại metrics 1 bài (202) */
+router.post(
+    '/post/refresh',
+    validateRefreshPost,
+    controller.refreshPost.bind(controller)
 );
 
 module.exports = router;

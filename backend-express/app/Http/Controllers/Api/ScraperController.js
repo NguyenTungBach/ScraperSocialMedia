@@ -35,6 +35,9 @@ class ScraperController {
         if (e.statusCode === 400) {
             return ResponseService.responseJsonError(res, HTTP_STATUS.BAD_REQUEST, e.message);
         }
+        if (e.statusCode === 404) {
+            return ResponseService.responseJsonError(res, HTTP_STATUS.NOT_FOUND, e.message);
+        }
         return next(e);
     }
 
@@ -300,6 +303,45 @@ class ScraperController {
             return ResponseService.responseJson(res, HTTP_STATUS.SUCCESS, result);
         } catch (error) {
             return next(error);
+        }
+    }
+
+    /**
+     * @openapi
+     * /scraper/post/refresh:
+     *   post:
+     *     tags: [Scraper]
+     *     summary: Enqueue cào lại metrics 1 bài (async) — trả 202 + async_job_id
+     *     description: |
+     *       Body nhận `scraper_run_id`. Reuse ingest pipeline như cào kênh (không comment / AI).
+     *       FE poll `GET /scraper/async-status/:id`.
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [scraper_run_id]
+     *             properties:
+     *               scraper_run_id: { type: integer, minimum: 1 }
+     *     responses:
+     *       "202":
+     *         description: Job enqueued
+     *       "409":
+     *         description: Job đã đang chạy cho bài này
+     *       "404":
+     *         description: scraper_run not found
+     */
+    async refreshPost(req, res, next) {
+        try {
+            const data = req.validatedData || {};
+            const result = await ScraperAsyncService.enqueuePostRefresh(data, req.user);
+            return res.status(HTTP_STATUS.ACCEPTED).json({
+                code: HTTP_STATUS.ACCEPTED,
+                data: result,
+            });
+        } catch (error) {
+            return this.handleEnqueueError(res, error, next);
         }
     }
 }

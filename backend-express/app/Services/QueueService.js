@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const db = require('../Models');
+const { isQueueJobRetriable } = require('../Helpers/QueueRetriableHelper');
 const logger = require('../Logging/logger');
 
 const MAX_ATTEMPTS = 3;
@@ -16,6 +17,7 @@ const JOB_LOADERS = {
     TikTokScrapeJob: () => require('../Jobs/TikTokScrapeJob'),
     FacebookScrapeJob: () => require('../Jobs/FacebookScrapeJob'),
     CommentAnalysisJob: () => require('../Jobs/CommentAnalysisJob'),
+    PostRefreshJob: () => require('../Jobs/PostRefreshJob'),
 };
 
 function nowSec() {
@@ -170,12 +172,14 @@ class QueueService {
             });
         } catch (error) {
             const attempts = Number(job.attempts || 0);
-            const retriable = attempts < MAX_ATTEMPTS;
+            const errorRetriable = isQueueJobRetriable(error);
+            const retriable = errorRetriable && attempts < MAX_ATTEMPTS;
 
             logger.error('Queue job failed', {
                 job_id: jobId,
                 attempts,
                 retriable,
+                error_retriable: errorRetriable,
                 error: error.message,
                 stack: error.stack
             });

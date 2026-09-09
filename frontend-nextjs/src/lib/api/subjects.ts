@@ -146,6 +146,7 @@ export interface SubjectDetailParams {
   per_page?: number;
   sort_by?: SubjectPostsSortBy;
   platform?: string;
+  q?: string;
   date_from?: string;
   date_to?: string;
 }
@@ -179,6 +180,7 @@ export const subjectsApi = {
         per_page: params.per_page ?? 20,
         sort_by: params.sort_by ?? 'posted_at',
         platform: params.platform || undefined,
+        q: params.q || undefined,
         date_from: params.date_from || undefined,
         date_to: params.date_to || undefined,
       },

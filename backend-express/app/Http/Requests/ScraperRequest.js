@@ -38,6 +38,7 @@ const asyncStatusLatestSchema = z.object({
         'tiktok_scrape',
         'facebook_scrape',
         'comment_analysis',
+        'post_refresh',
     ]),
     scope_key: z.string().trim().min(1).max(255),
 });
@@ -46,6 +47,10 @@ const refreshYoutubeTailSchema = z.object({
     batchSize: z.number().int().min(1).max(50).optional(),
     headSize: z.number().int().min(1).max(50).optional(),
     offset: z.number().int().min(0).optional(),
+});
+
+const refreshPostSchema = z.object({
+    scraper_run_id: z.coerce.number().int().positive(),
 });
 
 const channelCreateSchema = z.object({
@@ -138,24 +143,28 @@ const subjectUpdateSchema = z
         message: 'At least one field is required',
     });
 
-const subjectDetailQuerySchema = z.object({
-    page: z.coerce.number().int().min(1).optional(),
-    per_page: z.coerce.number().int().min(1).max(100).optional(),
-    sort_by: z
-        .enum([
-            'posted_at',
-            'likes',
-            'comments',
-            'shares',
-            'interaction',
-            'hot_score',
-            'trend_score',
-        ])
-        .optional(),
-    platform: z.string().trim().min(1).max(50).optional(),
-    date_from: dateOnlySchema,
-    date_to: dateOnlySchema,
-});
+const subjectDetailQuerySchema = z
+    .object({
+        page: z.coerce.number().int().min(1).optional(),
+        per_page: z.coerce.number().int().min(1).max(100).optional(),
+        sort_by: z
+            .enum([
+                'posted_at',
+                'likes',
+                'comments',
+                'shares',
+                'interaction',
+                'hot_score',
+                'trend_score',
+            ])
+            .optional(),
+        platform: z.string().trim().min(1).max(50).optional(),
+        q: z.string().optional(),
+        key_search: z.string().optional(),
+        date_from: dateOnlySchema,
+        date_to: dateOnlySchema,
+    })
+    .transform(withSearchAlias);
 
 const subjectListQuerySchema = z
     .object({
@@ -247,6 +256,18 @@ const validateRefreshYoutubeTail = async (req, res, next) => {
     try {
         const validated = refreshYoutubeTailSchema.parse(req.body ?? {});
         req.validatedData = validated ?? {};
+        next();
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return ResponseService.responseJsonValidationError(res, buildZodErrors(error));
+        }
+        return next(error);
+    }
+};
+
+const validateRefreshPost = async (req, res, next) => {
+    try {
+        req.validatedData = refreshPostSchema.parse(req.body ?? {});
         next();
     } catch (error) {
         if (error instanceof z.ZodError) {
@@ -395,6 +416,7 @@ module.exports = {
     validateRunYoutube,
     validateRunTikTok,
     validateRefreshYoutubeTail,
+    validateRefreshPost,
     validateAsyncStatusLatest,
     validateListQuery,
     validateSocialPostsDashboardQuery,

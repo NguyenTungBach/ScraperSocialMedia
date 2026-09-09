@@ -65,7 +65,8 @@ export type ScraperAsyncJobType =
   | 'youtube_scrape'
   | 'tiktok_scrape'
   | 'facebook_scrape'
-  | 'comment_analysis';
+  | 'comment_analysis'
+  | 'post_refresh';
 
 export interface ScraperAsyncStatusData {
   async_job_id: number;
@@ -378,6 +379,19 @@ export const scraperApi = {
   getLatestAsyncStatus: getLatestScraperAsyncStatus,
   listActive: listActiveScraperJobs,
   waitForAsyncJob: waitForScraperAsyncJob,
+
+  refreshPost: (scraperRunId: number) =>
+    apiClient.post<ScraperAsyncStatusData>('/scraper/post/refresh', {
+      scraper_run_id: scraperRunId,
+    }) as Promise<ApiResponse<ScraperAsyncStatusData>>,
+
+  getLatestPostRefreshJob: (scraperRunId: number) =>
+    getLatestScraperAsyncStatus('post_refresh', `scraper_run:${scraperRunId}`),
+
+  waitForPostRefreshJob: (
+    asyncJobId: number,
+    options?: Parameters<typeof waitForScraperAsyncJob>[1]
+  ) => waitForScraperAsyncJob(asyncJobId, options),
 
   refreshYoutubeTail: (payload: YoutubeTailRefreshPayload = {}) =>
     apiClient.post<YoutubeTailRefreshResult>('/scraper/youtube/refresh-tail', payload, {

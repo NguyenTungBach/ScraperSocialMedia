@@ -18,6 +18,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi, type ChannelItem } from '@/lib/api/channels';
 import { useScraperAsyncWatcher } from '@/hooks/useScraperAsyncWatcher';
+import { ConfirmActionModal } from '@/components/common/ConfirmActionModal/ConfirmActionModal';
 import { Pagination } from '@/components/common/Pagination/Pagination';
 import { isPlatformSelectable, normalizePlatform, SOCIAL_PLATFORM_OPTIONS, urlPlaceholderForPlatform } from '@/lib/utils/socialPlatforms';
 import { cn } from '@/lib/utils';
@@ -140,6 +141,7 @@ export function ChannelManagement() {
   const [statsChannel, setStatsChannel] = useState<ChannelItem | null>(null);
   const [compareChannelIds, setCompareChannelIds] = useState<number[] | null>(null);
   const [compareByDayChannel, setCompareByDayChannel] = useState<ChannelItem | null>(null);
+  const [scrapeConfirmItem, setScrapeConfirmItem] = useState<ChannelItem | null>(null);
 
   const loadList = useCallback(
     async (options?: { page?: number; q?: string; type_channel?: string }) => {
@@ -498,7 +500,7 @@ export function ChannelManagement() {
                       <button
                         type="button"
                         className={cn(styles.iconBtn, styles.scrapeIconBtn)}
-                        onClick={() => void handleScrapeChannel(item)}
+                        onClick={() => setScrapeConfirmItem(item)}
                         disabled={scrapeLocked}
                         aria-label={`Quét data ${item.name}`}
                         title={
@@ -771,6 +773,28 @@ export function ChannelManagement() {
           onClose={() => setCompareByDayChannel(null)}
         />
       )}
+
+      <ConfirmActionModal
+        open={scrapeConfirmItem != null}
+        title="Xác nhận quét data"
+        message={
+          scrapeConfirmItem ? (
+            <>
+              Bạn có chắc muốn quét dữ liệu cho kênh{' '}
+              <strong>{scrapeConfirmItem.name}</strong>? Job sẽ chạy nền theo cấu hình giới
+              hạn của kênh.
+            </>
+          ) : null
+        }
+        confirmLabel="Quét data"
+        onClose={() => setScrapeConfirmItem(null)}
+        onConfirm={async () => {
+          if (!scrapeConfirmItem) return;
+          const item = scrapeConfirmItem;
+          setScrapeConfirmItem(null);
+          await handleScrapeChannel(item);
+        }}
+      />
     </div>
   );
 }

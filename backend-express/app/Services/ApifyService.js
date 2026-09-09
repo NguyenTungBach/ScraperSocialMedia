@@ -175,6 +175,14 @@ class ApifyService {
                     typeof p === 'string' ? p : p?.url || String(p)
                 );
             }
+            if (Array.isArray(overrides.postURLs)) {
+                input.postURLs = overrides.postURLs
+                    .map((u) => (typeof u === 'string' ? u : u?.url || String(u)))
+                    .filter(Boolean);
+            }
+            if (overrides.scrapeRelatedVideos != null) {
+                input.scrapeRelatedVideos = Boolean(overrides.scrapeRelatedVideos);
+            }
 
             const run = await client.actor(this.tiktokActorId).call(input);
             const { items } = await client.dataset(run.defaultDatasetId).listItems({
