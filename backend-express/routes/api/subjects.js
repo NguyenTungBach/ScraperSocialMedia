@@ -41,7 +41,7 @@ router.get('/:id', validateSubjectDetailQuery, controller.show.bind(controller))
 /** PUT /api/subjects/:id */
 router.put('/:id', validateSubjectUpdate, controller.update.bind(controller));
 
-/** DELETE /api/subjects/:id — hard delete (blocked if subjects_scraper_runs exist) */
+/** DELETE /api/subjects/:id — hard delete (blocked if subject has linked posts via channels) */
 router.delete('/:id', controller.destroy.bind(controller));
 
 module.exports = router;

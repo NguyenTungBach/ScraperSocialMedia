@@ -38,7 +38,6 @@ class ScraperRepository {
     constructor() {
         this.subjectModel = db.Subject;
         this.scraperRunModel = db.ScraperRun;
-        this.subjectScraperRunModel = db.SubjectScraperRun;
         this.socialPostModel = db.SocialPost;
         this.channelRepository = new ChannelRepository();
         this.commentRepository = new CommentRepository();
@@ -162,24 +161,7 @@ class ScraperRepository {
         });
 
         const subjectIds = rows.map((row) => row.id);
-        const linkCountBySubjectId = new Map();
-        if (subjectIds.length > 0) {
-            const linkRows = await this.subjectScraperRunModel.findAll({
-                attributes: [
-                    'subject_id',
-                    [db.sequelize.literal('COUNT(*)'), 'scraper_runs_count'],
-                ],
-                where: { subject_id: { [Op.in]: subjectIds } },
-                group: ['subject_id'],
-                raw: true,
-            });
-            for (const linkRow of linkRows) {
-                linkCountBySubjectId.set(
-                    Number(linkRow.subject_id),
-                    Number(linkRow.scraper_runs_count) || 0
-                );
-            }
-        }
+        const linkCountBySubjectId = await this.batchCountRunsForSubjects(subjectIds);
 
         let aggregatesBySubjectId = null;
         if (hasDateFilter) {
@@ -206,34 +188,31 @@ class ScraperRepository {
         const subjectIds = subjectRows.map((row) => Number(row.id)).filter(Boolean);
         if (subjectIds.length === 0) return map;
 
-        const postedAtWhere = buildPostedAtWhere(range);
-        const links = await this.subjectScraperRunModel.findAll({
-            where: { subject_id: { [Op.in]: subjectIds } },
-            include: [
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
-                    attributes: [
-                        'id',
-                        'platform',
-                        'likes',
-                        'comments',
-                        'shares',
-                        'angry_count',
-                        'views',
-                        'posted_at',
-                    ],
-                    required: true,
-                    where: postedAtWhere,
+        const sequelize = db.sequelize;
+        const runRows = await sequelize.query(
+            `SELECT sc.subject_id AS subject_id,
+                    sr.id, sr.platform, sr.likes, sr.comments, sr.shares,
+                    sr.angry_count, sr.views, sr.posted_at
+             FROM subject_channels sc
+             INNER JOIN scraper_runs sr ON sr.channel_id = sc.channel_id AND sr.channel_id IS NOT NULL
+             WHERE sc.subject_id IN (:subjectIds)
+               AND sr.posted_at >= :start
+               AND sr.posted_at < :end`,
+            {
+                replacements: {
+                    subjectIds,
+                    start: range.start,
+                    end: range.end,
                 },
-            ],
-        });
+                type: sequelize.QueryTypes.SELECT,
+            }
+        );
 
         const runsBySubject = new Map();
-        for (const link of links) {
-            const sid = Number(link.subject_id);
+        for (const row of runRows) {
+            const sid = Number(row.subject_id);
             if (!runsBySubject.has(sid)) runsBySubject.set(sid, []);
-            if (link.scraperRun) runsBySubject.get(sid).push(link.scraperRun);
+            runsBySubject.get(sid).push(row);
         }
 
         for (const row of subjectRows) {
@@ -348,7 +327,7 @@ class ScraperRepository {
             has_scraper_runs: scraper_runs_count > 0,
             can_edit_url: false,
             can_edit_type_channel: false,
-            can_delete: scraper_runs_count === 0,
+            can_delete: true,
             created_at: plain.created_at ?? null,
             updated_at: plain.updated_at ?? null,
         };
@@ -362,6 +341,109 @@ class ScraperRepository {
                 through: { attributes: [] },
             },
         ];
+    }
+
+    buildSubjectRunBaseWhere(extraWhere = {}) {
+        return {
+            channel_id: { [Op.ne]: null },
+            ...extraWhere,
+        };
+    }
+
+    subjectChannelJoinInclude(subjectId, { subjectAttributes = ['id'] } = {}) {
+        return {
+            model: db.Channel,
+            as: 'channel',
+            required: true,
+            include: [
+                {
+                    model: this.subjectModel,
+                    as: 'subjects',
+                    through: { attributes: [] },
+                    where: { id: Number(subjectId) },
+                    required: true,
+                    attributes: subjectAttributes,
+                },
+            ],
+        };
+    }
+
+    async findRunsForSubject(
+        subjectId,
+        { where = {}, attributes, order, limit, offset, transaction, subQuery = false } = {}
+    ) {
+        return this.scraperRunModel.findAll({
+            where: this.buildSubjectRunBaseWhere(where),
+            attributes,
+            include: [this.subjectChannelJoinInclude(subjectId)],
+            order,
+            limit,
+            offset,
+            transaction,
+            subQuery,
+        });
+    }
+
+    async countRunsForSubject(subjectId, { where = {}, transaction } = {}) {
+        return this.scraperRunModel.count({
+            where: this.buildSubjectRunBaseWhere(where),
+            include: [this.subjectChannelJoinInclude(subjectId)],
+            distinct: true,
+            col: 'id',
+            transaction,
+        });
+    }
+
+    async findAndCountRunsForSubject(
+        subjectId,
+        { where = {}, attributes, order, limit, offset, transaction } = {}
+    ) {
+        return this.scraperRunModel.findAndCountAll({
+            where: this.buildSubjectRunBaseWhere(where),
+            attributes,
+            include: [this.subjectChannelJoinInclude(subjectId)],
+            order,
+            limit,
+            offset,
+            transaction,
+            distinct: true,
+            col: 'id',
+            subQuery: false,
+        });
+    }
+
+    async batchCountRunsForSubjects(subjectIds, { transaction } = {}) {
+        const ids = [...new Set((subjectIds || []).map(Number).filter((n) => n > 0))];
+        const map = new Map();
+        if (ids.length === 0) return map;
+
+        const sequelize = db.sequelize;
+        const rows = await sequelize.query(
+            `SELECT sc.subject_id AS subject_id, COUNT(sr.id) AS scraper_runs_count
+             FROM subject_channels sc
+             INNER JOIN scraper_runs sr ON sr.channel_id = sc.channel_id AND sr.channel_id IS NOT NULL
+             WHERE sc.subject_id IN (:subjectIds)
+             GROUP BY sc.subject_id`,
+            {
+                replacements: { subjectIds: ids },
+                type: sequelize.QueryTypes.SELECT,
+                transaction,
+            }
+        );
+        for (const row of rows) {
+            map.set(Number(row.subject_id), Number(row.scraper_runs_count) || 0);
+        }
+        return map;
+    }
+
+    async listSubjectIdsForRun(scraperRunId, { transaction } = {}) {
+        const run = await this.scraperRunModel.findByPk(scraperRunId, {
+            attributes: ['channel_id'],
+            transaction,
+        });
+        const channelId = run?.channel_id != null ? Number(run.channel_id) : null;
+        if (!channelId) return [];
+        return this.channelRepository.listSubjectIdsForChannel(channelId, { transaction });
     }
 
     pickChannelIds(payload, key) {
@@ -397,192 +479,7 @@ class ScraperRepository {
             );
         }
 
-        const linkStats = await this.reconcileSubjectScraperRuns(subjectId, { transaction });
-        return { reconciled: true, ...linkStats };
-    }
-
-    /**
-     * Đồng bộ subjects_scraper_runs theo subject_channels hiện tại:
-     * - Xóa link tới bài có channel_id không thuộc subject (hoặc channel_id null)
-     * - Tạo link tới mọi scraper_runs của các channel đang gắn
-     */
-    async reconcileSubjectScraperRuns(subjectId, { transaction } = {}) {
-        const sid = Number(subjectId);
-        const channelRows = await db.SubjectChannel.findAll({
-            where: { subject_id: sid },
-            attributes: ['channel_id'],
-            transaction,
-        });
-        const channelIds = channelRows.map((row) => Number(row.channel_id)).filter(Boolean);
-        const channelSet = new Set(channelIds);
-
-        const existingLinks = await this.subjectScraperRunModel.findAll({
-            where: { subject_id: sid },
-            include: [
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
-                    attributes: ['id', 'channel_id'],
-                    required: false,
-                },
-            ],
-            transaction,
-        });
-
-        const removeIds = [];
-        for (const link of existingLinks) {
-            const chId =
-                link.scraperRun?.channel_id != null ? Number(link.scraperRun.channel_id) : null;
-            if (chId == null || !channelSet.has(chId)) {
-                removeIds.push(link.id);
-            }
-        }
-
-        let removed = 0;
-        if (removeIds.length > 0) {
-            removed = await this.subjectScraperRunModel.destroy({
-                where: { id: { [Op.in]: removeIds } },
-                transaction,
-            });
-        }
-
-        let linked = 0;
-        if (channelIds.length > 0) {
-            const runs = await this.scraperRunModel.findAll({
-                where: { channel_id: { [Op.in]: channelIds } },
-                attributes: ['id'],
-                transaction,
-            });
-            for (const run of runs) {
-                const [, created] = await this.subjectScraperRunModel.findOrCreate({
-                    where: {
-                        subject_id: sid,
-                        scraper_run_id: run.id,
-                    },
-                    defaults: {
-                        subject_id: sid,
-                        scraper_run_id: run.id,
-                    },
-                    transaction,
-                });
-                if (created) linked += 1;
-            }
-        }
-
-        return { removed: Number(removed) || 0, linked };
-    }
-
-    /**
-     * Khi scrape 1 channel: bỏ link cũ của subject không còn gắn channel,
-     * rồi reconcile mọi subject đang/đã từng liên quan tới bài của channel đó.
-     */
-    async reconcileLinksForChannel(channelId, { transaction } = {}) {
-        const cid = Number(channelId);
-        if (!cid) return [];
-
-        const currentSubjectIds = (
-            await this.channelRepository.listSubjectIdsForChannel(cid, { transaction })
-        ).map(Number);
-        const currentSet = new Set(currentSubjectIds);
-        const affected = new Set(currentSubjectIds);
-
-        const sequelize = db.sequelize;
-        const staleRows = await sequelize.query(
-            `SELECT DISTINCT ssr.subject_id AS subject_id
-             FROM subjects_scraper_runs ssr
-             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
-             WHERE sr.channel_id = :channelId`,
-            {
-                replacements: { channelId: cid },
-                type: sequelize.QueryTypes.SELECT,
-                transaction,
-            }
-        );
-        for (const row of staleRows) {
-            affected.add(Number(row.subject_id));
-        }
-
-        // Gỡ link bài của channel này khỏi subject không còn map channel
-        if (currentSet.size === 0) {
-            await sequelize.query(
-                `DELETE ssr FROM subjects_scraper_runs ssr
-                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
-                 WHERE sr.channel_id = :channelId`,
-                { replacements: { channelId: cid }, transaction }
-            );
-        } else {
-            await sequelize.query(
-                `DELETE ssr FROM subjects_scraper_runs ssr
-                 INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
-                 WHERE sr.channel_id = :channelId
-                   AND ssr.subject_id NOT IN (:subjectIds)`,
-                {
-                    replacements: {
-                        channelId: cid,
-                        subjectIds: [...currentSet],
-                    },
-                    transaction,
-                }
-            );
-        }
-
-        for (const sid of affected) {
-            await this.reconcileSubjectScraperRuns(sid, { transaction });
-        }
-
-        return [...affected];
-    }
-
-    /**
-     * Gắn đúng subjects hiện tại cho 1 scraper_run; xóa link subject cũ không còn thuộc channel.
-     */
-    async syncScraperRunSubjectLinks(scraperRunId, subjectIdsToLink, { transaction } = {}) {
-        const allowed = [...new Set([...subjectIdsToLink].map(Number).filter(Boolean))];
-        const allowedSet = new Set(allowed);
-        let linksCreated = 0;
-        let linksRemoved = 0;
-
-        const existingLinks = await this.subjectScraperRunModel.findAll({
-            where: { scraper_run_id: scraperRunId },
-            attributes: ['id', 'subject_id'],
-            transaction,
-        });
-
-        const removeIds = [];
-        for (const link of existingLinks) {
-            const sid = Number(link.subject_id);
-            if (!allowedSet.has(sid)) {
-                removeIds.push(link.id);
-            }
-        }
-        if (removeIds.length > 0) {
-            linksRemoved = await this.subjectScraperRunModel.destroy({
-                where: { id: { [Op.in]: removeIds } },
-                transaction,
-            });
-        }
-
-        for (const subjectId of allowed) {
-            const [, created] = await this.subjectScraperRunModel.findOrCreate({
-                where: {
-                    subject_id: subjectId,
-                    scraper_run_id: scraperRunId,
-                },
-                defaults: {
-                    subject_id: subjectId,
-                    scraper_run_id: scraperRunId,
-                },
-                transaction,
-            });
-            if (created) linksCreated += 1;
-        }
-
-        return {
-            links_created: Number(linksCreated) || 0,
-            links_removed: Number(linksRemoved) || 0,
-            subject_ids: allowed,
-            previous_subject_ids: existingLinks.map((l) => Number(l.subject_id)),
-        };
+        return { reconciled: true };
     }
 
     serializeSubjectListItem(row, { scraper_runs_count = 0, aggregateOverride = null } = {}) {
@@ -606,7 +503,7 @@ class ScraperRepository {
             channels,
             scraper_runs_count,
             has_scraper_runs: scraper_runs_count > 0,
-            can_delete: scraper_runs_count === 0,
+            can_delete: true,
             socialPost,
             aggregate: socialPost
                 ? {
@@ -684,9 +581,7 @@ class ScraperRepository {
             return created;
         });
 
-        const scraper_runs_count = await this.subjectScraperRunModel.count({
-            where: { subject_id: subject.id },
-        });
+        const scraper_runs_count = await this.countRunsForSubject(subject.id);
         await subject.reload({
             include: [
                 { model: this.socialPostModel, as: 'socialPost' },
@@ -737,9 +632,7 @@ class ScraperRepository {
             }
         });
 
-        const scraper_runs_count = await this.subjectScraperRunModel.count({
-            where: { subject_id: subject.id },
-        });
+        const scraper_runs_count = await this.countRunsForSubject(subject.id);
         await subject.reload({
             include: [
                 { model: this.socialPostModel, as: 'socialPost' },
@@ -754,13 +647,7 @@ class ScraperRepository {
         const result = await this.channelRepository.attachSubjectChannel(subjectId, channelId);
 
         await db.sequelize.transaction(async (transaction) => {
-            await this.reconcileSubjectScraperRuns(subjectId, { transaction });
-            // Channel có thể vừa tách khỏi subject khác — dọn link sót trên channel này
-            const affected = await this.reconcileLinksForChannel(channelId, { transaction });
-            const toRecompute = new Set([Number(subjectId), ...affected.map(Number)]);
-            for (const sid of toRecompute) {
-                await this.recomputeSocialPost(sid, { transaction });
-            }
+            await this.recomputeSocialPost(subjectId, { transaction });
         });
 
         return result;
@@ -770,12 +657,7 @@ class ScraperRepository {
         const result = await this.channelRepository.detachSubjectChannel(subjectId, channelId);
 
         await db.sequelize.transaction(async (transaction) => {
-            await this.reconcileSubjectScraperRuns(subjectId, { transaction });
-            const affected = await this.reconcileLinksForChannel(channelId, { transaction });
-            const toRecompute = new Set([Number(subjectId), ...affected.map(Number)]);
-            for (const sid of toRecompute) {
-                await this.recomputeSocialPost(sid, { transaction });
-            }
+            await this.recomputeSocialPost(subjectId, { transaction });
         });
 
         return result;
@@ -785,13 +667,11 @@ class ScraperRepository {
         const subject = await this.subjectModel.findByPk(id);
         if (!subject) return null;
 
-        const scraper_runs_count = await this.subjectScraperRunModel.count({
-            where: { subject_id: subject.id },
-        });
+        const scraper_runs_count = await this.countRunsForSubject(subject.id);
         if (scraper_runs_count > 0) {
             throw createError(
                 409,
-                `Không thể xóa đối tượng đang có ${scraper_runs_count} bài liên kết (subjects_scraper_runs)`
+                `Không thể xóa đối tượng đang có ${scraper_runs_count} bài liên kết qua kênh theo dõi`
             );
         }
 
@@ -803,11 +683,7 @@ class ScraperRepository {
         return this.subjectModel.findByPk(id, {
             include: [
                 { model: this.socialPostModel, as: 'socialPost' },
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRuns',
-                    through: { attributes: ['id', 'created_at'] },
-                },
+                ...this.subjectChannelIncludes(),
             ],
         });
     }
@@ -828,8 +704,6 @@ class ScraperRepository {
             trend_score: scores.trend_score,
             posts_count: 1,
         });
-        const through = plain.SubjectScraperRun || plain.subjects_scraper_runs || plain.subjectScraperRun;
-
         return {
             id: plain.id,
             platform: plain.platform,
@@ -854,7 +728,6 @@ class ScraperRepository {
             discussion: metrics.discussion,
             interaction: metrics.interaction,
             sentiment: metrics.sentiment,
-            linked_at: through?.created_at || through?.createdAt || null,
             created_at: plain.created_at,
             updated_at: plain.updated_at,
             content_brief: plain.content_brief ?? null,
@@ -865,13 +738,12 @@ class ScraperRepository {
 
     buildSubjectPostsOrder(sortBy = 'posted_at') {
         const sequelize = db.sequelize;
-        const run = { model: this.scraperRunModel, as: 'scraperRun' };
-        const likes = qualifyCol(sequelize, 'scraperRun', 'likes');
-        const comments = qualifyCol(sequelize, 'scraperRun', 'comments');
-        const shares = qualifyCol(sequelize, 'scraperRun', 'shares');
-        const angry = qualifyCol(sequelize, 'scraperRun', 'angry_count');
-        const views = qualifyCol(sequelize, 'scraperRun', 'views');
-        const platform = qualifyCol(sequelize, 'scraperRun', 'platform');
+        const likes = qualifyCol(sequelize, 'ScraperRun', 'likes');
+        const comments = qualifyCol(sequelize, 'ScraperRun', 'comments');
+        const shares = qualifyCol(sequelize, 'ScraperRun', 'shares');
+        const angry = qualifyCol(sequelize, 'ScraperRun', 'angry_count');
+        const views = qualifyCol(sequelize, 'ScraperRun', 'views');
+        const platform = qualifyCol(sequelize, 'ScraperRun', 'platform');
 
         const hotScoreExpr = `(CASE
             WHEN LOWER(${platform}) = 'youtube' THEN (${likes} + ${comments} * 3 + FLOOR(${views} / 100) * 3)
@@ -891,32 +763,32 @@ class ScraperRepository {
 
         switch (sortBy) {
             case 'likes':
-                return [[run, 'likes', 'DESC'], [run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
+                return [['likes', 'DESC'], ['posted_at', 'DESC'], ['id', 'DESC']];
             case 'comments':
-                return [[run, 'comments', 'DESC'], [run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
+                return [['comments', 'DESC'], ['posted_at', 'DESC'], ['id', 'DESC']];
             case 'shares':
-                return [[run, 'shares', 'DESC'], [run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
+                return [['shares', 'DESC'], ['posted_at', 'DESC'], ['id', 'DESC']];
             case 'interaction':
                 return [
                     [sequelize.literal(interactionExpr), 'DESC'],
-                    [run, 'posted_at', 'DESC'],
-                    [run, 'id', 'DESC'],
+                    ['posted_at', 'DESC'],
+                    ['id', 'DESC'],
                 ];
             case 'hot_score':
                 return [
                     [sequelize.literal(hotScoreExpr), 'DESC'],
-                    [run, 'posted_at', 'DESC'],
-                    [run, 'id', 'DESC'],
+                    ['posted_at', 'DESC'],
+                    ['id', 'DESC'],
                 ];
             case 'trend_score':
                 return [
                     [sequelize.literal(trendScoreExpr), 'DESC'],
-                    [run, 'posted_at', 'DESC'],
-                    [run, 'id', 'DESC'],
+                    ['posted_at', 'DESC'],
+                    ['id', 'DESC'],
                 ];
             case 'posted_at':
             default:
-                return [[run, 'posted_at', 'DESC'], [run, 'id', 'DESC']];
+                return [['posted_at', 'DESC'], ['id', 'DESC']];
         }
     }
 
@@ -938,9 +810,9 @@ class ScraperRepository {
         const range = resolvePostedAtRange({ date_from, date_to });
         const rows = await sequelize.query(
             `SELECT sr.platform AS platform, COUNT(*) AS count
-             FROM subjects_scraper_runs ssr
-             INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
-             WHERE ssr.subject_id = :subjectId
+             FROM subject_channels sc
+             INNER JOIN scraper_runs sr ON sr.channel_id = sc.channel_id AND sr.channel_id IS NOT NULL
+             WHERE sc.subject_id = :subjectId
                AND sr.posted_at >= :start
                AND sr.posted_at < :end
              GROUP BY sr.platform
@@ -1090,53 +962,35 @@ class ScraperRepository {
             Object.assign(scraperRunWhere, textSearchWhere);
         }
 
-        const scraperRunInclude = {
-            model: this.scraperRunModel,
-            as: 'scraperRun',
-            attributes: { exclude: ['raw_data'] },
-            required: true,
+        const { rows, count } = await this.findAndCountRunsForSubject(id, {
             where: scraperRunWhere,
-        };
-
-        const { rows, count } = await this.subjectScraperRunModel.findAndCountAll({
-            where: { subject_id: id },
-            include: [scraperRunInclude],
+            attributes: { exclude: ['raw_data'] },
             order: this.buildSubjectPostsOrder(sort_by),
             limit,
             offset,
-            distinct: true,
         });
 
         // Aggregate toàn bộ bài trong cửa sổ (không phụ thuộc page/platform filter cho totals).
-        const allLinksInRange = await this.subjectScraperRunModel.findAll({
-            where: { subject_id: id },
-            include: [
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
-                    attributes: [
-                        'id',
-                        'platform',
-                        'likes',
-                        'comments',
-                        'shares',
-                        'angry_count',
-                        'views',
-                        'channel_id',
-                        'posted_at',
-                    ],
-                    required: true,
-                    where: postedAtWhere,
-                },
+        const allRunsInRange = await this.findRunsForSubject(id, {
+            where: postedAtWhere,
+            attributes: [
+                'id',
+                'platform',
+                'likes',
+                'comments',
+                'shares',
+                'angry_count',
+                'views',
+                'channel_id',
+                'posted_at',
             ],
         });
         const channelFollowers = this.sumFollowersFromChannels(
             (typeof subject.toJSON === 'function' ? subject.toJSON() : subject).channels || []
         );
-        const aggregatePayload = this.buildAggregateFromRuns(
-            allLinksInRange.map((link) => link.scraperRun),
-            { follow: channelFollowers }
-        );
+        const aggregatePayload = this.buildAggregateFromRuns(allRunsInRange, {
+            follow: channelFollowers,
+        });
         const aggregate = this.serializeSocialPost({
             ...aggregatePayload,
             subject_id: Number(id),
@@ -1156,12 +1010,7 @@ class ScraperRepository {
         delete plainSubject.socialPost;
         delete plainSubject.channels;
 
-        const posts = rows.map((link) => {
-            const plainLink = typeof link.toJSON === 'function' ? link.toJSON() : link;
-            const serialized = this.serializeScraperRunPost(plainLink.scraperRun || {});
-            serialized.linked_at = plainLink.created_at || null;
-            return serialized;
-        });
+        const posts = rows.map((run) => this.serializeScraperRunPost(run));
 
         const commentSummaryMap = await this.commentRepository.getCommentSummaryForRuns(
             posts.map((p) => p.id)
@@ -1299,29 +1148,15 @@ class ScraperRepository {
 
                 savedRuns.push(scraperRun);
 
-                const subjectIdsToLink = new Set();
-
                 if (matchedChannel) {
                     const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
                         matchedChannel.id,
                         { transaction }
                     );
+                    linksCreated += linkedSubjectIds.length;
                     for (const sid of linkedSubjectIds) {
-                        subjectIdsToLink.add(sid);
+                        affectedSubjectIds.add(sid);
                     }
-                }
-
-                const linkSync = await this.syncScraperRunSubjectLinks(
-                    scraperRun.id,
-                    subjectIdsToLink,
-                    { transaction }
-                );
-                linksCreated += linkSync.links_created;
-                for (const sid of linkSync.previous_subject_ids) {
-                    affectedSubjectIds.add(sid);
-                }
-                for (const sid of linkSync.subject_ids) {
-                    affectedSubjectIds.add(sid);
                 }
             }
 
@@ -1370,7 +1205,6 @@ class ScraperRepository {
         let updated = 0;
         let skipped = 0;
         let linksCreated = 0;
-        let linksRemoved = 0;
         let unmatchedChannel = 0;
 
         const savedRuns = [];
@@ -1449,44 +1283,29 @@ class ScraperRepository {
 
                 savedRuns.push(scraperRun);
 
-                const subjectIdsToLink = new Set();
-
                 if (matchedChannel) {
                     const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
                         matchedChannel.id,
                         { transaction }
                     );
+                    linksCreated += linkedSubjectIds.length;
                     for (const sid of linkedSubjectIds) {
-                        subjectIdsToLink.add(sid);
+                        affectedSubjectIds.add(sid);
                     }
                 }
+            }
 
-                const linkSync = await this.syncScraperRunSubjectLinks(
-                    scraperRun.id,
-                    subjectIdsToLink,
+            const channelsToRecompute = new Set();
+            if (preferredChannel?.id) channelsToRecompute.add(Number(preferredChannel.id));
+            for (const ch of channelList) {
+                if (ch?.id) channelsToRecompute.add(Number(ch.id));
+            }
+            for (const channelId of channelsToRecompute) {
+                const subjectIds = await this.channelRepository.listSubjectIdsForChannel(
+                    channelId,
                     { transaction }
                 );
-                linksCreated += linkSync.links_created;
-                linksRemoved += linkSync.links_removed;
-                for (const sid of linkSync.previous_subject_ids) {
-                    affectedSubjectIds.add(sid);
-                }
-                for (const sid of linkSync.subject_ids) {
-                    affectedSubjectIds.add(sid);
-                }
-            }
-
-            // Đồng bộ toàn bộ bài của channel (kể cả video cũ không nằm trong batch scrape lần này)
-            const channelsToReconcile = new Set();
-            if (preferredChannel?.id) channelsToReconcile.add(Number(preferredChannel.id));
-            for (const ch of channelList) {
-                if (ch?.id) channelsToReconcile.add(Number(ch.id));
-            }
-            for (const channelId of channelsToReconcile) {
-                const reconciledSubjects = await this.reconcileLinksForChannel(channelId, {
-                    transaction,
-                });
-                for (const sid of reconciledSubjects) {
+                for (const sid of subjectIds) {
                     affectedSubjectIds.add(sid);
                 }
             }
@@ -1502,7 +1321,6 @@ class ScraperRepository {
                 updated,
                 skipped,
                 links_created: linksCreated,
-                links_removed: linksRemoved,
                 unmatched_channel: unmatchedChannel,
             },
             affected_subject_ids: [...affectedSubjectIds],
@@ -1609,28 +1427,15 @@ class ScraperRepository {
 
                 savedRuns.push(scraperRun);
 
-                const subjectIdsToLink = new Set();
                 if (matchedChannel) {
                     const linkedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
                         matchedChannel.id,
                         { transaction }
                     );
+                    linksCreated += linkedSubjectIds.length;
                     for (const sid of linkedSubjectIds) {
-                        subjectIdsToLink.add(sid);
+                        affectedSubjectIds.add(sid);
                     }
-                }
-
-                const linkSync = await this.syncScraperRunSubjectLinks(
-                    scraperRun.id,
-                    subjectIdsToLink,
-                    { transaction }
-                );
-                linksCreated += linkSync.links_created;
-                for (const sid of linkSync.previous_subject_ids) {
-                    affectedSubjectIds.add(sid);
-                }
-                for (const sid of linkSync.subject_ids) {
-                    affectedSubjectIds.add(sid);
                 }
             }
 
@@ -1768,13 +1573,11 @@ class ScraperRepository {
                 );
                 updated += 1;
 
-                const links = await this.subjectScraperRunModel.findAll({
-                    where: { scraper_run_id: scraperRun.id },
-                    attributes: ['subject_id'],
+                const subjectIds = await this.listSubjectIdsForRun(scraperRun.id, {
                     transaction,
                 });
-                for (const link of links) {
-                    affectedSubjectIds.add(Number(link.subject_id));
+                for (const sid of subjectIds) {
+                    affectedSubjectIds.add(sid);
                 }
             }
 
@@ -1792,18 +1595,13 @@ class ScraperRepository {
     }
 
     async recomputeSocialPost(subjectId, { transaction } = {}) {
-        const links = await this.subjectScraperRunModel.findAll({
-            where: { subject_id: subjectId },
-            include: [{ model: this.scraperRunModel, as: 'scraperRun' }],
-            transaction,
-        });
+        const runs = await this.findRunsForSubject(subjectId, { transaction });
 
         // Cache social_posts = tổng engagement trong tháng lịch hiện tại (theo posted_at).
         const monthRange = getCalendarMonthRange();
         const runsInWindow = [];
 
-        for (const link of links) {
-            const post = link.scraperRun;
+        for (const post of runs) {
             if (!post) continue;
             if (!isWithinPostedAtRange(post.posted_at, monthRange)) continue;
             runsInWindow.push(post);
@@ -1845,10 +1643,25 @@ class ScraperRepository {
         const offset = (currentPage - 1) * limit;
 
         const { rows, count } = await this.scraperRunModel.findAndCountAll({
+            where: { channel_id: { [Op.ne]: null } },
             order: [['posted_at', 'DESC'], ['id', 'DESC']],
             limit,
             offset,
-            include: [{ model: db.Subject, as: 'subjects', attributes: ['id', 'name'], through: { attributes: [] } }],
+            include: [
+                {
+                    model: db.Channel,
+                    as: 'channel',
+                    required: true,
+                    include: [
+                        {
+                            model: db.Subject,
+                            as: 'subjects',
+                            attributes: ['id', 'name'],
+                            through: { attributes: [] },
+                        },
+                    ],
+                },
+            ],
         });
 
         return { rows, count, page: currentPage, per_page: limit };
@@ -1856,7 +1669,20 @@ class ScraperRepository {
 
     async findScraperRunById(id) {
         return this.scraperRunModel.findByPk(id, {
-            include: [{ model: db.Subject, as: 'subjects', through: { attributes: ['id'] } }],
+            include: [
+                {
+                    model: db.Channel,
+                    as: 'channel',
+                    include: [
+                        {
+                            model: db.Subject,
+                            as: 'subjects',
+                            attributes: ['id', 'name'],
+                            through: { attributes: ['id'] },
+                        },
+                    ],
+                },
+            ],
         });
     }
 
@@ -2020,7 +1846,7 @@ class ScraperRepository {
                 COALESCE(SUM(per_channel.posts_count), 0) AS posts_count
              FROM (
                 SELECT
-                    ssr.subject_id AS subject_id,
+                    sc.subject_id AS subject_id,
                     sr.channel_id AS channel_id,
                     LOWER(sr.platform) AS platform,
                     COALESCE(SUM(sr.likes), 0) AS likes,
@@ -2029,11 +1855,11 @@ class ScraperRepository {
                     COALESCE(SUM(sr.angry_count), 0) AS angry_count,
                     COALESCE(SUM(sr.views), 0) AS views,
                     COUNT(*) AS posts_count
-                FROM subjects_scraper_runs ssr
-                INNER JOIN scraper_runs sr ON sr.id = ssr.scraper_run_id
+                FROM subject_channels sc
+                INNER JOIN scraper_runs sr ON sr.channel_id = sc.channel_id AND sr.channel_id IS NOT NULL
                 WHERE sr.posted_at >= :start
                   AND sr.posted_at < :end
-                GROUP BY ssr.subject_id, sr.channel_id, LOWER(sr.platform)
+                GROUP BY sc.subject_id, sr.channel_id, LOWER(sr.platform)
              ) per_channel
              GROUP BY per_channel.subject_id, per_channel.platform`,
             {
@@ -2300,36 +2126,46 @@ class ScraperRepository {
         const range = resolvePostedAtRange({});
         const postedAtWhere = buildPostedAtWhere(range);
 
-        const linkWhere = {};
-        if (subject_id) {
-            linkWhere.subject_id = subject_id;
-        }
+        const runWhere = {
+            platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
+            ...postedAtWhere,
+        };
 
-        const links = await this.subjectScraperRunModel.findAll({
-            where: linkWhere,
-            include: [
-                {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
-                    required: true,
-                    where: {
-                        platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
-                        ...postedAtWhere,
-                    },
-                },
-                {
-                    model: this.subjectModel,
-                    as: 'subject',
-                    attributes: ['id', 'name', 'normalized_name', 'status'],
-                },
-            ],
-        });
+        const runs = subject_id
+            ? await this.findRunsForSubject(subject_id, {
+                  where: runWhere,
+                  attributes: { exclude: ['raw_data'] },
+              })
+            : await this.scraperRunModel.findAll({
+                  where: this.buildSubjectRunBaseWhere(runWhere),
+                  attributes: { exclude: ['raw_data'] },
+                  include: [
+                      {
+                          model: db.Channel,
+                          as: 'channel',
+                          required: true,
+                          include: [
+                              {
+                                  model: this.subjectModel,
+                                  as: 'subjects',
+                                  through: { attributes: [] },
+                                  required: true,
+                                  attributes: ['id', 'name', 'normalized_name', 'status'],
+                              },
+                          ],
+                      },
+                  ],
+              });
 
         const results = [];
-        for (const link of links) {
-            const run = link.scraperRun;
-            if (!run) continue;
+        for (const run of runs) {
             const plain = typeof run.toJSON === 'function' ? run.toJSON() : { ...run };
+            const channel = plain.channel || plain.Channel;
+            const subjects = channel?.subjects || channel?.Subjects || [];
+            const subjectList = subject_id
+                ? subjects.filter((s) => Number(s.id) === Number(subject_id))
+                : subjects;
+
             const scores = calculateScores({
                 likes: plain.likes,
                 comments: plain.comments,
@@ -2338,11 +2174,15 @@ class ScraperRepository {
                 views: plain.views,
                 platform: plain.platform,
             });
-            if (scores.hot_score >= hotTh || scores.trend_score >= trendTh) {
+            if (scores.hot_score < hotTh && scores.trend_score < trendTh) continue;
+
+            for (const subject of subjectList) {
+                const subjectPlain =
+                    typeof subject.toJSON === 'function' ? subject.toJSON() : subject;
                 results.push({
                     ...plain,
-                    subject_id: link.subject_id,
-                    subject: link.subject,
+                    subject_id: subjectPlain.id,
+                    subject: subjectPlain,
                     hot_score: scores.hot_score,
                     trend_score: scores.trend_score,
                 });
@@ -2351,6 +2191,42 @@ class ScraperRepository {
 
         results.sort((a, b) => b.hot_score - a.hot_score);
         return results;
+    }
+
+    /**
+     * Xóa cứng kênh và toàn bộ dữ liệu liên quan (scraper_runs cascade → comments, snapshots…),
+     * rồi tính lại social_posts cho các subject đang gắn kênh.
+     */
+    async deleteChannelCascade(id) {
+        const channelId = Number(id);
+        if (!channelId) return null;
+
+        const channel = await db.Channel.findByPk(channelId);
+        if (!channel) return null;
+
+        const affectedSubjectIds = await this.channelRepository.listSubjectIdsForChannel(
+            channelId
+        );
+        let scraperRunsDeleted = 0;
+
+        await db.sequelize.transaction(async (transaction) => {
+            scraperRunsDeleted = await this.scraperRunModel.destroy({
+                where: { channel_id: channelId },
+                transaction,
+            });
+            await channel.destroy({ transaction });
+
+            for (const subjectId of affectedSubjectIds) {
+                await this.recomputeSocialPost(subjectId, { transaction });
+            }
+        });
+
+        return {
+            id: channelId,
+            deleted: true,
+            scraper_runs_deleted: scraperRunsDeleted,
+            subjects_recomputed: affectedSubjectIds.length,
+        };
     }
 }
 

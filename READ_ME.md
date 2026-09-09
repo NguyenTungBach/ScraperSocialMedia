@@ -41,8 +41,8 @@ Thứ tự sử dụng hệ thống:
                 · post_comments / comment_threads: comment + reply
 
 4. Liên kết & tính điểm (sau khi có dữ liệu bài)
-                · Link bài → subject qua subject_channels (không match theo tên)
-                  → subjects_scraper_runs
+                · Bài thuộc subject = JOIN subject_channels + scraper_runs.channel_id
+                  (không bảng junction riêng; không match theo tên subject)
                 · recomputeSocialPost → social_posts (1 row / subject, tháng hiện tại):
                     engagement = SUM metrics bài
                     follow = channels.followers của kênh gắn
@@ -68,7 +68,7 @@ Thứ tự sử dụng hệ thống:
 | **Cào dữ liệu** | Facebook (Apify), YouTube (Data API v3), TikTok (Apify). Limit **theo từng kênh**: `channels.max_posts` / `max_top_comments` / `max_replies` (default tạo kênh: **10 / 30 / 10** từ `config/scrapeLimits.js`). API scrape **async** (HTTP **202** + `async_job_id`); CLI sync: `npm run app:*-scrape`. Có `youtube/refresh-tail` cập nhật stats video cũ. |
 | **Queue scrape** | `POST /api/scraper/{facebook\|youtube\|tiktok}/run` enqueue job → bảng `async_status_jobs` + `jobs`. FE poll `GET /api/scraper/async-status/:id` (và `async-active` / `async-health`). Cần process `${PM2_API_NAME}-queue` (`npm run queue:worker`). 409 nếu cùng `scope_key` đang pending/running. |
 | **Chỉ số** | **Bài** (`scraper_runs`): likes, comments, shares, angry, views (`follow` cột luôn 0). **Kênh** (`channels.followers`): page likes / YT subscribers / TT fans. **Subject** (`social_posts`): SUM engagement bài + `follow` = SUM followers kênh gắn. Tính **hot_score**, **trend_score**; suy ra Thảo luận / Tương tác / Cảm xúc (công thức bên dưới). |
-| **Đối tượng & kênh** | CRUD `subjects`, `channels`. Quan hệ **N–N** qua `subject_channels` (1 đối tượng ↔ nhiều kênh; API `channel_ids[]`). **Hiện tại UI chỉ dùng 1–1** (một đối tượng gắn một kênh). Discover subject qua Gemini. FE chỉnh limit cào từng kênh. |
+| **Đối tượng & kênh** | CRUD `subjects`, `channels`. Quan hệ **N–N** qua `subject_channels` (1 đối tượng ↔ nhiều kênh; API `channel_ids[]`). Bài của subject = JOIN `subject_channels` ↔ `scraper_runs`. **Xóa kênh (admin):** cascade xóa bài + comment + snapshot; recompute `social_posts`; FE confirm modal. **Hiện tại UI chỉ dùng 1–1** (một đối tượng gắn một kênh). Discover subject qua Gemini. FE chỉnh limit cào từng kênh. |
 | **Comment + AI** | Lưu comment/thread; Gemini gắn sentiment, category, severity, reason; **content brief** cho bài. Chunk **10 đơn vị**/lần. Tự chạy sau scrape; nút **Phân tích comment** trên UI (FB/YT/TT). FE: danh sách + bảng phân tích **10 mục/trang**. |
 | **Snapshot metrics** | 3 bảng ngày: `channel_daily_snapshots`, `post_daily_snapshots` (kèm hot/trend), `post_top_comments_daily`. Chỉ kênh ∈ `subject_channels`. CLI `npm run app:metric-snapshot`; lịch mặc định mỗi 5h; FE nút Snapshot + thống kê kênh. |
 | **So sánh + mail** | UI so sánh nhiều kênh/bài theo khoảng ngày (snapshot); gửi báo cáo mail (`POST /reports/compare-email`) — tách khỏi alert hot/trend. |
@@ -148,7 +148,7 @@ Ngưỡng nhãn up/down mail so sánh: `COMPARE_UPTREND_PCT`, `COMPARE_DOWNTREND
 
 ```
 1. listAlertPosts
-   · Bài FB/YT/TT có link subject (subjects_scraper_runs)
+   · Bài FB/YT/TT thuộc subject (JOIN subject_channels + scraper_runs)
    · posted_at trong tháng lịch hiện tại
    · hot_score >= ALERT_HOT_THRESHOLD  HOẶC  trend_score >= ALERT_TREND_THRESHOLD
    · (tuỳ chọn) lọc subject_id nếu body có subject_id
@@ -221,13 +221,14 @@ Ngưỡng nhãn up/down mail so sánh: `COMPARE_UPTREND_PCT`, `COMPARE_DOWNTREND
 users
 channels ◄── subject_channels ──► subjects ◄── social_posts (1:1 subject)
    │           (thiết kế N–N; UI hiện tại 1–1) │
-   │                                  └── subjects_scraper_runs ──┐
-   └──────────────────────────────► scraper_runs ◄────────────────┘
-                                      (link qua channel gắn subject, không match theo tên)
+   └──────────────────────────────► scraper_runs
+                                      (subject thấy bài qua JOIN channel_id;
+                                       không match theo tên subject)
                                          │
                          ┌───────────────┼───────────────┐
                          ▼               ▼               ▼
                   post_comments   comment_threads   (content_brief trên run)
+                  post_daily_snapshots / post_top_comments_daily / channel_daily_snapshots
 
 jobs / failed_jobs          (queue Laravel-style)
 async_status_jobs           (trạng thái scrape async cho FE)
@@ -244,7 +245,6 @@ general_schedules           (cron expression + npm run app:*)
 | `channels` | Catalog kênh MXH | `name`, `url`, `type_channel`, `followers`, `post_count`, `max_posts`, `max_top_comments`, `max_replies`, `raw_data` |
 | `subject_channels` | **N–N** subject ↔ channel (thiết kế đầy đủ); **UI hiện tại chỉ 1–1** | `subject_id`, `channel_id` |
 | `scraper_runs` | **1 dòng = 1 bài/video** | `platform`, `platform_post_id`, `post_url`, `title`, `text`, metrics, `posted_at`, `channel_id`, `raw_data`, `content_brief*` |
-| `subjects_scraper_runs` | Liên kết bài ↔ subject (qua kênh đã gắn) | `subject_id`, `scraper_run_id` |
 | `social_posts` | **Cache 1 row / subject** (tháng lịch hiện tại) | engagement SUM; `follow` = SUM followers kênh; `trend_score`, `hot_score`, `posts_count` |
 | `post_comments` | Comment (kèm reply) theo bài | `scraper_run_id`, author/text/likes, sentiment/category/severity, `analysis_status` |
 | `comment_threads` | Thread comment + kết quả AI | `scraper_run_id`, `thread_key`, `classified_as`, `analysis_status`, … |
@@ -372,7 +372,7 @@ npm run dev
 | PUT | `/api/subjects/:id` | Cập nhật subject | admin |
 | GET | `/api/subjects/:id` | Chi tiết + bài liên quan + aggregate | auth |
 | POST/DELETE | `/api/subjects/:id/channels`… | Gắn / gỡ kênh | admin |
-| GET/POST/PUT/DELETE | `/api/channels` | CRUD kênh (kèm scrape limits) | GET: auth · write: admin |
+| GET/POST/PUT/DELETE | `/api/channels` | CRUD kênh (kèm scrape limits). **DELETE** xóa cứng + cascade (xem mục dưới) | GET: auth · write: admin |
 | POST | `/api/scraper/facebook/run` | Enqueue FB scrape → **202** + `async_job_id` | admin |
 | POST | `/api/scraper/youtube/run` | Enqueue YT scrape → **202** | admin |
 | POST | `/api/scraper/tiktok/run` | Enqueue TT scrape → **202** | admin |
@@ -436,13 +436,60 @@ Content-Type: application/json
 
 ---
 
+## Xóa kênh (cascade) — `DELETE /api/channels/:id`
+
+**Ai gọi:** admin (`RequireAdminForWrites`).
+
+**Luồng:**
+
+```
+FE /channels → ConfirmActionModal (danger) → DELETE /api/channels/:id
+  → ChannelController.destroy
+  → ScraperRepository.deleteChannelCascade(id)
+       1. listSubjectIdsForChannel(id)     // subject sẽ bị ảnh hưởng aggregate
+       2. DELETE scraper_runs WHERE channel_id = id
+          (CASCADE: post_comments, comment_threads, post_daily_snapshots, post_top_comments_daily)
+       3. DELETE channels WHERE id
+          (CASCADE: subject_channels, channel_daily_snapshots, post_daily_snapshots.channel_id)
+       4. recomputeSocialPost(subjectId) cho từng subject  // không xóa row social_posts
+```
+
+**File code:**
+
+| Vai trò | File |
+|---------|------|
+| API route | `backend-express/routes/api/channels.js` |
+| Controller + Swagger | `backend-express/app/Http/Controllers/Api/ChannelController.js` → `destroy` |
+| Logic xóa | `backend-express/app/Repositories/ScraperRepository.js` → `deleteChannelCascade` |
+| Serialize list (scraper_runs_count, subjects_count) | `backend-express/app/Repositories/ChannelRepository.js` → `serializeChannel` |
+| FE confirm | `frontend-nextjs/src/components/hot-topic/ChannelManagement.tsx` |
+
+**Response mẫu:**
+
+```json
+{
+  "success": true,
+  "message": "Channel deleted",
+  "data": {
+    "id": 5,
+    "deleted": true,
+    "scraper_runs_deleted": 42,
+    "subjects_recomputed": 2
+  }
+}
+```
+
+**Không xóa:** bảng `subjects` (đối tượng vẫn tồn tại; chỉ mất liên kết kênh và bài của kênh đó).
+
+---
+
 ## FE — trang chính
 
 | Path | Ai thấy | Mô tả |
 |------|----------|--------|
 | `/home` | auth | Dashboard hot topic (`/social-posts/dashboard`) — xếp hạng, chart, scrape theo subject |
 | `/subjects` | auth | Quản lý đối tượng (N–N kênh trên API; UI hiện tại gắn 1 kênh) |
-| `/channels` | auth | Quản lý kênh + limit cào + scrape / snapshot |
+| `/channels` | auth (write: admin) | Quản lý kênh + limit cào + scrape / snapshot / **xóa cascade** (confirm modal) |
 | `/users` | **admin** | CRUD tài khoản (admin / member) |
 | `/schedules` | **admin** | CRUD lịch cron + Run now |
 | `/settings` | **admin** | API keys + mail + ngưỡng alert |

@@ -22,7 +22,7 @@ class CommentRepository {
         this.postCommentModel = db.PostComment;
         this.commentThreadModel = db.CommentThread;
         this.scraperRunModel = db.ScraperRun;
-        this.subjectScraperRunModel = db.SubjectScraperRun;
+        this.subjectModel = db.Subject;
     }
 
     serializeComment(row) {
@@ -490,27 +490,33 @@ class CommentRepository {
         const range = resolvePostedAtRange({ date_from, date_to });
         const postedAtWhere = buildPostedAtWhere(range);
 
-        const links = await this.subjectScraperRunModel.findAll({
-            where: { subject_id: subjectId },
+        const runs = await this.scraperRunModel.findAll({
+            where: {
+                channel_id: { [Op.ne]: null },
+                platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
+                ...postedAtWhere,
+            },
             include: [
                 {
-                    model: this.scraperRunModel,
-                    as: 'scraperRun',
+                    model: db.Channel,
+                    as: 'channel',
                     required: true,
-                    where: {
-                        platform: { [Op.in]: ['facebook', 'youtube', 'tiktok'] },
-                        ...postedAtWhere,
-                    },
+                    include: [
+                        {
+                            model: this.subjectModel,
+                            as: 'subjects',
+                            through: { attributes: [] },
+                            where: { id: Number(subjectId) },
+                            required: true,
+                        },
+                    ],
                 },
             ],
         });
 
-        const scored = links
-            .map((link) => {
-                const run = link.scraperRun;
-                if (!run) return null;
-                const plain =
-                    typeof run.toJSON === 'function' ? run.toJSON() : { ...run };
+        const scored = runs
+            .map((run) => {
+                const plain = typeof run.toJSON === 'function' ? run.toJSON() : { ...run };
                 const scores = calculateScores({
                     likes: plain.likes,
                     comments: plain.comments,
@@ -521,7 +527,6 @@ class CommentRepository {
                 });
                 return { run: plain, hot_score: scores.hot_score };
             })
-            .filter(Boolean)
             .sort((a, b) => b.hot_score - a.hot_score)
             .slice(0, Math.max(Number(limit) || 3, 1));
 

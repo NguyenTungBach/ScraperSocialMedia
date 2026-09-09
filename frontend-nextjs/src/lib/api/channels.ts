@@ -14,11 +14,12 @@ export interface ChannelItem {
   is_use_ai?: boolean;
   scraper_runs_count?: number;
   has_scraper_runs?: boolean;
+  subjects_count?: number;
+  has_subjects?: boolean;
   /** Luôn false — URL cố định sau khi lưu (mọi nền tảng) */
   can_edit_url?: boolean;
   /** Luôn false — nền tảng cố định sau khi lưu */
   can_edit_type_channel?: boolean;
-  /** false khi đã có scraper_runs thuộc kênh này */
   can_delete?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -63,5 +64,17 @@ export const channelsApi = {
     apiClient.put<ChannelItem>(`/channels/${id}`, payload, {}) as Promise<ApiResponse<ChannelItem>>,
 
   remove: (id: number | string) =>
-    apiClient.delete<{ id: number; deleted: boolean }>(`/channels/${id}`, {}) as Promise<ApiResponse<{ id: number; deleted: boolean }>>,
+    apiClient.delete<{
+      id: number;
+      deleted: boolean;
+      scraper_runs_deleted?: number;
+      subjects_recomputed?: number;
+    }>(`/channels/${id}`, {}) as Promise<
+      ApiResponse<{
+        id: number;
+        deleted: boolean;
+        scraper_runs_deleted?: number;
+        subjects_recomputed?: number;
+      }>
+    >,
 };

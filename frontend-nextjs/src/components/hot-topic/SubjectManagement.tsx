@@ -475,7 +475,7 @@ export function SubjectManagement() {
     if (!item.can_delete || item.has_scraper_runs) {
       MakeToast({
         variant: 'warning',
-        content: 'Không thể xóa đối tượng đang có bài liên kết (subjects_scraper_runs)',
+        content: 'Không thể xóa đối tượng đang có bài liên kết qua kênh theo dõi',
       });
       return;
     }
@@ -879,7 +879,7 @@ export function SubjectManagement() {
                             title={
                               item.can_delete
                                 ? 'Xóa'
-                                : 'Không thể xóa vì đang có subjects_scraper_runs'
+                                : 'Không thể xóa vì đang có bài liên kết qua kênh theo dõi'
                             }
                           >
                             {deletingId === item.id ? (

@@ -31,12 +31,16 @@ class ChannelRepository {
         this.scraperRunModel = db.ScraperRun;
     }
 
-    serializeChannel(row, { scraper_runs_count = 0 } = {}) {
+    serializeChannel(row, { scraper_runs_count = 0, subjects_count = 0 } = {}) {
         const plain = typeof row?.toJSON === 'function' ? row.toJSON() : { ...row };
         const count =
             scraper_runs_count > 0
                 ? scraper_runs_count
                 : Number(plain.scraper_runs_count ?? plain.scraperRunsCount ?? 0) || 0;
+        const subjectCount =
+            subjects_count > 0
+                ? subjects_count
+                : Number(plain.subjects_count ?? plain.subjectsCount ?? 0) || 0;
 
         return {
             id: plain.id,
@@ -53,11 +57,12 @@ class ChannelRepository {
             is_use_ai: toBool(plain.is_use_ai, true),
             scraper_runs_count: count,
             has_scraper_runs: count > 0,
+            subjects_count: subjectCount,
+            has_subjects: subjectCount > 0,
             /** URL/nền tảng cố định sau khi tạo — mọi nền tảng */
             can_edit_url: false,
             can_edit_type_channel: false,
-            /** false khi đã có scraper_runs.channel_id trỏ tới kênh này */
-            can_delete: count === 0,
+            can_delete: true,
             created_at: plain.created_at ?? null,
             updated_at: plain.updated_at ?? null,
         };
@@ -66,6 +71,12 @@ class ChannelRepository {
     scraperRunsCountLiteral() {
         return db.sequelize.literal(
             `(SELECT COUNT(*) FROM scraper_runs WHERE scraper_runs.channel_id = Channel.id)`
+        );
+    }
+
+    subjectsCountLiteral() {
+        return db.sequelize.literal(
+            `(SELECT COUNT(*) FROM subject_channels WHERE subject_channels.channel_id = Channel.id)`
         );
     }
 
@@ -95,7 +106,10 @@ class ChannelRepository {
             where,
             attributes: {
                 exclude: ['raw_data'],
-                include: [[this.scraperRunsCountLiteral(), 'scraper_runs_count']],
+                include: [
+                    [this.scraperRunsCountLiteral(), 'scraper_runs_count'],
+                    [this.subjectsCountLiteral(), 'subjects_count'],
+                ],
             },
             order: [['id', 'DESC']],
             limit,
@@ -214,22 +228,6 @@ class ChannelRepository {
         }
 
         return row;
-    }
-
-    async deleteChannel(id) {
-        const row = await this.channelModel.findByPk(id);
-        if (!row) return null;
-
-        const scraperRunsCount = await this.countScraperRuns(row.id);
-        if (scraperRunsCount > 0) {
-            throw createError(
-                422,
-                `Không thể xóa kênh đang có ${scraperRunsCount} bài scrape (scraper_runs)`
-            );
-        }
-
-        await row.destroy();
-        return { id: Number(id), deleted: true };
     }
 
     async findChannelsByIds({ channel_id = [] } = {}) {

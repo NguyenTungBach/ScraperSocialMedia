@@ -111,7 +111,6 @@ export interface SubjectRelatedPost {
   discussion: number;
   interaction: number;
   sentiment: number;
-  linked_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   comment_summary?: CommentSummary;

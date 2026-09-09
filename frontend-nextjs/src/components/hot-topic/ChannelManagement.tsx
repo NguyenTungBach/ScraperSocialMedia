@@ -142,6 +142,7 @@ export function ChannelManagement() {
   const [compareChannelIds, setCompareChannelIds] = useState<number[] | null>(null);
   const [compareByDayChannel, setCompareByDayChannel] = useState<ChannelItem | null>(null);
   const [scrapeConfirmItem, setScrapeConfirmItem] = useState<ChannelItem | null>(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<ChannelItem | null>(null);
 
   const loadList = useCallback(
     async (options?: { page?: number; q?: string; type_channel?: string }) => {
@@ -312,22 +313,11 @@ export function ChannelManagement() {
     });
   };
 
-  const handleDelete = async (item: ChannelItem) => {
-    if (item.can_delete === false || item.has_scraper_runs) {
-      MakeToast({
-        variant: 'warning',
-        content: 'Không thể xóa kênh đang có bài scrape (scraper_runs)',
-      });
-      return;
-    }
-
-    const ok = window.confirm(`Xóa kênh "${item.name}"?`);
-    if (!ok) return;
-
+  const handleDeleteConfirm = async (item: ChannelItem) => {
     setDeletingId(item.id);
     try {
       await channelsApi.remove(item.id);
-      MakeToast({ variant: 'success', content: 'Đã xóa kênh' });
+      MakeToast({ variant: 'success', content: 'Đã xóa kênh và dữ liệu liên quan' });
       const nextPage = items.length <= 1 && page > 1 ? page - 1 : page;
       await loadList({ page: nextPage, q: query, type_channel: platformFilter });
     } catch (err) {
@@ -537,14 +527,10 @@ export function ChannelManagement() {
                         <button
                           type="button"
                           className={cn(styles.iconBtn, styles.deleteBtn)}
-                          onClick={() => handleDelete(item)}
-                          disabled={item.can_delete === false || deletingId === item.id}
+                          onClick={() => setDeleteConfirmItem(item)}
+                          disabled={deletingId === item.id}
                           aria-label={`Xóa ${item.name}`}
-                          title={
-                            item.can_delete === false
-                              ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
-                              : 'Xóa'
-                          }
+                          title="Xóa kênh và dữ liệu liên quan"
                         >
                           {deletingId === item.id ? (
                             <Loader2 size={15} className={dash.spin} aria-hidden />
@@ -793,6 +779,48 @@ export function ChannelManagement() {
           const item = scrapeConfirmItem;
           setScrapeConfirmItem(null);
           await handleScrapeChannel(item);
+        }}
+      />
+
+      <ConfirmActionModal
+        open={deleteConfirmItem != null}
+        title="Xác nhận xóa kênh"
+        confirmVariant="danger"
+        confirmLabel="Xóa kênh"
+        message={
+          deleteConfirmItem ? (
+            <>
+              <p>
+                Bạn sắp xóa cứng kênh <strong>{deleteConfirmItem.name}</strong> (
+                {deleteConfirmItem.url}). Hành động này <strong>không thể hoàn tác</strong>.
+              </p>
+              <ul style={{ margin: '0.75rem 0 0', paddingLeft: '1.25rem' }}>
+                {(deleteConfirmItem.scraper_runs_count ?? 0) > 0 && (
+                  <li>
+                    {deleteConfirmItem.scraper_runs_count} bài scrape (scraper_runs) và dữ liệu
+                    con (comment, reply, snapshot)
+                  </li>
+                )}
+                {(deleteConfirmItem.subjects_count ?? 0) > 0 && (
+                  <li>
+                    Liên kết với {deleteConfirmItem.subjects_count} đối tượng theo dõi — sẽ bị
+                    gỡ; chỉ số social_posts của các đối tượng đó sẽ được tính lại
+                  </li>
+                )}
+                {(deleteConfirmItem.scraper_runs_count ?? 0) === 0 &&
+                  (deleteConfirmItem.subjects_count ?? 0) === 0 && (
+                    <li>Kênh chưa có bài scrape và chưa gắn đối tượng</li>
+                  )}
+              </ul>
+            </>
+          ) : null
+        }
+        onClose={() => setDeleteConfirmItem(null)}
+        onConfirm={async () => {
+          if (!deleteConfirmItem) return;
+          const item = deleteConfirmItem;
+          setDeleteConfirmItem(null);
+          await handleDeleteConfirm(item);
         }}
       />
     </div>

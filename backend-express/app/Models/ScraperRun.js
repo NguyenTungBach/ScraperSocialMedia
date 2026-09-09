@@ -5,16 +5,6 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
     class ScraperRun extends Model {
         static associate(models) {
-            ScraperRun.belongsToMany(models.Subject, {
-                through: models.SubjectScraperRun,
-                foreignKey: 'scraper_run_id',
-                otherKey: 'subject_id',
-                as: 'subjects',
-            });
-            ScraperRun.hasMany(models.SubjectScraperRun, {
-                foreignKey: 'scraper_run_id',
-                as: 'subjectScraperRuns',
-            });
             ScraperRun.belongsTo(models.Channel, {
                 foreignKey: 'channel_id',
                 as: 'channel',

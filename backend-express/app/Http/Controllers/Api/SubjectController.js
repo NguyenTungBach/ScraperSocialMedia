@@ -190,7 +190,7 @@ class SubjectController {
      * /subjects/{id}:
      *   delete:
      *     tags: [Subjects]
-     *     summary: Xóa cứng đối tượng (chặn nếu còn subjects_scraper_runs)
+     *     summary: Xóa cứng đối tượng (chặn nếu còn bài liên kết qua kênh theo dõi)
      *     security: []
      *     parameters:
      *       - in: path

@@ -106,15 +106,10 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   };
 
   const handleDelete = async (item: ChannelItem) => {
-    if (item.can_delete === false || item.has_scraper_runs) {
-      MakeToast({
-        variant: 'warning',
-        content: 'Không thể xóa kênh đang có bài scrape (scraper_runs)',
-      });
-      return;
-    }
-
-    const ok = window.confirm(`Xóa kênh "${item.name}"?`);
+    const ok = window.confirm(
+      `Xóa cứng kênh "${item.name}"?\n\n` +
+        `Sẽ xóa toàn bộ bài scrape, comment, snapshot và gỡ liên kết đối tượng. Không thể hoàn tác.`
+    );
     if (!ok) return;
     setDeletingId(item.id);
     try {
@@ -242,13 +237,9 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
                     type="button"
                     className={styles.deleteBtn}
                     onClick={() => handleDelete(item)}
-                    disabled={item.can_delete === false || deletingId === item.id}
+                    disabled={deletingId === item.id}
                     aria-label="Xóa"
-                    title={
-                      item.can_delete === false
-                        ? 'Không thể xóa vì kênh đã có bài scrape (scraper_runs)'
-                        : 'Xóa'
-                    }
+                    title="Xóa kênh và dữ liệu liên quan"
                   >
                     {deletingId === item.id ? (
                       <Loader2 size={14} className={styles.spin} />
