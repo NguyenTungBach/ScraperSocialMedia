@@ -11,11 +11,9 @@ const {
     deriveEngagementMetrics,
     classifyTrendDirection,
     isNewSocialPost,
-    isWithinPostedAtRange,
     resolvePostedAtRange,
     buildPostedAtWhere,
     formatDateOnly,
-    getCalendarMonthRange,
     normalizePlatform,
     resolveSubjectPlatform,
 } = require('../Helpers/PostScoreHelper');
@@ -34,11 +32,19 @@ const { withDeadlockRetry } = require('../Helpers/DbDeadlockHelper');
 
 const NEW_WITHIN_HOURS = 48;
 
+const SUBJECT_METRIC_SORT_KEYS = new Set([
+    'discussion',
+    'interaction',
+    'follow',
+    'sentiment',
+    'hot_score',
+    'trend_score',
+]);
+
 class ScraperRepository {
     constructor() {
         this.subjectModel = db.Subject;
         this.scraperRunModel = db.ScraperRun;
-        this.socialPostModel = db.SocialPost;
         this.channelRepository = new ChannelRepository();
         this.commentRepository = new CommentRepository();
     }
@@ -120,21 +126,7 @@ class ScraperRepository {
         return { inserted, existing, all: [...inserted, ...existing] };
     }
 
-    async listSubjects({
-        page = 1,
-        per_page = 20,
-        status = null,
-        q = null,
-        sort_by = 'id',
-        sort_dir,
-        date_from,
-        date_to,
-    } = {}) {
-        const range = resolvePostedAtRange({ date_from, date_to });
-        const hasDateFilter = date_from != null || date_to != null;
-        const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
-        const currentPage = Math.max(Number(page) || 1, 1);
-        const offset = (currentPage - 1) * limit;
+    buildSubjectListWhere({ status = null, q = null } = {}) {
         const where = {};
         if (status) where.status = status;
 
@@ -148,30 +140,96 @@ class ScraperRepository {
             ];
         }
 
+        return where;
+    }
+
+    isSubjectMetricSort(sortBy = 'id') {
+        return SUBJECT_METRIC_SORT_KEYS.has(String(sortBy || 'id').trim());
+    }
+
+    resolveSubjectListSortDir(sortBy = 'id', sortDir) {
+        const key = String(sortBy || 'id').trim();
+        const textKeys = new Set(['name', 'nickname']);
+        const defaultDir = textKeys.has(key) ? 'ASC' : 'DESC';
+        return String(sortDir || defaultDir).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    }
+
+    async listSubjects({
+        page = 1,
+        per_page = 20,
+        status = null,
+        q = null,
+        sort_by = 'id',
+        sort_dir,
+        date_from,
+        date_to,
+    } = {}) {
+        const range = resolvePostedAtRange({ date_from, date_to });
+        const limit = Math.min(Math.max(Number(per_page) || 20, 1), 100);
+        const currentPage = Math.max(Number(page) || 1, 1);
+        const offset = (currentPage - 1) * limit;
+        const where = this.buildSubjectListWhere({ status, q });
+        const include = this.subjectChannelIncludes();
+        const sortKey = String(sort_by || 'id').trim();
+
+        if (this.isSubjectMetricSort(sortKey)) {
+            const dir = this.resolveSubjectListSortDir(sortKey, sort_dir);
+            const allRows = await this.subjectModel.findAll({
+                where,
+                include,
+                order: [['id', 'DESC']],
+            });
+            const count = allRows.length;
+            const aggregatesBySubjectId = await this.batchAggregatesForSubjects(allRows, range);
+
+            const decorated = allRows.map((row) => {
+                const sid = Number(row.id);
+                const aggregate = aggregatesBySubjectId.get(sid);
+                return {
+                    row,
+                    sid,
+                    sortValue: aggregate ? this.metricSortValue(aggregate, sortKey) : 0,
+                };
+            });
+
+            decorated.sort((a, b) => {
+                const diff =
+                    dir === 'ASC' ? a.sortValue - b.sortValue : b.sortValue - a.sortValue;
+                if (diff !== 0) return diff;
+                return b.sid - a.sid;
+            });
+
+            const pageRows = decorated.slice(offset, offset + limit).map((item) => item.row);
+            const subjectIds = pageRows.map((row) => row.id);
+            const linkCountBySubjectId = await this.batchCountRunsForSubjects(subjectIds);
+
+            const serialized = pageRows.map((row) =>
+                this.serializeSubjectListItem(row, {
+                    scraper_runs_count: linkCountBySubjectId.get(Number(row.id)) || 0,
+                    aggregateOverride: aggregatesBySubjectId.get(Number(row.id)) ?? null,
+                })
+            );
+
+            return { rows: serialized, count, page: currentPage, per_page: limit };
+        }
+
         const { rows, count } = await this.subjectModel.findAndCountAll({
             where,
             order: this.buildSubjectListOrder(sort_by, sort_dir),
             limit,
             offset,
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include,
             distinct: true,
         });
 
         const subjectIds = rows.map((row) => row.id);
         const linkCountBySubjectId = await this.batchCountRunsForSubjects(subjectIds);
-
-        let aggregatesBySubjectId = null;
-        if (hasDateFilter) {
-            aggregatesBySubjectId = await this.batchAggregatesForSubjects(rows, range);
-        }
+        const aggregatesBySubjectId = await this.batchAggregatesForSubjects(rows, range);
 
         const serialized = rows.map((row) =>
             this.serializeSubjectListItem(row, {
                 scraper_runs_count: linkCountBySubjectId.get(Number(row.id)) || 0,
-                aggregateOverride: aggregatesBySubjectId?.get(Number(row.id)) ?? null,
+                aggregateOverride: aggregatesBySubjectId.get(Number(row.id)) ?? null,
             })
         );
 
@@ -179,7 +237,7 @@ class ScraperRepository {
     }
 
     /**
-     * Aggregate engagement theo posted_at cho nhiều subject (dùng khi list có date_from/date_to).
+     * Aggregate engagement theo posted_at cho nhiều subject (live từ scraper_runs).
      */
     async batchAggregatesForSubjects(subjectRows, range) {
         const map = new Map();
@@ -236,75 +294,18 @@ class ScraperRepository {
     }
 
     /**
-     * Sort list subjects: name / nickname (normalized_name) / metric trên social_posts.
-     * Metric mặc định DESC; name/nickname mặc định ASC.
-     * Dùng subquery để không phụ thuộc JOIN alias khi include channels.
+     * Sort list subjects theo name / nickname / id (metric sort xử lý in-memory ở listSubjects).
      */
     buildSubjectListOrder(sortBy = 'id', sortDir) {
-        const sequelize = db.sequelize;
         const key = String(sortBy || 'id').trim();
-        const textKeys = new Set(['name', 'nickname']);
-        const defaultDir = textKeys.has(key) ? 'ASC' : 'DESC';
-        const dir =
-            String(sortDir || defaultDir).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        const dir = this.resolveSubjectListSortDir(key, sortDir);
         const tieBreak = [['id', 'DESC']];
-
-        const subjectId = qualifyCol(sequelize, 'Subject', 'id');
-        const sp = (column) => qualifyCol(sequelize, 'sp', column);
-        const metricSubquery = (expr) =>
-            `(SELECT ${expr} FROM social_posts AS sp WHERE sp.subject_id = ${subjectId} LIMIT 1)`;
-
-        // social_posts không có platform: heuristic YouTube = có views, shares=0, angry=0
-        const ytHeuristic = `(COALESCE(${sp('views')}, 0) > 0 AND COALESCE(${sp('shares')}, 0) = 0 AND COALESCE(${sp('angry_count')}, 0) = 0)`;
-        const discussionExpr = `COALESCE(${sp('comments')}, 0) + COALESCE(${sp('posts_count')}, 0)`;
-        const interactionExpr = `CASE WHEN ${ytHeuristic} THEN (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('comments')}, 0)) ELSE (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('comments')}, 0) + COALESCE(${sp('shares')}, 0)) END`;
-        const sentimentExpr = `CASE
-            WHEN ${ytHeuristic} THEN 0
-            WHEN (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('angry_count')}, 0)) = 0 THEN 0
-            ELSE (COALESCE(${sp('likes')}, 0) - COALESCE(${sp('angry_count')}, 0)) / (COALESCE(${sp('likes')}, 0) + COALESCE(${sp('angry_count')}, 0))
-        END`;
 
         switch (key) {
             case 'name':
                 return [['name', dir], ...tieBreak];
             case 'nickname':
                 return [['normalized_name', dir], ...tieBreak];
-            case 'discussion':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(discussionExpr)}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
-            case 'interaction':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(interactionExpr)}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
-            case 'follow':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('follow'))}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
-            case 'sentiment':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(sentimentExpr)}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
-            case 'hot_score':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('trend_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
-            case 'trend_score':
-                return [
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('trend_score'))}, 0)`), dir],
-                    [sequelize.literal(`COALESCE(${metricSubquery(sp('hot_score'))}, 0)`), 'DESC'],
-                    ...tieBreak,
-                ];
             case 'id':
             default:
                 return [['id', dir === 'ASC' ? 'ASC' : 'DESC']];
@@ -484,11 +485,7 @@ class ScraperRepository {
 
     serializeSubjectListItem(row, { scraper_runs_count = 0, aggregateOverride = null } = {}) {
         const plain = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
-        const socialPost = aggregateOverride
-            ? aggregateOverride
-            : plain.socialPost
-              ? this.serializeSocialPost(plain.socialPost)
-              : null;
+        const socialPost = aggregateOverride ?? null;
         const channels = (plain.channels || []).map((ch) => this.serializeChannel(ch));
 
         return {
@@ -543,6 +540,15 @@ class ScraperRepository {
         };
     }
 
+    async serializeSubjectListItemWithAggregate(subject, { scraper_runs_count = 0 } = {}) {
+        const range = resolvePostedAtRange({});
+        const aggregatesBySubjectId = await this.batchAggregatesForSubjects([subject], range);
+        return this.serializeSubjectListItem(subject, {
+            scraper_runs_count,
+            aggregateOverride: aggregatesBySubjectId.get(Number(subject.id)) ?? null,
+        });
+    }
+
     async createSubject({
         name,
         normalized_name = null,
@@ -576,28 +582,21 @@ class ScraperRepository {
                 { channel_ids: ids ?? [] },
                 { transaction }
             );
-            await this.recomputeSocialPost(created.id, { transaction });
 
             return created;
         });
 
         const scraper_runs_count = await this.countRunsForSubject(subject.id);
         await subject.reload({
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include: this.subjectChannelIncludes(),
         });
 
-        return this.serializeSubjectListItem(subject, { scraper_runs_count });
+        return this.serializeSubjectListItemWithAggregate(subject, { scraper_runs_count });
     }
 
     async updateSubject(id, payload = {}) {
         const subject = await this.subjectModel.findByPk(id, {
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include: this.subjectChannelIncludes(),
         });
         if (!subject) return null;
 
@@ -622,45 +621,27 @@ class ScraperRepository {
             if (Object.keys(updates).length > 0) {
                 await subject.update(updates, { transaction });
             }
-            const syncResult = await this.syncSubjectChannels(
+            await this.syncSubjectChannels(
                 subject.id,
                 { channel_ids: ids },
                 { transaction }
             );
-            if (syncResult?.reconciled) {
-                await this.recomputeSocialPost(subject.id, { transaction });
-            }
         });
 
         const scraper_runs_count = await this.countRunsForSubject(subject.id);
         await subject.reload({
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include: this.subjectChannelIncludes(),
         });
 
-        return this.serializeSubjectListItem(subject, { scraper_runs_count });
+        return this.serializeSubjectListItemWithAggregate(subject, { scraper_runs_count });
     }
 
     async attachSubjectChannel(subjectId, channelId) {
-        const result = await this.channelRepository.attachSubjectChannel(subjectId, channelId);
-
-        await db.sequelize.transaction(async (transaction) => {
-            await this.recomputeSocialPost(subjectId, { transaction });
-        });
-
-        return result;
+        return this.channelRepository.attachSubjectChannel(subjectId, channelId);
     }
 
     async detachSubjectChannel(subjectId, channelId) {
-        const result = await this.channelRepository.detachSubjectChannel(subjectId, channelId);
-
-        await db.sequelize.transaction(async (transaction) => {
-            await this.recomputeSocialPost(subjectId, { transaction });
-        });
-
-        return result;
+        return this.channelRepository.detachSubjectChannel(subjectId, channelId);
     }
 
     async deleteSubject(id) {
@@ -681,10 +662,7 @@ class ScraperRepository {
 
     async findSubjectById(id) {
         return this.subjectModel.findByPk(id, {
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include: this.subjectChannelIncludes(),
         });
     }
 
@@ -938,10 +916,7 @@ class ScraperRepository {
         } = {}
     ) {
         const subject = await this.subjectModel.findByPk(id, {
-            include: [
-                { model: this.socialPostModel, as: 'socialPost' },
-                ...this.subjectChannelIncludes(),
-            ],
+            include: this.subjectChannelIncludes(),
         });
         if (!subject) return null;
 
@@ -1007,7 +982,6 @@ class ScraperRepository {
             typeof subject.toJSON === 'function' ? subject.toJSON() : { ...subject };
         const channels = (plainSubject.channels || []).map((ch) => this.serializeChannel(ch));
 
-        delete plainSubject.socialPost;
         delete plainSubject.channels;
 
         const posts = rows.map((run) => this.serializeScraperRunPost(run));
@@ -1056,7 +1030,7 @@ class ScraperRepository {
     }
 
     /**
-     * Lưu từng item Apify vào scraper_runs, gắn subjects qua subject_channels, cập nhật social_posts.
+     * Lưu từng item Apify vào scraper_runs, gắn subjects qua subject_channels.
      * @param {{ run: object, items: object[], channels: Array<{id,url}> }} params
      */
     async ingestApifyItems(params = {}) {
@@ -1159,10 +1133,6 @@ class ScraperRepository {
                     }
                 }
             }
-
-            for (const subjectId of affectedSubjectIds) {
-                await this.recomputeSocialPost(subjectId, { transaction });
-            }
         });
 
         return {
@@ -1184,7 +1154,7 @@ class ScraperRepository {
     }
 
     /**
-     * Lưu video YouTube vào scraper_runs, gắn subjects qua subject_channels, cập nhật social_posts.
+     * Lưu video YouTube vào scraper_runs, gắn subjects qua subject_channels.
      * @param {{ videos: object[], channels: Array<{id,url}>, channel?: {id,url} }} params
      *   videos — raw videos.list items HOẶC đã normalize (có platform_post_id)
      *   channel — khi scrape 1 kênh, ưu tiên gán channel_id này
@@ -1308,10 +1278,6 @@ class ScraperRepository {
                 for (const sid of subjectIds) {
                     affectedSubjectIds.add(sid);
                 }
-            }
-
-            for (const subjectId of affectedSubjectIds) {
-                await this.recomputeSocialPost(subjectId, { transaction });
             }
         });
 
@@ -1437,10 +1403,6 @@ class ScraperRepository {
                         affectedSubjectIds.add(sid);
                     }
                 }
-            }
-
-            for (const subjectId of affectedSubjectIds) {
-                await this.recomputeSocialPost(subjectId, { transaction });
             }
         });
 
@@ -1580,10 +1542,6 @@ class ScraperRepository {
                     affectedSubjectIds.add(sid);
                 }
             }
-
-            for (const subjectId of affectedSubjectIds) {
-                await this.recomputeSocialPost(subjectId, { transaction });
-            }
         });
 
         return {
@@ -1592,49 +1550,6 @@ class ScraperRepository {
             not_found: notFound,
             affected_subject_ids: [...affectedSubjectIds],
         };
-    }
-
-    async recomputeSocialPost(subjectId, { transaction } = {}) {
-        const runs = await this.findRunsForSubject(subjectId, { transaction });
-
-        // Cache social_posts = tổng engagement trong tháng lịch hiện tại (theo posted_at).
-        const monthRange = getCalendarMonthRange();
-        const runsInWindow = [];
-
-        for (const post of runs) {
-            if (!post) continue;
-            if (!isWithinPostedAtRange(post.posted_at, monthRange)) continue;
-            runsInWindow.push(post);
-        }
-
-        const aggregate = this.buildAggregateFromRuns(runsInWindow, {
-            follow: await this.sumSubjectChannelFollowers(subjectId, { transaction }),
-        });
-        const payload = {
-            subject_id: subjectId,
-            likes: aggregate.likes,
-            comments: aggregate.comments,
-            shares: aggregate.shares,
-            angry_count: aggregate.angry_count,
-            views: aggregate.views,
-            follow: aggregate.follow,
-            trend_score: aggregate.trend_score,
-            hot_score: aggregate.hot_score,
-            posts_count: aggregate.posts_count,
-            computed_at: new Date(),
-        };
-
-        const existing = await this.socialPostModel.findOne({
-            where: { subject_id: subjectId },
-            transaction,
-        });
-
-        if (existing) {
-            await existing.update(payload, { transaction });
-            return existing;
-        }
-
-        return this.socialPostModel.create(payload, { transaction });
     }
 
     async listScraperRuns({ page = 1, per_page = 20 } = {}) {
@@ -1737,69 +1652,6 @@ class ScraperRepository {
         };
     }
 
-    socialPostSubjectInclude() {
-        return {
-            model: this.subjectModel,
-            as: 'subject',
-            attributes: ['id', 'name', 'normalized_name', 'status'],
-            include: this.subjectChannelIncludes(),
-        };
-    }
-
-    buildSocialPostOrder(sortBy = 'hot_score') {
-        const sequelize = db.sequelize;
-        // social_posts không có platform: heuristic YouTube = có views, shares=0, angry=0
-        const ytHeuristic = '(views > 0 AND shares = 0 AND angry_count = 0)';
-        switch (sortBy) {
-            case 'trend_score':
-                return [['trend_score', 'DESC'], ['hot_score', 'DESC'], ['id', 'DESC']];
-            case 'discussion':
-                return [
-                    [sequelize.literal('(comments + posts_count)'), 'DESC'],
-                    ['hot_score', 'DESC'],
-                    ['id', 'DESC'],
-                ];
-            case 'interaction':
-                return [
-                    [
-                        sequelize.literal(
-                            `(CASE WHEN ${ytHeuristic} THEN (likes + comments) ELSE (likes + comments + shares) END)`
-                        ),
-                        'DESC',
-                    ],
-                    ['hot_score', 'DESC'],
-                    ['id', 'DESC'],
-                ];
-            case 'sentiment':
-                return [
-                    [
-                        sequelize.literal(
-                            `(CASE
-                                WHEN ${ytHeuristic} THEN 0
-                                WHEN (likes + angry_count) = 0 THEN 0
-                                ELSE (likes - angry_count) / (likes + angry_count)
-                            END)`
-                        ),
-                        'DESC',
-                    ],
-                    ['hot_score', 'DESC'],
-                    ['id', 'DESC'],
-                ];
-            case 'hot_score':
-            default:
-                return [['hot_score', 'DESC'], ['trend_score', 'DESC'], ['id', 'DESC']];
-        }
-    }
-
-    buildSocialPostWhere({ new_only = false } = {}) {
-        const where = {};
-        if (new_only) {
-            const since = new Date(Date.now() - NEW_WITHIN_HOURS * 60 * 60 * 1000);
-            where.created_at = { [Op.gte]: since };
-        }
-        return where;
-    }
-
     metricSortValue(row, sortBy = 'hot_score') {
         const metrics = deriveEngagementMetrics(row);
         switch (sortBy) {
@@ -1811,6 +1663,8 @@ class ScraperRepository {
                 return metrics.interaction;
             case 'sentiment':
                 return metrics.sentiment;
+            case 'follow':
+                return toCount(row.follow);
             case 'hot_score':
             default:
                 return metrics.hot_score;
@@ -2194,8 +2048,7 @@ class ScraperRepository {
     }
 
     /**
-     * Xóa cứng kênh và toàn bộ dữ liệu liên quan (scraper_runs cascade → comments, snapshots…),
-     * rồi tính lại social_posts cho các subject đang gắn kênh.
+     * Xóa cứng kênh và toàn bộ dữ liệu liên quan (scraper_runs cascade → comments, snapshots…).
      */
     async deleteChannelCascade(id) {
         const channelId = Number(id);
@@ -2215,17 +2068,13 @@ class ScraperRepository {
                 transaction,
             });
             await channel.destroy({ transaction });
-
-            for (const subjectId of affectedSubjectIds) {
-                await this.recomputeSocialPost(subjectId, { transaction });
-            }
         });
 
         return {
             id: channelId,
             deleted: true,
             scraper_runs_deleted: scraperRunsDeleted,
-            subjects_recomputed: affectedSubjectIds.length,
+            affected_subjects: affectedSubjectIds.length,
         };
     }
 }

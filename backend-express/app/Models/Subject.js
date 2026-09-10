@@ -5,10 +5,6 @@ const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
     class Subject extends Model {
         static associate(models) {
-            Subject.hasOne(models.SocialPost, {
-                foreignKey: 'subject_id',
-                as: 'socialPost',
-            });
             Subject.belongsToMany(models.Channel, {
                 through: models.SubjectChannel,
                 foreignKey: 'subject_id',

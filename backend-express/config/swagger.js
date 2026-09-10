@@ -65,7 +65,7 @@ const defaultDefinition = {
         title: 'NetScopeTrend API',
         version: '1.0.0',
         description:
-            'NetScopeTrend Backend API — scrape async (FB/TikTok Apify, YouTube Data API), subjects/channels, social_posts, comments+Gemini, snapshots, alerts, settings, schedules, users',
+            'NetScopeTrend Backend API — scrape async (FB/TikTok Apify, YouTube Data API), subjects/channels, live aggregates, comments+Gemini, snapshots, alerts, settings, schedules, users',
         contact: {
             name: 'NetScopeTrend'
         },

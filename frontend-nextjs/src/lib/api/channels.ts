@@ -68,13 +68,13 @@ export const channelsApi = {
       id: number;
       deleted: boolean;
       scraper_runs_deleted?: number;
-      subjects_recomputed?: number;
+      affected_subjects?: number;
     }>(`/channels/${id}`, {}) as Promise<
       ApiResponse<{
         id: number;
         deleted: boolean;
         scraper_runs_deleted?: number;
-        subjects_recomputed?: number;
+        affected_subjects?: number;
       }>
     >,
 };

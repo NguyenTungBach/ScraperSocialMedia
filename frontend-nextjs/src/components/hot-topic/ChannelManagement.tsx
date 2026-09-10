@@ -804,7 +804,7 @@ export function ChannelManagement() {
                 {(deleteConfirmItem.subjects_count ?? 0) > 0 && (
                   <li>
                     Liên kết với {deleteConfirmItem.subjects_count} đối tượng theo dõi — sẽ bị
-                    gỡ; chỉ số social_posts của các đối tượng đó sẽ được tính lại
+                    gỡ; chỉ số aggregate của các đối tượng đó sẽ phản ánh lại khi tải danh sách
                   </li>
                 )}
                 {(deleteConfirmItem.scraper_runs_count ?? 0) === 0 &&

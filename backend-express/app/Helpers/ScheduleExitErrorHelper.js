@@ -16,7 +16,7 @@ function formatCommandFailureForSchedule(message) {
 
     if (/deadlock/i.test(raw)) {
         return (
-            'MySQL deadlock: nhiều lệnh cào ghi DB cùng lúc (scraper_runs / social_posts). ' +
+            'MySQL deadlock: nhiều lệnh cào ghi DB cùng lúc (scraper_runs). ' +
             'Chạy lại (Run now) hoặc lệch giờ cron FB/YT/TT (vd. 05:00 / 05:15 / 05:30). ' +
             `Chi tiết: ${raw}`
         );

@@ -145,8 +145,8 @@ class ChannelController {
      *       2) Xóa `scraper_runs` WHERE channel_id = id (DB CASCADE → post_comments, comment_threads,
      *          post_daily_snapshots, post_top_comments_daily)
      *       3) Xóa `channels` (DB CASCADE → subject_channels, channel_daily_snapshots, post_daily_snapshots theo channel_id)
-     *       4) `recomputeSocialPost` cho từng subject bị ảnh hưởng (không xóa row `social_posts`)
      *
+     *       Chỉ số subject trên dashboard/list được aggregate live từ `scraper_runs` (không còn bảng cache).
      *       Logic: `ScraperRepository.deleteChannelCascade` — gọi từ controller này.
      *       FE `/channels`: ConfirmActionModal danger trước khi gọi API.
      *     security: []
@@ -171,7 +171,7 @@ class ChannelController {
      *                     id: { type: integer, example: 5 }
      *                     deleted: { type: boolean, example: true }
      *                     scraper_runs_deleted: { type: integer, example: 42 }
-     *                     subjects_recomputed: { type: integer, example: 2 }
+     *                     affected_subjects: { type: integer, example: 2 }
      *       "404":
      *         description: Không tìm thấy kênh
      */

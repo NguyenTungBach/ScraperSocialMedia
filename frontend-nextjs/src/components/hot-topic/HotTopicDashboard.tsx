@@ -762,7 +762,7 @@ export function HotTopicDashboard() {
           </section>
 
           <section className={styles.statsBar}>
-            <div className={styles.statCard} title="Tổng số subject đã có social_posts">
+            <div className={styles.statCard} title="Tổng số chủ đề có bài trong khoảng thời gian đang xem">
               <span>Tổng số chủ đề</span>
               <strong>{stats?.total ?? (loading ? '…' : 0)}</strong>
             </div>

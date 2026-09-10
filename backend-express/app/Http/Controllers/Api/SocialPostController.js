@@ -14,7 +14,7 @@ class SocialPostController {
      * /social-posts:
      *   get:
      *     tags: [SocialPosts]
-     *     summary: Danh sách tổng hợp social_posts (có metrics + sort)
+     *     summary: Danh sách aggregate chỉ số subject (live từ scraper_runs, có metrics + sort)
      *     security: []
      *     parameters:
      *       - in: query

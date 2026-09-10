@@ -21,7 +21,6 @@ const IMPORT_ORDER = [
     'subjects',
     'subject_channels',
     'scraper_runs',
-    'social_posts',
 ];
 
 function dbClient() {
