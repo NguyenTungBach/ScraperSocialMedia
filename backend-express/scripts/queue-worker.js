@@ -13,6 +13,10 @@ const SettingsCache = require('../app/Services/SettingsCache');
 const logger = require('../app/Logging/logger');
 
 const PROCESS_INTERVAL_MS = Number(process.env.QUEUE_POLL_INTERVAL_MS || 2000);
+const SETTINGS_REFRESH_MS = Math.max(
+    Number(process.env.SETTINGS_REFRESH_MS) || 30_000,
+    5_000
+);
 let shuttingDown = false;
 let busy = false;
 
@@ -53,6 +57,12 @@ async function run() {
     });
     await tick();
     setInterval(tick, PROCESS_INTERVAL_MS);
+    setInterval(() => {
+        if (shuttingDown) return;
+        void SettingsCache.refreshIfStale().catch((error) => {
+            logger.warn('SettingsCache refreshIfStale failed', { error: error.message });
+        });
+    }, SETTINGS_REFRESH_MS);
 }
 
 run().catch((error) => {

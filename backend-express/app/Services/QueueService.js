@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { Op } = require('sequelize');
 const db = require('../Models');
 const { isQueueJobRetriable } = require('../Helpers/QueueRetriableHelper');
+const SettingsCache = require('./SettingsCache');
 const logger = require('../Logging/logger');
 
 const MAX_ATTEMPTS = 3;
@@ -157,6 +158,8 @@ class QueueService {
     static async processClaimed(job) {
         const jobId = Number(job.id);
         try {
+            await SettingsCache.refresh();
+
             const parsed = JSON.parse(job.payload || '{}');
             const jobClassName = String(parsed.job || '');
             const JobClass = this.resolveJobClass(jobClassName);

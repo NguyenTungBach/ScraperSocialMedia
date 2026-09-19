@@ -66,7 +66,7 @@ function registerSchedules(rows) {
             expression,
             async () => {
                 try {
-                    await SettingsCache.ensureLoaded();
+                    await SettingsCache.refreshIfStale();
                     const fresh = await db.GeneralSchedule.findByPk(scheduleId);
                     if (!fresh || !fresh.enabled) {
                         return;
@@ -119,12 +119,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 (async () => {
     try {
         await db.sequelize.authenticate();
-        await SettingsCache.ensureLoaded();
+        await SettingsCache.refresh();
         await recoverInterruptedSchedules();
         await reloadIfChanged();
         setInterval(() => {
             void reloadIfChanged().catch((error) => {
                 logger.error('Schedule reload failed', { error: error.message });
+            });
+            void SettingsCache.refreshIfStale().catch((error) => {
+                logger.warn('SettingsCache refreshIfStale failed', { error: error.message });
             });
         }, RELOAD_MS);
         logger.info('Scheduler worker started', { timezone: TIMEZONE, reloadMs: RELOAD_MS });

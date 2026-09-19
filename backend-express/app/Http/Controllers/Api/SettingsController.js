@@ -43,7 +43,8 @@ class SettingsController {
      *     description: |
      *       Body gồm `keys` và/hoặc `settings` (object map name → value).
      *       Chỉ chấp nhận whitelist trong `AppSettingsKeys`.
-     *       Sau update, SettingsCache refresh — không cần restart API.
+     *       Sau update, SettingsCache refresh ngay trên API; queue worker / scheduler
+     *       tự refresh theo updated_at (SETTINGS_REFRESH_MS) hoặc trước mỗi queue job.
      *     security: []
      *     requestBody:
      *       required: true
