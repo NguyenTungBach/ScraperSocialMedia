@@ -1040,6 +1040,7 @@ class ScraperRepository {
     }
 
     async _ingestApifyItemsOnce({ run, items, channels = [] }) {
+        const { isApifyErrorItem } = require('../Helpers/ScraperAccessHelper');
         const now = new Date();
         const affectedSubjectIds = new Set();
         const channelList = Array.isArray(channels) ? channels : [];
@@ -1054,6 +1055,11 @@ class ScraperRepository {
 
         await db.sequelize.transaction(async (transaction) => {
             for (const item of items) {
+                if (isApifyErrorItem(item)) {
+                    skipped += 1;
+                    continue;
+                }
+
                 const normalized = normalizeApifyItem(item);
                 if (!normalized.platform_post_id) {
                     skipped += 1;

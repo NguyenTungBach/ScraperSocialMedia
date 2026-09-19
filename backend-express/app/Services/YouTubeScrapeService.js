@@ -11,6 +11,7 @@ const {
     parseYoutubeChannelRef,
     toYoutubeVideoResponse,
 } = require('../Helpers/YouTubeHelper');
+const { buildChannelNotPublicEntry } = require('../Helpers/ScraperAccessHelper');
 const logger = require('../Logging/logger');
 
 function resolvePositiveInt(value, fallback) {
@@ -205,6 +206,20 @@ class YouTubeScrapeService {
                     maxResults: channelMaxPosts,
                 });
             quotaUsed += quota_used || 3;
+
+            if (!videos || videos.length === 0) {
+                channelsSkipped.push(
+                    buildChannelNotPublicEntry(
+                        channel,
+                        'Không lấy được video công khai — kênh YouTube có thể riêng tư hoặc chưa có video'
+                    )
+                );
+                logger.warn('[youtube-scrape] Channel not public or no public videos', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                });
+                continue;
+            }
 
             await this.channelRepository.updateChannelStats(channel.id, {
                 followers: follow || 0,

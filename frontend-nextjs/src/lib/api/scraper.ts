@@ -30,10 +30,13 @@ export interface YoutubeCommentStats {
   ai_skipped?: number;
 }
 
+export const CHANNEL_NOT_PUBLIC_REASON = 'channel_not_public';
+
 export interface YoutubeChannelSkipped {
   channel_id: number;
   name?: string;
   reason: string;
+  message?: string;
 }
 
 /** Lightweight summary stored on async job result_json (no video/post lists). */
@@ -324,6 +327,23 @@ export function aggregateScrapeSummaries(statuses: ScraperAsyncStatusData[]): {
     aiSkipped,
     failed,
   };
+}
+
+/** Alert kênh private/ẩn — dùng khi quét 1 kênh từ trang quản lý kênh. */
+export function collectChannelNotPublicAlerts(
+  statuses: ScraperAsyncStatusData[]
+): string[] {
+  const alerts: string[] = [];
+  for (const status of statuses) {
+    if (status.status !== 'completed') continue;
+    const skipped = status.result_json?.channels_skipped ?? [];
+    for (const row of skipped) {
+      if (row.reason !== CHANNEL_NOT_PUBLIC_REASON) continue;
+      const name = String(row.name || '').trim() || `Kênh #${row.channel_id}`;
+      alerts.push(`"${name}" — Kênh không công khai (private/ẩn).`);
+    }
+  }
+  return alerts;
 }
 
 export function formatScrapeSuccessToast(

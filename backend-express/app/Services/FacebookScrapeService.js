@@ -13,6 +13,11 @@ const {
     toFacebookPostResponse,
 } = require('../Helpers/FacebookHelper');
 const { normalizeApifyItem } = require('../Helpers/PostScoreHelper');
+const {
+    apifyErrorMessage,
+    buildChannelNotPublicEntry,
+    partitionApifyItems,
+} = require('../Helpers/ScraperAccessHelper');
 const logger = require('../Logging/logger');
 
 function resolvePositiveInt(value, fallback) {
@@ -241,13 +246,31 @@ class FacebookScrapeService {
                 });
             postsRunId = postsRun?.id || postsRunId;
 
-            const posts = (rawPosts || [])
+            const { errors: apifyErrors, ok: apifyPosts } = partitionApifyItems(rawPosts || []);
+
+            if (apifyErrors.length > 0 && apifyPosts.length === 0) {
+                channelsSkipped.push(
+                    buildChannelNotPublicEntry(
+                        channel,
+                        apifyErrorMessage(apifyErrors[0]) ||
+                            'Kênh Facebook không công khai hoặc không truy cập được'
+                    )
+                );
+                logger.warn('[facebook-scrape] Channel not public', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                    error: apifyErrors[0]?.error,
+                });
+                continue;
+            }
+
+            const posts = apifyPosts
                 .map((item) => normalizeApifyItem(item))
                 .filter((p) => p?.platform_post_id);
 
             const ingest = await this.repository.ingestApifyItems({
                 run: postsRun,
-                items: rawPosts || [],
+                items: apifyPosts,
                 channels: [channel],
             });
 

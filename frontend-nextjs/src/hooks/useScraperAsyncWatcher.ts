@@ -3,6 +3,7 @@ import { ApiRequestError, getApiErrorMessage } from '@/lib/api/client';
 import { channelsApi } from '@/lib/api/channels';
 import {
   aggregateScrapeSummaries,
+  collectChannelNotPublicAlerts,
   formatScrapeSuccessToast,
   getScraperAsyncStatus,
   isScraperAsyncInProgress,
@@ -204,6 +205,8 @@ export function useScraperAsyncWatcher(options?: {
         isCancelled?: () => boolean;
         resumed?: boolean;
         extraChannelIds?: number[];
+        /** Quét 1 kênh từ trang Kênh — hiện alert nếu private/ẩn */
+        alertNotPublicForSingleChannel?: boolean;
       }
     ): Promise<void> => {
       const jobIds = jobs
@@ -271,6 +274,10 @@ export function useScraperAsyncWatcher(options?: {
         }
 
         const agg = aggregateScrapeSummaries(refreshed);
+        const notPublicAlerts = options?.alertNotPublicForSingleChannel
+          ? collectChannelNotPublicAlerts(refreshed)
+          : [];
+
         if (agg.failed.length > 0) {
           const first = agg.failed[0];
           MakeToast({
@@ -280,7 +287,16 @@ export function useScraperAsyncWatcher(options?: {
               `Quét thất bại (${first.status}) cho "${label}"`,
           });
         }
-        if (refreshed.some((s) => s.status === 'completed')) {
+        if (notPublicAlerts.length > 0) {
+          MakeToast({
+            variant: 'warning',
+            title: 'Kênh không công khai',
+            content: notPublicAlerts.join('\n'),
+          });
+        } else if (
+          refreshed.some((s) => s.status === 'completed') &&
+          (agg.inserted > 0 || agg.updated > 0 || agg.count > 0)
+        ) {
           MakeToast({
             variant: 'success',
             content: formatScrapeSuccessToast(label, agg),
@@ -334,9 +350,11 @@ export function useScraperAsyncWatcher(options?: {
         // Một lần poll tất cả job active (tránh Promise.all pollJobs đụng generation)
         const resumeLabel = await resolveLabelForJobs(active, '');
         if (cancelled || cancelledRef.current) return;
+        const resumeChannelIds = collectChannelIds(active);
         await pollJobs(active, resumeLabel, {
           isCancelled: () => cancelled || cancelledRef.current,
           resumed: true,
+          alertNotPublicForSingleChannel: resumeChannelIds.length === 1,
         });
       } catch {
         // Ignore bootstrap errors
@@ -370,6 +388,7 @@ export function useScraperAsyncWatcher(options?: {
       }
 
       const previewChannelIds = [...input.ytIds, ...input.ttIds, ...input.fbIds];
+      const alertNotPublicForSingleChannel = previewChannelIds.length === 1;
       // Spinner ngay khi click (trước khi API trả)
       setHighlightChannelIds(previewChannelIds);
       if (input.subjectId != null) {
@@ -425,6 +444,7 @@ export function useScraperAsyncWatcher(options?: {
               await pollJobs(active, input.label, {
                 resumed: true,
                 extraChannelIds: previewChannelIds,
+                alertNotPublicForSingleChannel,
               });
               return;
             }
@@ -441,7 +461,10 @@ export function useScraperAsyncWatcher(options?: {
 
       setEnqueueing(false);
       if (enqueued.length > 0) {
-        await pollJobs(enqueued, input.label, { extraChannelIds: previewChannelIds });
+        await pollJobs(enqueued, input.label, {
+          extraChannelIds: previewChannelIds,
+          alertNotPublicForSingleChannel,
+        });
       } else {
         clearProgress();
       }
@@ -479,6 +502,7 @@ export function useScraperAsyncWatcher(options?: {
         if (res.data) {
           await pollJobs([res.data], input.label, {
             extraChannelIds: [input.channelId],
+            alertNotPublicForSingleChannel: true,
           });
         } else {
           clearProgress();
@@ -501,6 +525,7 @@ export function useScraperAsyncWatcher(options?: {
               await pollJobs(active, input.label, {
                 resumed: true,
                 extraChannelIds: [input.channelId],
+                alertNotPublicForSingleChannel: true,
               });
               return;
             }

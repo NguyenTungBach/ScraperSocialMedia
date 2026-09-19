@@ -14,6 +14,11 @@ const {
     extractVideoIdFromUrl,
     toTikTokVideoResponse,
 } = require('../Helpers/TikTokHelper');
+const {
+    apifyErrorMessage,
+    buildChannelNotPublicEntry,
+    partitionApifyItems,
+} = require('../Helpers/ScraperAccessHelper');
 const logger = require('../Logging/logger');
 
 function resolvePositiveInt(value, fallback) {
@@ -215,8 +220,12 @@ class TikTokScrapeService {
                 });
             videoRunId = videoRun?.id || videoRunId;
 
+            const { errors: apifyErrors, ok: apifyVideos } = partitionApifyItems(
+                rawVideos || []
+            );
+
             const authorMeta =
-                (rawVideos || []).find((item) => item?.authorMeta)?.authorMeta || null;
+                apifyVideos.find((item) => item?.authorMeta)?.authorMeta || null;
             if (authorMeta) {
                 await this.channelRepository.updateChannelStats(channel.id, {
                     followers: authorMeta.fans ?? authorMeta.followers ?? 0,
@@ -225,9 +234,27 @@ class TikTokScrapeService {
                 });
             }
 
-            const videos = (rawVideos || [])
+            const videos = apifyVideos
                 .map((item) => normalizeTikTokItem(item))
                 .filter((v) => v?.platform_post_id);
+
+            if (videos.length === 0 && (apifyErrors.length > 0 || !authorMeta)) {
+                channelsSkipped.push(
+                    buildChannelNotPublicEntry(
+                        channel,
+                        apifyErrors.length > 0
+                            ? apifyErrorMessage(apifyErrors[0])
+                            : 'Kênh TikTok có thể riêng tư hoặc không truy cập được công khai'
+                    )
+                );
+                logger.warn('[tiktok-scrape] Channel not public', {
+                    channel_id: channel.id,
+                    name: channel.name,
+                    apify_errors: apifyErrors.length,
+                    has_author_meta: Boolean(authorMeta),
+                });
+                continue;
+            }
 
             const ingest = await this.repository.ingestTikTokItems({
                 videos,
