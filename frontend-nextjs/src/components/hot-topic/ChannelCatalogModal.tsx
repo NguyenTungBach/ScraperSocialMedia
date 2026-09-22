@@ -126,7 +126,7 @@ export function ChannelCatalogModal({ open, onClose, onChanged }: ChannelCatalog
   };
 
   return (
-    <div className={styles.overlay} role="presentation" onClick={onClose}>
+    <div className={styles.overlay} role="presentation">
       <div
         className={styles.modal}
         role="dialog"

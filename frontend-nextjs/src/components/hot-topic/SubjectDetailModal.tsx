@@ -743,7 +743,7 @@ export function SubjectDetailModal({
 
   return (
     <>
-      <div className={styles.overlay} role="dialog" aria-modal="true" onClick={onClose}>
+      <div className={styles.overlay} role="dialog" aria-modal="true">
         <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
           <header className={styles.header}>
             <div>

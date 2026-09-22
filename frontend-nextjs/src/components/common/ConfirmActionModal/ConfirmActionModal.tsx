@@ -42,7 +42,7 @@ export function ConfirmActionModal({
   };
 
   return (
-    <div className={styles.overlay} role="presentation" onClick={onClose}>
+    <div className={styles.overlay} role="presentation">
       <div
         className={styles.modal}
         role="alertdialog"

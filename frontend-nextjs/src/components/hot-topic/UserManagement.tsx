@@ -382,7 +382,7 @@ export function UserManagement() {
       </main>
 
       {formOpen && (
-        <div className={styles.modalOverlay} role="presentation" onClick={closeForm}>
+        <div className={styles.modalOverlay} role="presentation">
           <div
             className={styles.modal}
             role="dialog"
